@@ -43,7 +43,7 @@ body {
 .top-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   height: 52px;
   padding: 0 18px;
   border-bottom: 1px solid var(--border);
@@ -52,6 +52,15 @@ body {
   font-size: 14px;
   font-weight: 700;
   letter-spacing: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.top-bar-brand {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 10px;
 }
 
 .brand-mark {
@@ -62,6 +71,80 @@ body {
   box-shadow:
     0 0 0 4px rgba(66, 184, 131, 0.12),
     inset 0 -2px 0 rgba(47, 143, 102, 0.35);
+}
+
+.top-bar-session {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 auto;
+  gap: 8px;
+  min-width: 0;
+  max-width: 320px;
+  padding: 6px 10px;
+  border: 1px solid rgba(66, 184, 131, 0.16);
+  border-radius: 8px;
+  background: rgba(247, 251, 249, 0.9);
+  color: var(--vue-ink);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.status-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--vue-green);
+  box-shadow: 0 0 0 3px rgba(66, 184, 131, 0.14);
+}
+
+.session-muted {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.top-bar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1 1 auto;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  max-width: 140px;
+  padding: 0 11px;
+  border: 1px solid rgba(53, 73, 94, 0.1);
+  border-radius: 7px;
+  background: #ffffff;
+  color: var(--vue-ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toolbar-button-active {
+  border-color: rgba(66, 184, 131, 0.35);
+  background: var(--vue-green);
+  color: #ffffff;
+  box-shadow: 0 6px 14px rgba(66, 184, 131, 0.18);
+}
+
+.toolbar-button-subtle {
+  color: var(--muted);
 }
 
 .workbench-content {
