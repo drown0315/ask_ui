@@ -45,7 +45,7 @@ Out of scope:
 | --- | --- | --- | --- | --- |
 | 1 | App Shell And Layout | Completed | [001 progress](001-app-shell-and-layout-progress.md) | Initial Vite + React + TypeScript shell is implemented. |
 | 2 | Top Bar | Completed | TBD | Static session toolbar controls are implemented. |
-| 3 | Widget Tree Panel | Not started | TBD | Add mock hierarchical widget tree. |
+| 3 | Widget Tree Panel | Completed | TBD | Mock full Flutter tree, selected-node highlight, search UI, refresh action, and resizable left panel are implemented. |
 | 4 | Device Stage With Placeholder | Not started | TBD | Replace plain center placeholder with stage, metadata, and viewport frame. |
 | 5 | Selection Overlay Layer | Not started | TBD | Add hidden/demo overlay layer inside the device viewport. |
 | 6 | Selection Notes Panel Shell | Not started | TBD | Build right panel sections without detailed child behavior. |
@@ -59,7 +59,7 @@ Out of scope:
 
 - [x] 1. App shell and layout.
 - [x] 2. Top bar.
-- [ ] 3. Widget tree panel.
+- [x] 3. Widget tree panel.
 - [ ] 4. Device stage placeholder.
 - [ ] 5. Selection notes panel shell.
 - [ ] 6. Current selection card.
@@ -73,7 +73,7 @@ Out of scope:
 
 - [x] The app has a stable three-column workbench shell.
 - [x] The top toolbar communicates session state and static actions.
-- [ ] The left panel can display a nested widget tree from mock data.
+- [x] The left panel can display a nested widget tree from mock data.
 - [ ] The center stage has a stable device viewport placeholder.
 - [ ] The center stage reserves an overlay layer for future widget bounds.
 - [ ] The right panel clearly communicates staged notes before agent handoff.
@@ -88,13 +88,14 @@ Out of scope:
 - Slice 1 completed through Issue 001.
 - The current App Shell has also received a Vue-green visual polish pass.
 - Slice 2 completed with static device status, Select Widget, and Hot Reload/Hot Restart actions.
+- Slice 3 completed with a mock full Flutter Widget Tree, selected-node-only highlight, app/framework visual weight differences, search field, refresh button, and draggable left-panel resizing.
 
 ## Next Candidate Slice
 
-Slice 3: Widget Tree Panel.
+Slice 4: Device Stage With Placeholder.
 
 Expected next work:
 
-- Add mock hierarchical widget tree data.
-- Render nested widget rows with indentation.
-- Highlight the selected widget and handle long widget names.
+- Replace the plain center placeholder with a stable device viewport frame.
+- Add static device/stage metadata.
+- Keep the center target preview disabled while reserving space for a future real stream.
