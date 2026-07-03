@@ -133,6 +133,22 @@ class RecordingFlutterInspectorVmService implements FlutterInspectorVmService {
   }
 
   @override
+  Future<Map<String, Object?>> callMethod(
+    String method, {
+    Map<String, Object?>? args,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<String?> waitForRegisteredService({
+    required String serviceName,
+    required Duration timeout,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<Map<String, Object?>> reloadSources(String isolateId) {
     throw UnimplementedError();
   }

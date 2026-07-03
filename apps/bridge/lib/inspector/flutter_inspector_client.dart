@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:vm_service/vm_service.dart';
@@ -94,6 +95,24 @@ class FlutterInspectorException implements Exception {
   String toString() => 'FlutterInspectorException: $message';
 }
 
+/// Error thrown when a VM Service method is not available for the app.
+///
+/// It usually means the Flutter tool did not register the hot action service
+/// for this VM Service connection, and the bridge cannot use that path.
+///
+/// Example:
+/// Calling fallback `hotRestart` against an app that has no registered restart
+/// method throws this exception so the HTTP server can return a stable
+/// unsupported response.
+class FlutterInspectorServiceUnavailableException implements Exception {
+  const FlutterInspectorServiceUnavailableException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// Factory that opens one VM Service connection for a Flutter app target.
 ///
 /// Args:
@@ -109,19 +128,44 @@ abstract class FlutterInspectorVmServiceFactory {
 ///
 /// It exposes only:
 /// - service extension calls with string keys and JSON-compatible values
+/// - Flutter tool registered service discovery and calls
 /// - source reload for one isolate group
 /// - disposal of the underlying connection
 ///
 /// Example:
 /// Tests provide a fake implementation to assert that Ask UI requests
-/// `isSummaryTree=true` or calls `reloadSources` without connecting to a real
-/// Flutter app.
+/// `isSummaryTree=true` or waits for `reloadSources` registration without
+/// connecting to a real Flutter app.
 abstract class FlutterInspectorVmService {
   Future<String> findMainIsolateId();
+
+  /// Waits for a Flutter tool service to be registered on the VM Service.
+  ///
+  /// Args:
+  /// - `serviceName`: Service identifier announced by the Flutter tool, such
+  ///   as `reloadSources` or `hotRestart`.
+  /// - `timeout`: Maximum time to listen before returning `null`.
+  ///
+  /// Returns:
+  /// The VM Service method name to call, or `null` when the tool does not
+  /// announce the service before the timeout.
+  ///
+  /// Example:
+  /// When Flutter tool announces `service=reloadSources` and
+  /// `method=_flutter.reloadSources`, this returns `_flutter.reloadSources`.
+  Future<String?> waitForRegisteredService({
+    required String serviceName,
+    required Duration timeout,
+  });
 
   Future<Map<String, Object?>> callServiceExtension(
     String method, {
     required String isolateId,
+    Map<String, Object?>? args,
+  });
+
+  Future<Map<String, Object?>> callMethod(
+    String method, {
     Map<String, Object?>? args,
   });
 
@@ -160,6 +204,60 @@ class VmServiceAdapter implements FlutterInspectorVmService {
     throw const FlutterInspectorException('No runnable Dart isolate found');
   }
 
+  /// Waits for the Flutter tool to announce a service method.
+  ///
+  /// This method listens to the VM Service `Service` stream and returns the
+  /// `method` field from the first `ServiceRegistered` event whose `service`
+  /// matches the requested name. It always cancels the stream subscription
+  /// before returning.
+  ///
+  /// Args:
+  /// - `serviceName`: Flutter tool service name to match, such as
+  ///   `reloadSources` or `hotRestart`.
+  /// - `timeout`: How long to listen before treating the service as absent.
+  ///
+  /// Returns:
+  /// The registered VM Service method name, or `null` when no matching service
+  /// is announced before the timeout.
+  ///
+  /// Example:
+  /// A `ServiceRegistered` event with `service=hotRestart` and
+  /// `method=_flutter.hotRestart` returns `_flutter.hotRestart`.
+  @override
+  Future<String?> waitForRegisteredService({
+    required String serviceName,
+    required Duration timeout,
+  }) async {
+    final registeredMethod = Completer<String?>();
+    late final StreamSubscription<Event> subscription;
+
+    subscription = _vmService.onEvent(EventStreams.kService).listen((event) {
+      final method = event.method;
+      if (event.kind == EventKind.kServiceRegistered &&
+          event.service == serviceName &&
+          method != null &&
+          !registeredMethod.isCompleted) {
+        registeredMethod.complete(method);
+      }
+    });
+
+    try {
+      await _vmService.streamListen(EventStreams.kService);
+      return await registeredMethod.future.timeout(
+        timeout,
+        onTimeout: () => null,
+      );
+    } finally {
+      await subscription.cancel();
+      try {
+        await _vmService.streamCancel(EventStreams.kService);
+      } catch (_) {
+        // The VM Service stream may already be closed while the app reloads or
+        // restarts. Discovery is best-effort, so cleanup errors are ignored.
+      }
+    }
+  }
+
   @override
   Future<Map<String, Object?>> callServiceExtension(
     String method, {
@@ -173,6 +271,27 @@ class VmServiceAdapter implements FlutterInspectorVmService {
     );
 
     return response.json?.cast<String, Object?>() ?? <String, Object?>{};
+  }
+
+  @override
+  Future<Map<String, Object?>> callMethod(
+    String method, {
+    Map<String, Object?>? args,
+  }) async {
+    try {
+      final response = await _vmService.callMethod(
+        method,
+        args: args?.cast<String, dynamic>(),
+      );
+      return response.json?.cast<String, Object?>() ?? <String, Object?>{};
+    } on RPCError catch (error) {
+      if (error.code == RPCErrorKind.kMethodNotFound.code) {
+        throw FlutterInspectorServiceUnavailableException(
+          '$method service is not registered by the Flutter tool.',
+        );
+      }
+      rethrow;
+    }
   }
 
   @override

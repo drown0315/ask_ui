@@ -4,7 +4,7 @@ type TopBarProps = {
   isSelectWidgetActive: boolean;
   hotReload: WorkbenchActionState;
   hotRestart: WorkbenchActionState;
-  canRunSessionActions: boolean;
+  statusMessage: string;
   onToggleSelectWidget: () => void;
   onHotReload: () => void;
   onHotRestart: () => void;
@@ -22,7 +22,7 @@ export function TopBar({
   isSelectWidgetActive,
   hotReload,
   hotRestart,
-  canRunSessionActions,
+  statusMessage,
   onToggleSelectWidget,
   onHotReload,
   onHotRestart,
@@ -37,7 +37,9 @@ export function TopBar({
       <div className="top-bar-session" aria-label="Target device status">
         <span className="status-dot" aria-hidden="true" />
         <span>iPhone 15 Pro</span>
-        <span className="session-muted">Flutter debug</span>
+        <span className="session-muted" title={statusMessage}>
+          {statusMessage}
+        </span>
       </div>
 
       <div className="top-bar-actions" aria-label="Workbench actions">
@@ -55,7 +57,7 @@ export function TopBar({
           className={`toolbar-button ${
             hotReload.status === 'failed' ? 'toolbar-button-error' : ''
           }`}
-          disabled={!canRunSessionActions || hotReload.status === 'running'}
+          disabled={hotReload.status === 'running'}
           onClick={onHotReload}
           title={hotReload.message}
           type="button"
@@ -63,12 +65,8 @@ export function TopBar({
           {getActionLabel('Hot Reload', hotReload)}
         </button>
         <button
-          className={`toolbar-button toolbar-button-subtle ${
-            hotRestart.status === 'failed' || hotRestart.status === 'unsupported'
-              ? 'toolbar-button-error'
-              : ''
-          }`}
-          disabled={!canRunSessionActions || hotRestart.status === 'running'}
+          className="toolbar-button"
+          disabled={hotRestart.status === 'running'}
           onClick={onHotRestart}
           title={hotRestart.message}
           type="button"

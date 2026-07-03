@@ -119,8 +119,8 @@ Suggested unsupported response:
 | --- | --- | --- | --- |
 | Select Widget toggle UI | Internal React state | Supported | Current UI contract |
 | Select Widget hit testing | Flutter Inspector selection and coordinate mapping | Unknown | Future slice |
-| Hot Reload | `package:vm_service` exposes `reloadSources(isolateId)` | Partial | Implemented through bridge; real Flutter session smoke test still needed |
-| Hot Restart | Runner or Flutter daemon control path | Unknown | Future or unsupported until proven |
+| Hot Reload | Flutter tool uses VM `reloadSources` plus `ext.flutter.reassemble` | Supported by bridge implementation | Real Flutter session smoke test still needed |
+| Hot Restart | Flutter tool registers VM Service method `hotRestart` when runner support exists | Partial | Bridge calls the registered service; unsupported when the method is absent |
 | Refresh Widget Tree after reload | Existing `GET /api/sessions/:sessionId/widget-tree` | Supported | Current contract after hot reload succeeds |
 
 ## Implementation Notes
@@ -129,12 +129,15 @@ Suggested unsupported response:
   to the device stage.
 - `Hot Reload` calls `POST /api/sessions/:sessionId/hot-reload`.
 - The bridge implements hot reload with VM Service `reloadSources` for the main
-  isolate.
+  isolate, followed by Flutter framework `ext.flutter.reassemble`.
 - After successful hot reload, the web UI fetches a fresh Widget Tree snapshot
   through the existing bridge session.
-- `Hot Restart` calls `POST /api/sessions/:sessionId/hot-restart` and currently
-  receives `hot_restart_not_supported_for_session` until runner-level support is
-  proven.
+- `Hot Restart` calls `POST /api/sessions/:sessionId/hot-restart`.
+- The Dart bridge now routes both hot reload and hot restart through
+  `FlutterAppController`.
+- Hot restart calls the Flutter tool registered VM Service method `hotRestart`.
+  If the running session does not expose that service, the bridge returns
+  `hot_restart_not_supported_for_session`.
 
 ## Out Of Scope
 

@@ -106,6 +106,10 @@ body {
   text-overflow: ellipsis;
 }
 
+.toolbar-button:not(:disabled) {
+  cursor: pointer;
+}
+
 .top-bar-actions {
   display: flex;
   align-items: center;
@@ -145,11 +149,9 @@ body {
   border-color: rgba(66, 184, 131, 0.35);
   background: var(--vue-green);
   color: #ffffff;
-  box-shadow: 0 6px 14px rgba(66, 184, 131, 0.18);
-}
-
-.toolbar-button-subtle {
-  color: var(--muted);
+  box-shadow:
+    0 0 0 3px rgba(66, 184, 131, 0.14),
+    0 6px 14px rgba(66, 184, 131, 0.18);
 }
 
 .toolbar-button-error {

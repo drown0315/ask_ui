@@ -10,7 +10,9 @@ import { DeviceStage } from '../components/device-stage/DeviceStage';
 import { SelectionNotesPanel } from '../components/selection-notes/SelectionNotesPanel';
 import { TopBar } from '../components/top-bar/TopBar';
 import {
+  getTopBarStatusMessage,
   initialTopBarActionState,
+  markSessionActionUnavailable,
   toggleSelectWidgetMode,
   type TopBarActionState,
 } from '../components/top-bar/topBarActions';
@@ -205,6 +207,9 @@ export function AskUiWorkbench() {
 
   async function handleHotReload() {
     if (bridgeSessionState.status !== 'ready') {
+      setTopBarActionState((state) =>
+        markSessionActionUnavailable(state, 'hotReload'),
+      );
       return;
     }
 
@@ -281,6 +286,9 @@ export function AskUiWorkbench() {
 
   async function handleHotRestart() {
     if (bridgeSessionState.status !== 'ready') {
+      setTopBarActionState((state) =>
+        markSessionActionUnavailable(state, 'hotRestart'),
+      );
       return;
     }
 
@@ -317,18 +325,16 @@ export function AskUiWorkbench() {
     }
   }
 
-  const canRunSessionActions = bridgeSessionState.status === 'ready';
-
   return (
     <main className="ask-ui-workbench">
       <TopBar
-        canRunSessionActions={canRunSessionActions}
         hotReload={topBarActionState.hotReload}
         hotRestart={topBarActionState.hotRestart}
         isSelectWidgetActive={topBarActionState.isSelectWidgetActive}
         onHotReload={handleHotReload}
         onHotRestart={handleHotRestart}
         onToggleSelectWidget={handleToggleSelectWidget}
+        statusMessage={getTopBarStatusMessage(topBarActionState)}
       />
       <div
         className="workbench-content"

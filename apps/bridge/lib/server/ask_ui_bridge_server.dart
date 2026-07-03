@@ -3,6 +3,7 @@ import 'dart:io';
 
 import '../app_controller/flutter_app_controller.dart';
 import '../inspector/flutter_inspector_client.dart';
+import '../logging/bridge_logger.dart';
 import '../sessions/session_store.dart';
 
 class AskUiBridgeServer {
@@ -10,13 +11,16 @@ class AskUiBridgeServer {
     required SessionStore sessionStore,
     required FlutterInspectorClient inspectorClient,
     required FlutterAppController appController,
+    BridgeLogger? logger,
   })  : _sessionStore = sessionStore,
         _inspectorClient = inspectorClient,
-        _appController = appController;
+        _appController = appController,
+        _logger = logger ?? BridgeLogger(write: print);
 
   final SessionStore _sessionStore;
   final FlutterInspectorClient _inspectorClient;
   final FlutterAppController _appController;
+  final BridgeLogger _logger;
   HttpServer? _server;
 
   Future<int> start({required String host, required int port}) async {
@@ -133,6 +137,7 @@ class AskUiBridgeServer {
     final session = _sessionStore.find(sessionId);
 
     if (session == null) {
+      _logger.info('hot_reload request session=$sessionId session_not_found');
       await _writeJson(
         request.response,
         statusCode: HttpStatus.notFound,
@@ -172,13 +177,16 @@ class AskUiBridgeServer {
       return;
     }
 
+    _logger.info('hot_reload request session=$sessionId start');
     try {
       final result = await _appController.hotReload(session);
       await _writeJson(
         request.response,
         body: result.toJson(),
       );
+      _logger.info('hot_reload request session=$sessionId success');
     } catch (error) {
+      _logger.info('hot_reload request session=$sessionId failed error=$error');
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badGateway,
@@ -195,6 +203,7 @@ class AskUiBridgeServer {
     final session = _sessionStore.find(sessionId);
 
     if (session == null) {
+      _logger.info('hot_restart request session=$sessionId session_not_found');
       await _writeJson(
         request.response,
         statusCode: HttpStatus.notFound,
@@ -203,14 +212,36 @@ class AskUiBridgeServer {
       return;
     }
 
-    await _writeJson(
-      request.response,
-      statusCode: HttpStatus.notImplemented,
-      body: {
-        'error': 'hot_restart_not_supported_for_session',
-        'message': 'Hot restart is not available for this bridge session.',
-      },
-    );
+    _logger.info('hot_restart request session=$sessionId start');
+    try {
+      final result = await _appController.hotRestart(session);
+      await _writeJson(
+        request.response,
+        body: result.toJson(),
+      );
+      _logger.info('hot_restart request session=$sessionId success');
+    } on HotRestartUnsupportedException catch (error) {
+      _logger.info('hot_restart request session=$sessionId unsupported');
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notImplemented,
+        body: {
+          'error': 'hot_restart_not_supported_for_session',
+          'message': error.message,
+        },
+      );
+    } catch (error) {
+      _logger
+          .info('hot_restart request session=$sessionId failed error=$error');
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badGateway,
+        body: {
+          'error': 'hot_restart_failed',
+          'message': error.toString(),
+        },
+      );
+    }
   }
 
   void _setCorsHeaders(HttpResponse response) {
