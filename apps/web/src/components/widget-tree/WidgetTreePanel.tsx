@@ -1,38 +1,84 @@
-import type { CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import type { BridgeSessionState, WidgetTreeNode } from '../../types/bridgeSession';
+import {
+  buildVisibleWidgetTreeRows,
+  collectExpandableNodeIds,
+} from './widgetTreeRows';
 
-function WidgetTreeNodeRow({
-  node,
-  depth,
-}: {
-  node: WidgetTreeNode;
-  depth: number;
-}) {
+function WidgetTreeRows({ root }: { root: WidgetTreeNode }) {
+  const allExpandableNodeIds = useMemo(() => collectExpandableNodeIds(root), [root]);
+  const [expandedNodeIds, setExpandedNodeIds] = useState(
+    () => new Set(allExpandableNodeIds),
+  );
+  const rows = useMemo(
+    () =>
+      buildVisibleWidgetTreeRows({
+        root,
+        expandedNodeIds,
+      }),
+    [expandedNodeIds, root],
+  );
+
+  useEffect(() => {
+    setExpandedNodeIds(new Set(allExpandableNodeIds));
+  }, [allExpandableNodeIds]);
+
+  function toggleNode(nodeId: string) {
+    setExpandedNodeIds((current) => {
+      const next = new Set(current);
+
+      if (next.has(nodeId)) {
+        next.delete(nodeId);
+      } else {
+        next.add(nodeId);
+      }
+
+      return next;
+    });
+  }
+
   return (
-    <li>
-      <div
-        className="widget-tree-row"
-        style={{ '--tree-depth': depth } as CSSProperties}
-      >
-        <span className="widget-tree-toggle" aria-hidden="true">
-          {node.children.length > 0 ? '▾' : ''}
-        </span>
-        <span className="widget-tree-branch" aria-hidden="true" />
-        <span className="widget-tree-badge" aria-hidden="true">
-          {node.label.slice(0, 1).toUpperCase()}
-        </span>
-        <span className="widget-tree-label" title={node.label}>
-          {node.label}
-        </span>
-      </div>
-      {node.children.length > 0 ? (
-        <ul className="widget-tree-list">
-          {node.children.map((child) => (
-            <WidgetTreeNodeRow key={child.id} node={child} depth={depth + 1} />
-          ))}
-        </ul>
-      ) : null}
-    </li>
+    <div className="widget-tree-flat-list" role="tree">
+      {rows.map((row) => {
+        const isExpanded = row.hasChildren && expandedNodeIds.has(row.node.id);
+
+        return (
+          <div
+            aria-expanded={row.hasChildren ? isExpanded : undefined}
+            aria-level={row.depth + 1}
+            className="widget-tree-row"
+            key={row.id}
+            role="treeitem"
+            style={{ '--tree-depth': row.depth } as CSSProperties}
+          >
+            <button
+              aria-label={
+                row.hasChildren
+                  ? `${isExpanded ? 'Collapse' : 'Expand'} ${row.node.label}`
+                  : undefined
+              }
+              className="widget-tree-toggle"
+              disabled={!row.hasChildren}
+              onClick={() => {
+                if (row.hasChildren) {
+                  toggleNode(row.node.id);
+                }
+              }}
+              type="button"
+            >
+              {row.hasChildren ? (isExpanded ? '▾' : '▸') : ''}
+            </button>
+            <span className="widget-tree-branch" aria-hidden="true" />
+            <span className="widget-tree-badge" aria-hidden="true">
+              {row.node.label.slice(0, 1).toUpperCase()}
+            </span>
+            <span className="widget-tree-label" title={row.node.label}>
+              {row.node.label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -91,9 +137,9 @@ function WidgetTreeSessionState({ state }: { state: BridgeSessionState }) {
   }
 
   return (
-    <ul className="widget-tree-list widget-tree-root-list">
-      <WidgetTreeNodeRow node={state.widgetTree.root} depth={0} />
-    </ul>
+    <div className="widget-tree-root-list">
+      <WidgetTreeRows root={state.widgetTree.root} />
+    </div>
   );
 }
 
