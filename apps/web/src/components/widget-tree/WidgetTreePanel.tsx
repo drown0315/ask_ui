@@ -5,6 +5,137 @@ import {
   collectExpandableNodeIds,
 } from './widgetTreeRows';
 
+type WidgetTreeIconKind =
+  | 'app'
+  | 'layout'
+  | 'gesture'
+  | 'visual'
+  | 'animation'
+  | 'text'
+  | 'custom'
+  | 'widget';
+
+function getWidgetTreeIcon(label: string): {
+  kind: WidgetTreeIconKind;
+  glyph: string;
+  title: string;
+} {
+  if (isCustomWidget(label)) {
+    return {
+      kind: 'custom',
+      glyph: '◆',
+      title: 'Project widget',
+    };
+  }
+
+  if (matchesWidget(label, ['MaterialApp', 'Scaffold', 'Theme', '[root]'])) {
+    return {
+      kind: 'app',
+      glyph: '□',
+      title: 'App structure widget',
+    };
+  }
+
+  if (
+    matchesWidget(label, [
+      'Text',
+      'RichText',
+      'DefaultTextStyle',
+      'EditableText',
+    ])
+  ) {
+    return {
+      kind: 'text',
+      glyph: 'T',
+      title: 'Text widget',
+    };
+  }
+
+  if (
+    matchesWidget(label, [
+      'Gesture',
+      'Listener',
+      'TrackpadListener',
+      'Tap',
+      'Pointer',
+    ])
+  ) {
+    return {
+      kind: 'gesture',
+      glyph: '⌁',
+      title: 'Interaction widget',
+    };
+  }
+
+  if (
+    matchesWidget(label, [
+      'Image',
+      'Opacity',
+      'Transform',
+      'Clip',
+      'DecoratedBox',
+      'FractionalTranslation',
+    ])
+  ) {
+    return {
+      kind: 'visual',
+      glyph: '▧',
+      title: 'Visual widget',
+    };
+  }
+
+  if (
+    matchesWidget(label, [
+      'Animated',
+      'Animation',
+      'Animate',
+      'ValueListenableBuilder',
+    ])
+  ) {
+    return {
+      kind: 'animation',
+      glyph: '◇',
+      title: 'Animation widget',
+    };
+  }
+
+  if (
+    matchesWidget(label, [
+      'Container',
+      'Stack',
+      'Column',
+      'Row',
+      'Padding',
+      'SizedBox',
+      'Center',
+      'Positioned',
+      'LayoutBuilder',
+      'KeyedSubtree',
+      'ScrollConfiguration',
+    ])
+  ) {
+    return {
+      kind: 'layout',
+      glyph: '▣',
+      title: 'Layout widget',
+    };
+  }
+
+  return {
+    kind: 'widget',
+    glyph: '·',
+    title: 'Widget',
+  };
+}
+
+function isCustomWidget(label: string) {
+  return /^[A-Z]/.test(label) && /^Wonder|Wonders|Home|Previous|Bottom/.test(label);
+}
+
+function matchesWidget(label: string, patterns: string[]) {
+  return patterns.some((pattern) => label.includes(pattern));
+}
+
 function WidgetTreeRows({ root }: { root: WidgetTreeNode }) {
   const allExpandableNodeIds = useMemo(() => collectExpandableNodeIds(root), [root]);
   const [expandedNodeIds, setExpandedNodeIds] = useState(
@@ -41,6 +172,7 @@ function WidgetTreeRows({ root }: { root: WidgetTreeNode }) {
     <div className="widget-tree-flat-list" role="tree">
       {rows.map((row) => {
         const isExpanded = row.hasChildren && expandedNodeIds.has(row.node.id);
+        const icon = getWidgetTreeIcon(row.node.label);
 
         return (
           <div
@@ -69,8 +201,12 @@ function WidgetTreeRows({ root }: { root: WidgetTreeNode }) {
               {row.hasChildren ? (isExpanded ? '▾' : '▸') : ''}
             </button>
             <span className="widget-tree-branch" aria-hidden="true" />
-            <span className="widget-tree-badge" aria-hidden="true">
-              {row.node.label.slice(0, 1).toUpperCase()}
+            <span
+              aria-label={icon.title}
+              className={`widget-tree-type-icon widget-tree-type-icon-${icon.kind}`}
+              title={icon.title}
+            >
+              {icon.glyph}
             </span>
             <span className="widget-tree-label" title={row.node.label}>
               {row.node.label}
