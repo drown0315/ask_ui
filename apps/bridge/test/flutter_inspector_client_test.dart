@@ -126,6 +126,46 @@ void main() {
       ]);
     });
 
+    test('sets Flutter Inspector selection by widget id', () async {
+      final vmService = RecordingFlutterInspectorVmService({'result': null});
+      final logs = <String>[];
+      final client = VmServiceFlutterInspectorClient(
+        vmServiceFactory: RecordingFlutterInspectorVmServiceFactory(vmService),
+        logger: BridgeLogger(write: logs.add),
+      );
+
+      final result = await client.selectWidgetById(
+        const BridgeSession(
+          id: 'session-1',
+          vmServiceUri: 'ws://127.0.0.1:12345/ws',
+          projectRoot: '/Users/example/app',
+        ),
+        widgetId: 'inspector-2',
+      );
+
+      expect(vmService.calls, [
+        const FlutterInspectorVmServiceCall(
+          method: 'ext.flutter.inspector.setSelectionById',
+          isolateId: 'isolates/main',
+          args: {
+            'arg': 'inspector-2',
+            'objectGroup': 'ask_ui_widget_tree',
+          },
+        ),
+      ]);
+      expect(vmService.disposed, isTrue);
+      expect(result.toJson(), {
+        'status': 'ok',
+        'widgetId': 'inspector-2',
+        'message': 'Widget selected.',
+      });
+      expect(logs, [
+        '[ask_ui_bridge] widget_selection session=session-1 connect_vm_service widget=inspector-2',
+        '[ask_ui_bridge] widget_selection session=session-1 isolate=isolates/main widget=inspector-2',
+        '[ask_ui_bridge] widget_selection session=session-1 selected widget=inspector-2',
+      ]);
+    });
+
     test('updates Select Widget mode status from service extension events',
         () async {
       final vmService = RecordingFlutterInspectorVmService({'result': null});

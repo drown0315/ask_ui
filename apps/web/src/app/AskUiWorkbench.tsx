@@ -23,6 +23,7 @@ import {
   getWidgetTree,
   hotReloadSession,
   hotRestartSession,
+  selectWidgetById,
   setSelectWidgetMode,
   subscribeToBridgeSessionEvents,
   type BridgeSessionEvent,
@@ -42,6 +43,10 @@ export function AskUiWorkbench() {
   const [widgetTreeWidth, setWidgetTreeWidth] = useState(defaultWidgetTreeWidth);
   const [topBarActionState, setTopBarActionState] = useState<TopBarActionState>(
     initialTopBarActionState,
+  );
+  const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
+  const [widgetSelectionError, setWidgetSelectionError] = useState<string | null>(
+    null,
   );
   const [bridgeSessionState, setBridgeSessionState] = useState<BridgeSessionState>(() => {
     const bootstrap = readSessionBootstrap(window.location.href);
@@ -336,6 +341,25 @@ export function AskUiWorkbench() {
     };
   }
 
+  async function handleSelectWidgetFromTree(widgetId: string) {
+    if (bridgeSessionState.status !== 'ready') {
+      return;
+    }
+
+    const previousWidgetId = selectedWidgetId;
+    setSelectedWidgetId(widgetId);
+    setWidgetSelectionError(null);
+
+    try {
+      await selectWidgetById(bridgeSessionState.sessionId, widgetId);
+    } catch (error: unknown) {
+      setSelectedWidgetId(previousWidgetId);
+      setWidgetSelectionError(
+        error instanceof Error ? error.message : 'Failed to select Flutter widget',
+      );
+    }
+  }
+
   function handleToggleSelectWidget() {
     if (bridgeSessionState.status !== 'ready') {
       setTopBarActionState((state) => ({
@@ -368,6 +392,8 @@ export function AskUiWorkbench() {
         status: 'running',
       },
     }));
+    setSelectedWidgetId(null);
+    setWidgetSelectionError(null);
     setBridgeSessionState({
       status: 'ready',
       sessionId,
@@ -437,6 +463,8 @@ export function AskUiWorkbench() {
 
     const { sessionId } = bridgeSessionState;
 
+    setSelectedWidgetId(null);
+    setWidgetSelectionError(null);
     setBridgeSessionState({
       status: 'ready',
       sessionId,
@@ -529,7 +557,10 @@ export function AskUiWorkbench() {
             bridgeSessionState.status === 'ready' &&
             bridgeSessionState.widgetTree.status !== 'loading'
           }
+          selectedWidgetId={selectedWidgetId}
+          selectionError={widgetSelectionError}
           onRefresh={handleRefreshWidgetTree}
+          onSelectWidget={handleSelectWidgetFromTree}
         />
         <div
           aria-label="Resize widget tree panel"

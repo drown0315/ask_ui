@@ -68,6 +68,15 @@ class AskUiBridgeServer {
       return;
     }
 
+    if (request.method == 'POST' &&
+        request.uri.pathSegments.length == 4 &&
+        request.uri.pathSegments[0] == 'api' &&
+        request.uri.pathSegments[1] == 'sessions' &&
+        request.uri.pathSegments[3] == 'widget-selection') {
+      await _selectWidgetById(request);
+      return;
+    }
+
     if (request.method == 'GET' &&
         request.uri.pathSegments.length == 4 &&
         request.uri.pathSegments[0] == 'api' &&
@@ -315,6 +324,90 @@ class AskUiBridgeServer {
         statusCode: HttpStatus.badGateway,
         body: {
           'error': 'select_widget_mode_status_failed',
+          'message': error.toString(),
+        },
+      );
+    }
+  }
+
+  /// Select one Flutter Inspector widget for the current bridge session.
+  ///
+  /// This method:
+  /// 1. validates that the bridge session exists
+  /// 2. parses a non-empty `widgetId` from the JSON request body
+  /// 3. forwards the id to Flutter Inspector through `setSelectionById`
+  /// 4. returns a stable JSON response for success or failure
+  ///
+  /// Args:
+  /// - `request`: POST request whose path is
+  ///   `/api/sessions/{sessionId}/widget-selection` and whose body contains
+  ///   `{widgetId: string}`.
+  ///
+  /// Returns:
+  /// `{status: ok, widgetId, message}` when Flutter Inspector accepts the id.
+  /// Missing or empty ids return `invalid_widget_selection_request`.
+  ///
+  /// Example:
+  /// Posting `{widgetId: inspector-2}` selects that object in Flutter
+  /// Inspector for `session-1`.
+  Future<void> _selectWidgetById(HttpRequest request) async {
+    final sessionId = request.uri.pathSegments[2];
+    final session = _sessionStore.find(sessionId);
+
+    if (session == null) {
+      _logger.info(
+          'widget_selection request session=$sessionId session_not_found');
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notFound,
+        body: {'error': 'session_not_found'},
+      );
+      return;
+    }
+
+    late final String widgetId;
+    try {
+      final rawBody = await utf8.decodeStream(request);
+      final decoded = jsonDecode(rawBody);
+      if (decoded is! Map<String, Object?> ||
+          decoded['widgetId'] is! String ||
+          (decoded['widgetId']! as String).trim().isEmpty) {
+        throw const FormatException('Expected non-empty widgetId string');
+      }
+      widgetId = (decoded['widgetId']! as String).trim();
+    } on FormatException {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'invalid_widget_selection_request'},
+      );
+      return;
+    }
+
+    _logger.info(
+      'widget_selection request session=$sessionId start widget=$widgetId',
+    );
+    try {
+      final result = await _inspectorClient.selectWidgetById(
+        session,
+        widgetId: widgetId,
+      );
+      await _writeJson(
+        request.response,
+        body: result.toJson(),
+      );
+      _logger.info(
+        'widget_selection request session=$sessionId success widget=$widgetId',
+      );
+    } catch (error) {
+      _logger.info(
+        'widget_selection request session=$sessionId failed error=$error',
+      );
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badGateway,
+        body: {
+          'error': 'widget_selection_failed',
           'message': error.toString(),
         },
       );

@@ -384,6 +384,63 @@ void main() {
       });
     });
 
+    test('sets Flutter Inspector selection for an existing widget id',
+        () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+
+      final sessionId = await createSession(client, baseUri);
+
+      final selectionRequest = await client.postUrl(
+        baseUri.resolve('/api/sessions/$sessionId/widget-selection'),
+      );
+      selectionRequest.headers.contentType = ContentType.json;
+      selectionRequest.write(jsonEncode({'widgetId': 'inspector-2'}));
+
+      final selectionResponse = await selectionRequest.close();
+      final selectionBody =
+          jsonDecode(await utf8.decodeStream(selectionResponse))
+              as Map<String, Object?>;
+
+      expect(selectionResponse.statusCode, HttpStatus.ok);
+      expect(inspectorClient.widgetSelectionRequests, [
+        const RecordedWidgetSelectionRequest(
+          sessionId: 'session-1',
+          widgetId: 'inspector-2',
+        ),
+      ]);
+      expect(selectionBody, {
+        'status': 'ok',
+        'widgetId': 'inspector-2',
+        'message': 'Widget selected.',
+      });
+    });
+
+    test('rejects widget selection requests without a widget id', () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+
+      final sessionId = await createSession(client, baseUri);
+
+      final selectionRequest = await client.postUrl(
+        baseUri.resolve('/api/sessions/$sessionId/widget-selection'),
+      );
+      selectionRequest.headers.contentType = ContentType.json;
+      selectionRequest.write(jsonEncode({'widgetId': ''}));
+
+      final selectionResponse = await selectionRequest.close();
+      final selectionBody =
+          jsonDecode(await utf8.decodeStream(selectionResponse))
+              as Map<String, Object?>;
+
+      expect(selectionResponse.statusCode, HttpStatus.badRequest);
+      expect(
+        selectionBody,
+        containsPair('error', 'invalid_widget_selection_request'),
+      );
+      expect(inspectorClient.widgetSelectionRequests, isEmpty);
+    });
+
     test('streams the current Select Widget mode snapshot over SSE', () async {
       final client = HttpClient();
       addTearDown(client.close);
@@ -638,6 +695,7 @@ class RecordingFlutterInspectorClient implements FlutterInspectorClient {
   final requestedSessionIds = <String>[];
   final selectWidgetModeRequests = <RecordedSelectWidgetModeRequest>[];
   final selectWidgetModeStatusSessionIds = <String>[];
+  final widgetSelectionRequests = <RecordedWidgetSelectionRequest>[];
   final _selectWidgetModeControllers =
       <String, StreamController<SelectWidgetModeStatus>>{};
   Exception? failure;
@@ -706,6 +764,22 @@ class RecordingFlutterInspectorClient implements FlutterInspectorClient {
         )
         .stream;
   }
+
+  @override
+  Future<WidgetSelectionResult> selectWidgetById(
+    BridgeSession session, {
+    required String widgetId,
+  }) async {
+    widgetSelectionRequests.add(RecordedWidgetSelectionRequest(
+      sessionId: session.id,
+      widgetId: widgetId,
+    ));
+
+    return WidgetSelectionResult(
+      widgetId: widgetId,
+      message: 'Widget selected.',
+    );
+  }
 }
 
 class RecordingFlutterAppController implements FlutterAppController {
@@ -764,4 +838,24 @@ class RecordedSelectWidgetModeRequest {
 
   @override
   int get hashCode => Object.hash(sessionId, enabled);
+}
+
+class RecordedWidgetSelectionRequest {
+  const RecordedWidgetSelectionRequest({
+    required this.sessionId,
+    required this.widgetId,
+  });
+
+  final String sessionId;
+  final String widgetId;
+
+  @override
+  bool operator ==(Object other) {
+    return other is RecordedWidgetSelectionRequest &&
+        other.sessionId == sessionId &&
+        other.widgetId == widgetId;
+  }
+
+  @override
+  int get hashCode => Object.hash(sessionId, widgetId);
 }

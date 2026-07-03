@@ -9,6 +9,7 @@ import {
   parseBridgeJsonResponse,
   resolveBridgeOrigin,
   setSelectWidgetMode,
+  selectWidgetById,
   subscribeToBridgeSessionEvents,
 } from './askUiBridgeClient.ts';
 
@@ -130,6 +131,43 @@ test('requests Select Widget mode status for a bridge session', async () => {
       status: 'ok',
       known: true,
       enabled: false,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('requests Flutter Inspector widget selection for a bridge session', async () => {
+  const requestedUrls: string[] = [];
+  const requestedBodies: unknown[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    requestedUrls.push(String(input));
+    requestedBodies.push(JSON.parse(String(init?.body)));
+    return new Response(
+      JSON.stringify({
+        status: 'ok',
+        widgetId: 'inspector-2',
+        message: 'Widget selected.',
+      }),
+    );
+  };
+
+  try {
+    const result = await selectWidgetById('session-1', 'inspector-2');
+
+    assert.deepEqual(requestedUrls, [
+      'http://127.0.0.1:8787/api/sessions/session-1/widget-selection',
+    ]);
+    assert.deepEqual(requestedBodies, [
+      {
+        widgetId: 'inspector-2',
+      },
+    ]);
+    assert.deepEqual(result, {
+      status: 'ok',
+      widgetId: 'inspector-2',
+      message: 'Widget selected.',
     });
   } finally {
     globalThis.fetch = originalFetch;

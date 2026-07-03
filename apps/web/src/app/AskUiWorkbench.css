@@ -315,6 +315,18 @@ body {
   box-shadow: 0 0 0 3px rgba(66, 184, 131, 0.12);
 }
 
+.widget-tree-selection-error {
+  margin: 0 12px 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(199, 71, 71, 0.24);
+  border-radius: 7px;
+  background: #fff8f7;
+  color: #9f312d;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .widget-tree-list {
   margin: 0;
   padding: 0;
@@ -370,8 +382,16 @@ body {
   border: 1px solid transparent;
   border-radius: 7px;
   color: #62748a;
+  cursor: pointer;
   font-size: 13px;
   font-weight: 600;
+}
+
+.widget-tree-row:hover,
+.widget-tree-row:focus-visible {
+  border-color: rgba(66, 184, 131, 0.28);
+  background: rgba(66, 184, 131, 0.08);
+  outline: none;
 }
 
 .widget-tree-row-app {

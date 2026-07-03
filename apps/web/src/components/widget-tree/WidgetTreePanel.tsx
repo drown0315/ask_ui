@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+} from 'react';
 import type { BridgeSessionState, WidgetTreeNode } from '../../types/bridgeSession';
 import {
   buildVisibleWidgetTreeRows,
@@ -186,7 +192,15 @@ function matchesWidget(label: string, patterns: string[]) {
   return patterns.some((pattern) => label.includes(pattern));
 }
 
-function WidgetTreeRows({ root }: { root: WidgetTreeNode }) {
+function WidgetTreeRows({
+  root,
+  selectedWidgetId,
+  onSelectWidget,
+}: {
+  root: WidgetTreeNode;
+  selectedWidgetId: string | null;
+  onSelectWidget: (widgetId: string) => void;
+}) {
   const allExpandableNodeIds = useMemo(() => collectExpandableNodeIds(root), [root]);
   const [expandedNodeIds, setExpandedNodeIds] = useState(
     () => new Set(allExpandableNodeIds),
@@ -228,10 +242,21 @@ function WidgetTreeRows({ root }: { root: WidgetTreeNode }) {
           <div
             aria-expanded={row.hasChildren ? isExpanded : undefined}
             aria-level={row.depth + 1}
-            className="widget-tree-row"
+            aria-selected={row.node.id === selectedWidgetId}
+            className={`widget-tree-row ${
+              row.node.id === selectedWidgetId ? 'widget-tree-row-selected' : ''
+            }`}
             key={row.id}
+            onClick={() => onSelectWidget(row.node.id)}
+            onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onSelectWidget(row.node.id);
+              }
+            }}
             role="treeitem"
             style={{ '--tree-depth': row.depth } as CSSProperties}
+            tabIndex={0}
           >
             <button
               aria-label={
@@ -241,11 +266,13 @@ function WidgetTreeRows({ root }: { root: WidgetTreeNode }) {
               }
               className="widget-tree-toggle"
               disabled={!row.hasChildren}
-              onClick={() => {
+              onClick={(event) => {
+                event.stopPropagation();
                 if (row.hasChildren) {
                   toggleNode(row.node.id);
                 }
               }}
+              onPointerDown={(event) => event.stopPropagation()}
               type="button"
             >
               {row.hasChildren ? (isExpanded ? '▾' : '▸') : ''}
@@ -268,7 +295,15 @@ function WidgetTreeRows({ root }: { root: WidgetTreeNode }) {
   );
 }
 
-function WidgetTreeSessionState({ state }: { state: BridgeSessionState }) {
+function WidgetTreeSessionState({
+  state,
+  selectedWidgetId,
+  onSelectWidget,
+}: {
+  state: BridgeSessionState;
+  selectedWidgetId: string | null;
+  onSelectWidget: (widgetId: string) => void;
+}) {
   if (state.status === 'incomplete') {
     return (
       <div className="widget-tree-state">
@@ -324,7 +359,11 @@ function WidgetTreeSessionState({ state }: { state: BridgeSessionState }) {
 
   return (
     <div className="widget-tree-root-list">
-      <WidgetTreeRows root={state.widgetTree.root} />
+      <WidgetTreeRows
+        root={state.widgetTree.root}
+        selectedWidgetId={selectedWidgetId}
+        onSelectWidget={onSelectWidget}
+      />
     </div>
   );
 }
@@ -332,11 +371,17 @@ function WidgetTreeSessionState({ state }: { state: BridgeSessionState }) {
 export function WidgetTreePanel({
   bridgeSessionState,
   canRefresh,
+  selectedWidgetId,
+  selectionError,
   onRefresh,
+  onSelectWidget,
 }: {
   bridgeSessionState: BridgeSessionState;
   canRefresh: boolean;
+  selectedWidgetId: string | null;
+  selectionError: string | null;
   onRefresh: () => void;
+  onSelectWidget: (widgetId: string) => void;
 }) {
   return (
     <aside className="workbench-panel widget-tree-panel">
@@ -367,7 +412,14 @@ export function WidgetTreePanel({
           type="search"
         />
       </div>
-      <WidgetTreeSessionState state={bridgeSessionState} />
+      {selectionError ? (
+        <div className="widget-tree-selection-error">{selectionError}</div>
+      ) : null}
+      <WidgetTreeSessionState
+        state={bridgeSessionState}
+        selectedWidgetId={selectedWidgetId}
+        onSelectWidget={onSelectWidget}
+      />
     </aside>
   );
 }

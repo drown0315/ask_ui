@@ -29,6 +29,25 @@ abstract class FlutterInspectorClient {
     BridgeSession session,
   );
 
+  /// Select one Flutter Inspector widget object by its diagnostics id.
+  ///
+  /// Args:
+  /// - `session`: Bridge session that identifies the running Flutter app.
+  /// - `widgetId`: Inspector object id from the Widget Tree response, usually
+  ///   the diagnostics `valueId`.
+  ///
+  /// Returns:
+  /// A small result containing the selected widget id and a user-facing
+  /// message. Invalid or stale ids are reported by the VM Service call.
+  ///
+  /// Example:
+  /// Selecting `inspector-2` calls
+  /// `ext.flutter.inspector.setSelectionById` with `arg=inspector-2`.
+  Future<WidgetSelectionResult> selectWidgetById(
+    BridgeSession session, {
+    required String widgetId,
+  });
+
   /// Watch Select Widget mode changes observed for one bridge session.
   ///
   /// Args:
@@ -160,6 +179,42 @@ class VmServiceFlutterInspectorClient implements FlutterInspectorClient {
     return SelectWidgetModeStatus(
       enabled: _selectWidgetModeBySession[session.id],
     );
+  }
+
+  @override
+  Future<WidgetSelectionResult> selectWidgetById(
+    BridgeSession session, {
+    required String widgetId,
+  }) async {
+    _logger.info(
+      'widget_selection session=${session.id} connect_vm_service widget=$widgetId',
+    );
+    final vmService = await _vmServiceFactory.connect(session.vmServiceUri);
+
+    try {
+      final isolateId = await vmService.findMainIsolateId();
+      _logger.info(
+        'widget_selection session=${session.id} isolate=$isolateId widget=$widgetId',
+      );
+      await vmService.callServiceExtension(
+        'ext.flutter.inspector.setSelectionById',
+        isolateId: isolateId,
+        args: {
+          'arg': widgetId,
+          'objectGroup': 'ask_ui_widget_tree',
+        },
+      );
+      _logger.info(
+        'widget_selection session=${session.id} selected widget=$widgetId',
+      );
+
+      return WidgetSelectionResult(
+        widgetId: widgetId,
+        message: 'Widget selected.',
+      );
+    } finally {
+      await vmService.dispose();
+    }
   }
 
   @override
@@ -304,6 +359,33 @@ class SelectWidgetModeResult {
     return {
       'status': 'ok',
       'enabled': enabled,
+      'message': message,
+    };
+  }
+}
+
+/// Result returned after Flutter Inspector accepts one selected widget id.
+///
+/// It contains:
+/// - the Inspector object id requested by the web Widget Tree
+/// - a short message for status display or logs
+///
+/// Example:
+/// Selecting the `Scaffold` row with id `inspector-2` returns
+/// `{status: ok, widgetId: inspector-2, message: Widget selected.}`.
+class WidgetSelectionResult {
+  const WidgetSelectionResult({
+    required this.widgetId,
+    required this.message,
+  });
+
+  final String widgetId;
+  final String message;
+
+  Map<String, Object?> toJson() {
+    return {
+      'status': 'ok',
+      'widgetId': widgetId,
       'message': message,
     };
   }

@@ -40,6 +40,12 @@ export type SelectWidgetModeStatusResponse = {
   enabled?: boolean;
 };
 
+export type WidgetSelectionResponse = {
+  status: 'ok';
+  widgetId: string;
+  message?: string;
+};
+
 export type BridgeSessionEvent = {
   type: 'select_widget_mode_snapshot' | 'select_widget_mode_changed';
   sessionId: string;
@@ -353,6 +359,58 @@ export async function getSelectWidgetModeStatus(
   }
 
   return body as SelectWidgetModeStatusResponse;
+}
+
+/**
+ * Select one Flutter Inspector widget object from the web Widget Tree.
+ *
+ * Args:
+ * - `sessionId`: Existing bridge session id for the running Flutter app.
+ * - `widgetId`: Inspector object id from the current Widget Tree snapshot.
+ *
+ * Returns:
+ * The bridge response containing the selected widget id. Stale ids reject with
+ * the bridge error message.
+ *
+ * Example:
+ * `selectWidgetById('session-1', 'inspector-2')` calls
+ * `/api/sessions/session-1/widget-selection` with
+ * `{widgetId: 'inspector-2'}`.
+ */
+export async function selectWidgetById(
+  sessionId: string,
+  widgetId: string,
+): Promise<WidgetSelectionResponse> {
+  const response = await fetch(
+    `${bridgeOrigin}/api/sessions/${encodeURIComponent(
+      sessionId,
+    )}/widget-selection`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ widgetId }),
+    },
+  );
+
+  const body = await parseBridgeJsonResponse<Partial<WidgetSelectionResponse>>(
+    response,
+    'Failed to select Flutter widget',
+  );
+
+  if (!response.ok) {
+    throw new BridgeRequestError(
+      body.message ?? body.error ?? 'Failed to select Flutter widget',
+      body.error,
+    );
+  }
+
+  if (body.status !== 'ok' || typeof body.widgetId !== 'string') {
+    throw new Error('Widget selection response did not include widgetId');
+  }
+
+  return body as WidgetSelectionResponse;
 }
 
 /**
