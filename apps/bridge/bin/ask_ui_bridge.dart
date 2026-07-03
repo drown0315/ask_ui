@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:ask_ui_bridge/inspector/flutter_inspector_client.dart';
 import 'package:ask_ui_bridge/server/ask_ui_bridge_server.dart';
 import 'package:ask_ui_bridge/sessions/session_store.dart';
 
@@ -7,7 +8,12 @@ Future<void> main(List<String> args) async {
   final host = _readOption(args, '--host') ?? InternetAddress.loopbackIPv4.host;
   final port = int.tryParse(_readOption(args, '--port') ?? '') ?? 8787;
 
-  final server = AskUiBridgeServer(sessionStore: SessionStore());
+  final server = AskUiBridgeServer(
+    sessionStore: SessionStore(),
+    inspectorClient: VmServiceFlutterInspectorClient(
+      vmServiceFactory: VmServiceFactory(),
+    ),
+  );
   final boundPort = await server.start(host: host, port: port);
 
   stdout.writeln('Ask UI bridge listening at http://$host:$boundPort');

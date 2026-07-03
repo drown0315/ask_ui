@@ -1,4 +1,40 @@
-import type { BridgeSessionState } from '../../types/bridgeSession';
+import type { CSSProperties } from 'react';
+import type { BridgeSessionState, WidgetTreeNode } from '../../types/bridgeSession';
+
+function WidgetTreeNodeRow({
+  node,
+  depth,
+}: {
+  node: WidgetTreeNode;
+  depth: number;
+}) {
+  return (
+    <li>
+      <div
+        className="widget-tree-row"
+        style={{ '--tree-depth': depth } as CSSProperties}
+      >
+        <span className="widget-tree-toggle" aria-hidden="true">
+          {node.children.length > 0 ? '▾' : ''}
+        </span>
+        <span className="widget-tree-branch" aria-hidden="true" />
+        <span className="widget-tree-badge" aria-hidden="true">
+          {node.label.slice(0, 1).toUpperCase()}
+        </span>
+        <span className="widget-tree-label" title={node.label}>
+          {node.label}
+        </span>
+      </div>
+      {node.children.length > 0 ? (
+        <ul className="widget-tree-list">
+          {node.children.map((child) => (
+            <WidgetTreeNodeRow key={child.id} node={child} depth={depth + 1} />
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
 
 function WidgetTreeSessionState({ state }: { state: BridgeSessionState }) {
   if (state.status === 'incomplete') {
@@ -34,14 +70,30 @@ function WidgetTreeSessionState({ state }: { state: BridgeSessionState }) {
     );
   }
 
-  return (
-    <div className="widget-tree-state">
-      <div className="widget-tree-state-title">Bridge session ready</div>
-      <div className="widget-tree-state-copy">
-        Session {state.sessionId} is ready. Real Flutter Widget Tree fetching is
-        handled by the next integration slice.
+  if (state.widgetTree.status === 'loading') {
+    return (
+      <div className="widget-tree-state">
+        <div className="widget-tree-state-title">Fetching Widget Tree</div>
+        <div className="widget-tree-state-copy">
+          Session {state.sessionId} is reading the Flutter Inspector summary tree.
+        </div>
       </div>
-    </div>
+    );
+  }
+
+  if (state.widgetTree.status === 'error') {
+    return (
+      <div className="widget-tree-state widget-tree-state-error">
+        <div className="widget-tree-state-title">Widget Tree failed</div>
+        <div className="widget-tree-state-copy">{state.widgetTree.message}</div>
+      </div>
+    );
+  }
+
+  return (
+    <ul className="widget-tree-list widget-tree-root-list">
+      <WidgetTreeNodeRow node={state.widgetTree.root} depth={0} />
+    </ul>
   );
 }
 
@@ -55,7 +107,7 @@ export function WidgetTreePanel({
       <div className="widget-tree-header">
         <div>
           <div className="widget-tree-title">Widget Tree</div>
-          <div className="widget-tree-subtitle">Bridge session bootstrap</div>
+          <div className="widget-tree-subtitle">Flutter Inspector summary</div>
         </div>
         <button
           aria-label="Refresh widget tree"

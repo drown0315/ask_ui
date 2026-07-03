@@ -10,7 +10,7 @@ import { DeviceStage } from '../components/device-stage/DeviceStage';
 import { SelectionNotesPanel } from '../components/selection-notes/SelectionNotesPanel';
 import { TopBar } from '../components/top-bar/TopBar';
 import { WidgetTreePanel } from '../components/widget-tree/WidgetTreePanel';
-import { createBridgeSession } from '../services/askUiBridgeClient';
+import { createBridgeSession, getWidgetTree } from '../services/askUiBridgeClient';
 import { readSessionBootstrap } from '../session/sessionBootstrap';
 import type { BridgeSessionState } from '../types/bridgeSession';
 
@@ -57,8 +57,8 @@ export function AskUiWorkbench() {
     createBridgeSession({
       vmServiceUri: bootstrap.vmServiceUri,
       projectRoot: bootstrap.projectRoot,
-    })
-      .then(({ sessionId }) => {
+    }).then(
+      ({ sessionId }) => {
         if (!isCurrent) {
           return;
         }
@@ -66,9 +66,46 @@ export function AskUiWorkbench() {
         setBridgeSessionState({
           status: 'ready',
           sessionId,
+          widgetTree: {
+            status: 'loading',
+          },
         });
-      })
-      .catch((error: unknown) => {
+
+        getWidgetTree(sessionId).then(
+          ({ root }) => {
+            if (!isCurrent) {
+              return;
+            }
+
+            setBridgeSessionState({
+              status: 'ready',
+              sessionId,
+              widgetTree: {
+                status: 'loaded',
+                root,
+              },
+            });
+          },
+          (error: unknown) => {
+            if (!isCurrent) {
+              return;
+            }
+
+            setBridgeSessionState({
+              status: 'ready',
+              sessionId,
+              widgetTree: {
+                status: 'error',
+                message:
+                  error instanceof Error
+                    ? error.message
+                    : 'Failed to fetch Flutter Widget Tree',
+              },
+            });
+          },
+        );
+      },
+      (error: unknown) => {
         if (!isCurrent) {
           return;
         }
@@ -80,7 +117,8 @@ export function AskUiWorkbench() {
               ? error.message
               : 'Failed to create Ask UI bridge session',
         });
-      });
+      },
+    );
 
     return () => {
       isCurrent = false;

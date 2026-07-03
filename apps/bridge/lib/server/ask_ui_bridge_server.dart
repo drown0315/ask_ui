@@ -1,13 +1,18 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../inspector/flutter_inspector_client.dart';
 import '../sessions/session_store.dart';
 
 class AskUiBridgeServer {
-  AskUiBridgeServer({required SessionStore sessionStore})
-      : _sessionStore = sessionStore;
+  AskUiBridgeServer({
+    required SessionStore sessionStore,
+    required FlutterInspectorClient inspectorClient,
+  })  : _sessionStore = sessionStore,
+        _inspectorClient = inspectorClient;
 
   final SessionStore _sessionStore;
+  final FlutterInspectorClient _inspectorClient;
   HttpServer? _server;
 
   Future<int> start({required String host, required int port}) async {
@@ -33,6 +38,15 @@ class AskUiBridgeServer {
 
     if (request.method == 'POST' && request.uri.path == '/api/sessions') {
       await _createSession(request);
+      return;
+    }
+
+    if (request.method == 'GET' &&
+        request.uri.pathSegments.length == 4 &&
+        request.uri.pathSegments[0] == 'api' &&
+        request.uri.pathSegments[1] == 'sessions' &&
+        request.uri.pathSegments[3] == 'widget-tree') {
+      await _getWidgetTree(request);
       return;
     }
 
@@ -88,6 +102,37 @@ class AskUiBridgeServer {
         request.response,
         statusCode: HttpStatus.badRequest,
         body: {'error': 'missing_session_parameters'},
+      );
+    }
+  }
+
+  Future<void> _getWidgetTree(HttpRequest request) async {
+    final sessionId = request.uri.pathSegments[2];
+    final session = _sessionStore.find(sessionId);
+
+    if (session == null) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notFound,
+        body: {'error': 'session_not_found'},
+      );
+      return;
+    }
+
+    try {
+      final root = await _inspectorClient.fetchRootWidgetTree(session);
+      await _writeJson(
+        request.response,
+        body: {'root': root.toJson()},
+      );
+    } catch (error) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badGateway,
+        body: {
+          'error': 'widget_tree_fetch_failed',
+          'message': error.toString(),
+        },
       );
     }
   }
