@@ -10,6 +10,12 @@ import {
   buildVisibleWidgetTreeRows,
   collectExpandableNodeIds,
 } from './widgetTreeRows';
+import {
+  collectAncestorNodeIds,
+  findWidgetTreeMatches,
+  getNextMatchIndex,
+  type WidgetTreeSearchMatch,
+} from './widgetTreeSearch';
 
 type WidgetTreeIconKind =
   | 'app'
@@ -195,10 +201,14 @@ function matchesWidget(label: string, patterns: string[]) {
 function WidgetTreeRows({
   root,
   selectedWidgetId,
+  searchActiveWidgetId,
+  searchExpandedAncestorIds,
   onSelectWidget,
 }: {
   root: WidgetTreeNode;
   selectedWidgetId: string | null;
+  searchActiveWidgetId: string | null;
+  searchExpandedAncestorIds: string[];
   onSelectWidget: (widgetId: string) => void;
 }) {
   const allExpandableNodeIds = useMemo(() => collectExpandableNodeIds(root), [root]);
@@ -217,6 +227,22 @@ function WidgetTreeRows({
   useEffect(() => {
     setExpandedNodeIds(new Set(allExpandableNodeIds));
   }, [allExpandableNodeIds]);
+
+  useEffect(() => {
+    if (searchExpandedAncestorIds.length === 0) {
+      return;
+    }
+
+    setExpandedNodeIds((current) => {
+      const next = new Set(current);
+
+      for (const nodeId of searchExpandedAncestorIds) {
+        next.add(nodeId);
+      }
+
+      return next;
+    });
+  }, [searchExpandedAncestorIds]);
 
   function toggleNode(nodeId: string) {
     setExpandedNodeIds((current) => {
@@ -245,6 +271,10 @@ function WidgetTreeRows({
             aria-selected={row.node.id === selectedWidgetId}
             className={`widget-tree-row ${
               row.node.id === selectedWidgetId ? 'widget-tree-row-selected' : ''
+            } ${
+              row.node.id === searchActiveWidgetId
+                ? 'widget-tree-row-search-active'
+                : ''
             }`}
             key={row.id}
             onClick={() => onSelectWidget(row.node.id)}
@@ -298,10 +328,14 @@ function WidgetTreeRows({
 function WidgetTreeSessionState({
   state,
   selectedWidgetId,
+  searchActiveWidgetId,
+  searchExpandedAncestorIds,
   onSelectWidget,
 }: {
   state: BridgeSessionState;
   selectedWidgetId: string | null;
+  searchActiveWidgetId: string | null;
+  searchExpandedAncestorIds: string[];
   onSelectWidget: (widgetId: string) => void;
 }) {
   if (state.status === 'incomplete') {
@@ -362,6 +396,8 @@ function WidgetTreeSessionState({
       <WidgetTreeRows
         root={state.widgetTree.root}
         selectedWidgetId={selectedWidgetId}
+        searchActiveWidgetId={searchActiveWidgetId}
+        searchExpandedAncestorIds={searchExpandedAncestorIds}
         onSelectWidget={onSelectWidget}
       />
     </div>
@@ -371,18 +407,44 @@ function WidgetTreeSessionState({
 export function WidgetTreePanel({
   bridgeSessionState,
   canRefresh,
+  searchQuery,
+  searchMatches,
+  searchActiveIndex,
+  searchActiveWidgetId,
   selectedWidgetId,
   selectionError,
   onRefresh,
+  onSearchQueryChange,
+  onSearchNext,
+  onSearchPrevious,
   onSelectWidget,
 }: {
   bridgeSessionState: BridgeSessionState;
   canRefresh: boolean;
+  searchQuery: string;
+  searchMatches: WidgetTreeSearchMatch[];
+  searchActiveIndex: number;
+  searchActiveWidgetId: string | null;
   selectedWidgetId: string | null;
   selectionError: string | null;
   onRefresh: () => void;
+  onSearchQueryChange: (query: string) => void;
+  onSearchNext: () => void;
+  onSearchPrevious: () => void;
   onSelectWidget: (widgetId: string) => void;
 }) {
+  const searchExpandedAncestorIds = useMemo(
+    () => collectAncestorNodeIds(searchMatches),
+    [searchMatches],
+  );
+  const hasSearchQuery = searchQuery.trim().length > 0;
+  const searchCounter =
+    hasSearchQuery && searchMatches.length > 0
+      ? `${searchActiveIndex + 1}/${searchMatches.length}`
+      : hasSearchQuery
+        ? `0/0`
+        : '';
+
   return (
     <aside className="workbench-panel widget-tree-panel">
       <div className="widget-tree-header">
@@ -408,9 +470,40 @@ export function WidgetTreePanel({
         <input
           aria-label="Search widget tree"
           className="widget-tree-search-input"
+          onChange={(event) => onSearchQueryChange(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              onSearchNext();
+            }
+          }}
           placeholder="Search widgets"
+          value={searchQuery}
           type="search"
         />
+        {searchCounter ? (
+          <span className="widget-tree-search-counter">{searchCounter}</span>
+        ) : null}
+        {hasSearchQuery ? (
+          <div className="widget-tree-search-actions">
+            <button
+              aria-label="Previous widget tree search match"
+              className="widget-tree-search-action widget-tree-search-action-previous"
+              disabled={searchMatches.length === 0}
+              onClick={onSearchPrevious}
+              title="Previous match"
+              type="button"
+            />
+            <button
+              aria-label="Next widget tree search match"
+              className="widget-tree-search-action widget-tree-search-action-next"
+              disabled={searchMatches.length === 0}
+              onClick={onSearchNext}
+              title="Next match"
+              type="button"
+            />
+          </div>
+        ) : null}
       </div>
       {selectionError ? (
         <div className="widget-tree-selection-error">{selectionError}</div>
@@ -418,6 +511,8 @@ export function WidgetTreePanel({
       <WidgetTreeSessionState
         state={bridgeSessionState}
         selectedWidgetId={selectedWidgetId}
+        searchActiveWidgetId={searchActiveWidgetId}
+        searchExpandedAncestorIds={searchExpandedAncestorIds}
         onSelectWidget={onSelectWidget}
       />
     </aside>

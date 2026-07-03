@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -17,6 +18,11 @@ import {
   type TopBarActionState,
 } from '../components/top-bar/topBarActions';
 import { WidgetTreePanel } from '../components/widget-tree/WidgetTreePanel';
+import {
+  findWidgetTreeMatches,
+  getNextMatchIndex,
+  getPreviousMatchIndex,
+} from '../components/widget-tree/widgetTreeSearch';
 import {
   BridgeRequestError,
   createBridgeSession,
@@ -48,6 +54,8 @@ export function AskUiWorkbench() {
   const [widgetSelectionError, setWidgetSelectionError] = useState<string | null>(
     null,
   );
+  const [widgetSearchQuery, setWidgetSearchQuery] = useState('');
+  const [widgetSearchActiveIndex, setWidgetSearchActiveIndex] = useState(-1);
   const [bridgeSessionState, setBridgeSessionState] = useState<BridgeSessionState>(() => {
     const bootstrap = readSessionBootstrap(window.location.href);
 
@@ -74,6 +82,23 @@ export function AskUiWorkbench() {
   });
   const readySessionId =
     bridgeSessionState.status === 'ready' ? bridgeSessionState.sessionId : null;
+  const widgetSearchMatches = useMemo(() => {
+    if (
+      bridgeSessionState.status !== 'ready' ||
+      bridgeSessionState.widgetTree.status !== 'loaded'
+    ) {
+      return [];
+    }
+
+    return findWidgetTreeMatches(
+      bridgeSessionState.widgetTree.root,
+      widgetSearchQuery,
+    );
+  }, [bridgeSessionState, widgetSearchQuery]);
+  const widgetSearchActiveWidgetId =
+    widgetSearchActiveIndex >= 0
+      ? widgetSearchMatches[widgetSearchActiveIndex]?.nodeId ?? null
+      : null;
 
   useEffect(() => {
     const bootstrap = readSessionBootstrap(window.location.href);
@@ -360,6 +385,59 @@ export function AskUiWorkbench() {
     }
   }
 
+  function selectWidgetSearchMatch(nextIndex: number) {
+    const match = widgetSearchMatches[nextIndex];
+
+    if (!match) {
+      setWidgetSearchActiveIndex(-1);
+      return;
+    }
+
+    setWidgetSearchActiveIndex(nextIndex);
+    void handleSelectWidgetFromTree(match.nodeId);
+  }
+
+  function handleWidgetSearchQueryChange(query: string) {
+    setWidgetSearchQuery(query);
+
+    if (!query.trim()) {
+      setWidgetSearchActiveIndex(-1);
+      return;
+    }
+
+    const matches =
+      bridgeSessionState.status === 'ready' &&
+      bridgeSessionState.widgetTree.status === 'loaded'
+        ? findWidgetTreeMatches(bridgeSessionState.widgetTree.root, query)
+        : [];
+
+    if (matches.length === 0) {
+      setWidgetSearchActiveIndex(-1);
+      return;
+    }
+
+    setWidgetSearchActiveIndex(0);
+    void handleSelectWidgetFromTree(matches[0].nodeId);
+  }
+
+  function handleWidgetSearchNext() {
+    const nextIndex = getNextMatchIndex({
+      currentIndex: widgetSearchActiveIndex,
+      total: widgetSearchMatches.length,
+    });
+
+    selectWidgetSearchMatch(nextIndex);
+  }
+
+  function handleWidgetSearchPrevious() {
+    const previousIndex = getPreviousMatchIndex({
+      currentIndex: widgetSearchActiveIndex,
+      total: widgetSearchMatches.length,
+    });
+
+    selectWidgetSearchMatch(previousIndex);
+  }
+
   function handleToggleSelectWidget() {
     if (bridgeSessionState.status !== 'ready') {
       setTopBarActionState((state) => ({
@@ -394,6 +472,7 @@ export function AskUiWorkbench() {
     }));
     setSelectedWidgetId(null);
     setWidgetSelectionError(null);
+    setWidgetSearchActiveIndex(-1);
     setBridgeSessionState({
       status: 'ready',
       sessionId,
@@ -465,6 +544,7 @@ export function AskUiWorkbench() {
 
     setSelectedWidgetId(null);
     setWidgetSelectionError(null);
+    setWidgetSearchActiveIndex(-1);
     setBridgeSessionState({
       status: 'ready',
       sessionId,
@@ -557,9 +637,16 @@ export function AskUiWorkbench() {
             bridgeSessionState.status === 'ready' &&
             bridgeSessionState.widgetTree.status !== 'loading'
           }
+          searchQuery={widgetSearchQuery}
+          searchMatches={widgetSearchMatches}
+          searchActiveIndex={widgetSearchActiveIndex}
+          searchActiveWidgetId={widgetSearchActiveWidgetId}
           selectedWidgetId={selectedWidgetId}
           selectionError={widgetSelectionError}
           onRefresh={handleRefreshWidgetTree}
+          onSearchQueryChange={handleWidgetSearchQueryChange}
+          onSearchNext={handleWidgetSearchNext}
+          onSearchPrevious={handleWidgetSearchPrevious}
           onSelectWidget={handleSelectWidgetFromTree}
         />
         <div
