@@ -62,6 +62,24 @@ class AskUiBridgeServer {
         request.uri.pathSegments.length == 4 &&
         request.uri.pathSegments[0] == 'api' &&
         request.uri.pathSegments[1] == 'sessions' &&
+        request.uri.pathSegments[3] == 'select-widget-mode') {
+      await _setSelectWidgetMode(request);
+      return;
+    }
+
+    if (request.method == 'GET' &&
+        request.uri.pathSegments.length == 4 &&
+        request.uri.pathSegments[0] == 'api' &&
+        request.uri.pathSegments[1] == 'sessions' &&
+        request.uri.pathSegments[3] == 'select-widget-mode') {
+      await _getSelectWidgetMode(request);
+      return;
+    }
+
+    if (request.method == 'POST' &&
+        request.uri.pathSegments.length == 4 &&
+        request.uri.pathSegments[0] == 'api' &&
+        request.uri.pathSegments[1] == 'sessions' &&
         request.uri.pathSegments[3] == 'hot-reload') {
       await _hotReload(request);
       return;
@@ -192,6 +210,101 @@ class AskUiBridgeServer {
         statusCode: HttpStatus.badGateway,
         body: {
           'error': 'hot_reload_failed',
+          'message': error.toString(),
+        },
+      );
+    }
+  }
+
+  Future<void> _setSelectWidgetMode(HttpRequest request) async {
+    final sessionId = request.uri.pathSegments[2];
+    final session = _sessionStore.find(sessionId);
+
+    if (session == null) {
+      _logger
+          .info('select_widget request session=$sessionId session_not_found');
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notFound,
+        body: {'error': 'session_not_found'},
+      );
+      return;
+    }
+
+    late final bool enabled;
+    try {
+      final rawBody = await utf8.decodeStream(request);
+      final decoded = jsonDecode(rawBody);
+      if (decoded is! Map<String, Object?> || decoded['enabled'] is! bool) {
+        throw const FormatException('Expected enabled boolean');
+      }
+      enabled = decoded['enabled']! as bool;
+    } on FormatException {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'invalid_select_widget_mode_request'},
+      );
+      return;
+    }
+
+    _logger.info(
+      'select_widget request session=$sessionId start enabled=$enabled',
+    );
+    try {
+      final result = await _inspectorClient.setSelectWidgetMode(
+        session,
+        enabled: enabled,
+      );
+      await _writeJson(
+        request.response,
+        body: result.toJson(),
+      );
+      _logger.info(
+        'select_widget request session=$sessionId success enabled=$enabled',
+      );
+    } catch (error) {
+      _logger
+          .info('select_widget request session=$sessionId failed error=$error');
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badGateway,
+        body: {
+          'error': 'select_widget_mode_failed',
+          'message': error.toString(),
+        },
+      );
+    }
+  }
+
+  Future<void> _getSelectWidgetMode(HttpRequest request) async {
+    final sessionId = request.uri.pathSegments[2];
+    final session = _sessionStore.find(sessionId);
+
+    if (session == null) {
+      _logger.info('select_widget status session=$sessionId session_not_found');
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notFound,
+        body: {'error': 'session_not_found'},
+      );
+      return;
+    }
+
+    try {
+      final status = await _inspectorClient.getSelectWidgetModeStatus(session);
+      await _writeJson(
+        request.response,
+        body: status.toJson(),
+      );
+    } catch (error) {
+      _logger
+          .info('select_widget status session=$sessionId failed error=$error');
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badGateway,
+        body: {
+          'error': 'select_widget_mode_status_failed',
           'message': error.toString(),
         },
       );

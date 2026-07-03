@@ -28,6 +28,18 @@ export type HotRestartSessionResponse = {
   message?: string;
 };
 
+export type SelectWidgetModeResponse = {
+  status: 'ok';
+  enabled: boolean;
+  message?: string;
+};
+
+export type SelectWidgetModeStatusResponse = {
+  status: 'ok';
+  known: boolean;
+  enabled?: boolean;
+};
+
 const defaultBridgeOrigin = 'http://127.0.0.1:8787';
 
 export class BridgeRequestError extends Error {
@@ -232,6 +244,96 @@ export async function hotRestartSession(
     'hot-restart',
     'Failed to hot restart Flutter app',
   );
+}
+
+/**
+ * Enable or disable Flutter Inspector Select Widget mode for one session.
+ *
+ * Args:
+ * - `sessionId`: Existing bridge session id for the running Flutter app.
+ * - `enabled`: `true` asks Flutter Inspector to show Select Widget mode;
+ *   `false` hides it.
+ *
+ * Returns:
+ * The bridge action response including the enabled state accepted by the
+ * bridge.
+ */
+export async function setSelectWidgetMode(
+  sessionId: string,
+  enabled: boolean,
+): Promise<SelectWidgetModeResponse> {
+  const response = await fetch(
+    `${bridgeOrigin}/api/sessions/${encodeURIComponent(
+      sessionId,
+    )}/select-widget-mode`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ enabled }),
+    },
+  );
+
+  const body = await parseBridgeJsonResponse<Partial<SelectWidgetModeResponse>>(
+    response,
+    'Failed to set Select Widget mode',
+  );
+
+  if (!response.ok) {
+    throw new BridgeRequestError(
+      body.message ?? body.error ?? 'Failed to set Select Widget mode',
+      body.error,
+    );
+  }
+
+  if (body.status !== 'ok' || typeof body.enabled !== 'boolean') {
+    throw new Error('Select Widget mode response did not include enabled state');
+  }
+
+  return body as SelectWidgetModeResponse;
+}
+
+/**
+ * Fetch the last Select Widget mode state observed by the Dart bridge.
+ *
+ * Args:
+ * - `sessionId`: Existing bridge session id for the running Flutter app.
+ *
+ * Returns:
+ * `{known: false}` when the bridge has not observed a Flutter Inspector state
+ * event yet. Once known, `enabled` mirrors the current Inspector mode reported
+ * by the app, including changes made by DevTools or another VM Service client.
+ */
+export async function getSelectWidgetModeStatus(
+  sessionId: string,
+): Promise<SelectWidgetModeStatusResponse> {
+  const response = await fetch(
+    `${bridgeOrigin}/api/sessions/${encodeURIComponent(
+      sessionId,
+    )}/select-widget-mode`,
+  );
+
+  const body = await parseBridgeJsonResponse<
+    Partial<SelectWidgetModeStatusResponse>
+  >(response, 'Failed to fetch Select Widget mode status');
+
+  if (!response.ok) {
+    throw new BridgeRequestError(
+      body.message ?? body.error ?? 'Failed to fetch Select Widget mode status',
+      body.error,
+    );
+  }
+
+  if (body.status !== 'ok' || typeof body.known !== 'boolean') {
+    throw new Error('Select Widget mode status response did not include known');
+  }
+
+  if (body.known && typeof body.enabled !== 'boolean') {
+    throw new Error('Known Select Widget mode status did not include enabled');
+  }
+
+  return body as SelectWidgetModeStatusResponse;
 }
 
 async function postSessionAction<T extends { status: 'ok' }>(

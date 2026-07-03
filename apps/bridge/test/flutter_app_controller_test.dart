@@ -322,6 +322,13 @@ class RecordingHotReloadVmService implements FlutterInspectorVmService {
   Future<void> dispose() async {
     disposed = true;
   }
+
+  @override
+  Future<void> listenToServiceExtensionStateChanges(
+    void Function(FlutterServiceExtensionStateChange change) onChange,
+  ) {
+    throw UnimplementedError();
+  }
 }
 
 class RecordedRegisteredServiceWait {

@@ -7,6 +7,7 @@ export type WorkbenchActionState = {
 
 export type TopBarActionState = {
   isSelectWidgetActive: boolean;
+  selectWidget: WorkbenchActionState;
   hotReload: WorkbenchActionState;
   hotRestart: WorkbenchActionState;
 };
@@ -15,6 +16,9 @@ export type SessionActionName = 'hotReload' | 'hotRestart';
 
 export const initialTopBarActionState: TopBarActionState = {
   isSelectWidgetActive: false,
+  selectWidget: {
+    status: 'idle',
+  },
   hotReload: {
     status: 'idle',
   },
@@ -24,9 +28,17 @@ export const initialTopBarActionState: TopBarActionState = {
 };
 
 export function toggleSelectWidgetMode(state: TopBarActionState): TopBarActionState {
+  const nextActive = !state.isSelectWidgetActive;
+
   return {
     ...state,
-    isSelectWidgetActive: !state.isSelectWidgetActive,
+    isSelectWidgetActive: nextActive,
+    selectWidget: {
+      status: 'idle',
+      message: nextActive
+        ? 'Select Widget mode enabled.'
+        : 'Select Widget mode disabled.',
+    },
   };
 }
 
@@ -47,6 +59,10 @@ export function markSessionActionUnavailable(
 }
 
 export function getTopBarStatusMessage(state: TopBarActionState): string {
+  if (state.selectWidget.status === 'running') {
+    return 'Select Widget mode updating';
+  }
+
   if (state.hotReload.status === 'running') {
     return 'Hot reload running';
   }
@@ -61,6 +77,10 @@ export function getTopBarStatusMessage(state: TopBarActionState): string {
 
   if (state.hotRestart.message) {
     return state.hotRestart.message;
+  }
+
+  if (state.selectWidget.message) {
+    return state.selectWidget.message;
   }
 
   if (state.isSelectWidgetActive) {

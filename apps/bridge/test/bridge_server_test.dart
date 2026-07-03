@@ -291,6 +291,136 @@ void main() {
       );
     });
 
+    test('sets Select Widget mode for an existing session', () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+
+      final createRequest =
+          await client.postUrl(baseUri.resolve('/api/sessions'));
+      createRequest.headers.contentType = ContentType.json;
+      createRequest.write(
+        jsonEncode({
+          'vmServiceUri': 'ws://127.0.0.1:12345/ws',
+          'projectRoot': '/Users/example/app',
+        }),
+      );
+
+      final createResponse = await createRequest.close();
+      final createBody = jsonDecode(await utf8.decodeStream(createResponse))
+          as Map<String, Object?>;
+      final sessionId = createBody['sessionId']! as String;
+
+      final selectRequest = await client.postUrl(
+        baseUri.resolve('/api/sessions/$sessionId/select-widget-mode'),
+      );
+      selectRequest.headers.contentType = ContentType.json;
+      selectRequest.write(jsonEncode({'enabled': true}));
+
+      final selectResponse = await selectRequest.close();
+      final selectBody = jsonDecode(await utf8.decodeStream(selectResponse))
+          as Map<String, Object?>;
+
+      expect(selectResponse.statusCode, HttpStatus.ok);
+      expect(inspectorClient.selectWidgetModeRequests, [
+        const RecordedSelectWidgetModeRequest(
+          sessionId: 'session-1',
+          enabled: true,
+        ),
+      ]);
+      expect(selectBody, {
+        'status': 'ok',
+        'enabled': true,
+        'message': 'Select Widget mode enabled.',
+      });
+      expect(
+        logs,
+        contains(
+          '[ask_ui_bridge] select_widget request session=$sessionId start enabled=true',
+        ),
+      );
+      expect(
+        logs,
+        contains(
+          '[ask_ui_bridge] select_widget request session=$sessionId success enabled=true',
+        ),
+      );
+    });
+
+    test('returns cached Select Widget mode status for an existing session',
+        () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+      inspectorClient.selectWidgetModeStatus = true;
+
+      final createRequest =
+          await client.postUrl(baseUri.resolve('/api/sessions'));
+      createRequest.headers.contentType = ContentType.json;
+      createRequest.write(
+        jsonEncode({
+          'vmServiceUri': 'ws://127.0.0.1:12345/ws',
+          'projectRoot': '/Users/example/app',
+        }),
+      );
+
+      final createResponse = await createRequest.close();
+      final createBody = jsonDecode(await utf8.decodeStream(createResponse))
+          as Map<String, Object?>;
+      final sessionId = createBody['sessionId']! as String;
+
+      final statusRequest = await client.getUrl(
+        baseUri.resolve('/api/sessions/$sessionId/select-widget-mode'),
+      );
+      final statusResponse = await statusRequest.close();
+      final statusBody = jsonDecode(await utf8.decodeStream(statusResponse))
+          as Map<String, Object?>;
+
+      expect(statusResponse.statusCode, HttpStatus.ok);
+      expect(inspectorClient.selectWidgetModeStatusSessionIds, [sessionId]);
+      expect(statusBody, {
+        'status': 'ok',
+        'known': true,
+        'enabled': true,
+      });
+    });
+
+    test('rejects Select Widget mode requests without an enabled boolean',
+        () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+
+      final createRequest =
+          await client.postUrl(baseUri.resolve('/api/sessions'));
+      createRequest.headers.contentType = ContentType.json;
+      createRequest.write(
+        jsonEncode({
+          'vmServiceUri': 'ws://127.0.0.1:12345/ws',
+          'projectRoot': '/Users/example/app',
+        }),
+      );
+
+      final createResponse = await createRequest.close();
+      final createBody = jsonDecode(await utf8.decodeStream(createResponse))
+          as Map<String, Object?>;
+      final sessionId = createBody['sessionId']! as String;
+
+      final selectRequest = await client.postUrl(
+        baseUri.resolve('/api/sessions/$sessionId/select-widget-mode'),
+      );
+      selectRequest.headers.contentType = ContentType.json;
+      selectRequest.write(jsonEncode({'enabled': 'true'}));
+
+      final selectResponse = await selectRequest.close();
+      final selectBody = jsonDecode(await utf8.decodeStream(selectResponse))
+          as Map<String, Object?>;
+
+      expect(selectResponse.statusCode, HttpStatus.badRequest);
+      expect(
+        selectBody,
+        containsPair('error', 'invalid_select_widget_mode_request'),
+      );
+      expect(inspectorClient.selectWidgetModeRequests, isEmpty);
+    });
+
     test('returns hot restart failures from the app controller', () async {
       final client = HttpClient();
       addTearDown(client.close);
@@ -370,7 +500,10 @@ void main() {
 
 class RecordingFlutterInspectorClient implements FlutterInspectorClient {
   final requestedSessionIds = <String>[];
+  final selectWidgetModeRequests = <RecordedSelectWidgetModeRequest>[];
+  final selectWidgetModeStatusSessionIds = <String>[];
   Exception? failure;
+  bool? selectWidgetModeStatus;
 
   @override
   Future<WidgetTreeNode> fetchRootWidgetTree(BridgeSession session) async {
@@ -392,6 +525,32 @@ class RecordingFlutterInspectorClient implements FlutterInspectorClient {
         ),
       ],
     );
+  }
+
+  @override
+  Future<SelectWidgetModeResult> setSelectWidgetMode(
+    BridgeSession session, {
+    required bool enabled,
+  }) async {
+    selectWidgetModeRequests.add(RecordedSelectWidgetModeRequest(
+      sessionId: session.id,
+      enabled: enabled,
+    ));
+
+    return SelectWidgetModeResult(
+      enabled: enabled,
+      message: enabled
+          ? 'Select Widget mode enabled.'
+          : 'Select Widget mode disabled.',
+    );
+  }
+
+  @override
+  Future<SelectWidgetModeStatus> getSelectWidgetModeStatus(
+    BridgeSession session,
+  ) async {
+    selectWidgetModeStatusSessionIds.add(session.id);
+    return SelectWidgetModeStatus(enabled: selectWidgetModeStatus);
   }
 }
 
@@ -431,4 +590,24 @@ class RecordingFlutterAppController implements FlutterAppController {
       'Hot restart is not available for this bridge session.',
     );
   }
+}
+
+class RecordedSelectWidgetModeRequest {
+  const RecordedSelectWidgetModeRequest({
+    required this.sessionId,
+    required this.enabled,
+  });
+
+  final String sessionId;
+  final bool enabled;
+
+  @override
+  bool operator ==(Object other) {
+    return other is RecordedSelectWidgetModeRequest &&
+        other.sessionId == sessionId &&
+        other.enabled == enabled;
+  }
+
+  @override
+  int get hashCode => Object.hash(sessionId, enabled);
 }

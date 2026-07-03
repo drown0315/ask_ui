@@ -20,9 +20,11 @@ import { WidgetTreePanel } from '../components/widget-tree/WidgetTreePanel';
 import {
   BridgeRequestError,
   createBridgeSession,
+  getSelectWidgetModeStatus,
   getWidgetTree,
   hotReloadSession,
   hotRestartSession,
+  setSelectWidgetMode,
 } from '../services/askUiBridgeClient';
 import { readSessionBootstrap } from '../session/sessionBootstrap';
 import type { BridgeSessionState, WidgetTreeLoadState } from '../types/bridgeSession';
@@ -59,6 +61,13 @@ export function AskUiWorkbench() {
     startX: number;
     startWidth: number;
   } | null>(null);
+  const selectWidgetSyncRef = useRef({
+    didMount: false,
+    previousActive: topBarActionState.isSelectWidgetActive,
+    skipNextSync: false,
+  });
+  const readySessionId =
+    bridgeSessionState.status === 'ready' ? bridgeSessionState.sessionId : null;
 
   useEffect(() => {
     const bootstrap = readSessionBootstrap(window.location.href);
@@ -141,6 +150,141 @@ export function AskUiWorkbench() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!selectWidgetSyncRef.current.didMount) {
+      selectWidgetSyncRef.current.didMount = true;
+      selectWidgetSyncRef.current.previousActive =
+        topBarActionState.isSelectWidgetActive;
+      return;
+    }
+
+    if (selectWidgetSyncRef.current.skipNextSync) {
+      selectWidgetSyncRef.current.skipNextSync = false;
+      selectWidgetSyncRef.current.previousActive =
+        topBarActionState.isSelectWidgetActive;
+      return;
+    }
+
+    if (
+      selectWidgetSyncRef.current.previousActive ===
+      topBarActionState.isSelectWidgetActive
+    ) {
+      return;
+    }
+
+    selectWidgetSyncRef.current.previousActive =
+      topBarActionState.isSelectWidgetActive;
+
+    if (readySessionId === null) {
+      return;
+    }
+
+    let isCurrent = true;
+    const enabled = topBarActionState.isSelectWidgetActive;
+
+    setTopBarActionState((state) => ({
+      ...state,
+      selectWidget: {
+        status: 'running',
+      },
+    }));
+
+    setSelectWidgetMode(readySessionId, enabled).then(
+      () => {
+        if (!isCurrent) {
+          return;
+        }
+
+        setTopBarActionState((state) => ({
+          ...state,
+          selectWidget: {
+            status: 'idle',
+            message: enabled
+              ? 'Select Widget mode enabled.'
+              : 'Select Widget mode disabled.',
+          },
+        }));
+      },
+      (error: unknown) => {
+        if (!isCurrent) {
+          return;
+        }
+
+        selectWidgetSyncRef.current.skipNextSync = true;
+        setTopBarActionState((state) => ({
+          ...state,
+          isSelectWidgetActive: !enabled,
+          selectWidget: {
+            status: 'failed',
+            message:
+              error instanceof Error
+                ? error.message
+                : 'Failed to set Select Widget mode',
+          },
+        }));
+      },
+    );
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [readySessionId, topBarActionState.isSelectWidgetActive]);
+
+  useEffect(() => {
+    if (readySessionId === null) {
+      return;
+    }
+
+    let isCurrent = true;
+
+    async function syncSelectWidgetModeStatus() {
+      if (readySessionId === null) {
+        return;
+      }
+
+      try {
+        const status = await getSelectWidgetModeStatus(readySessionId);
+        if (
+          !isCurrent ||
+          !status.known ||
+          typeof status.enabled !== 'boolean'
+        ) {
+          return;
+        }
+
+        const externalEnabled = status.enabled;
+        setTopBarActionState((state) => {
+          if (state.isSelectWidgetActive === externalEnabled) {
+            return state;
+          }
+
+          selectWidgetSyncRef.current.skipNextSync = true;
+          return {
+            ...state,
+            isSelectWidgetActive: externalEnabled,
+            selectWidget: {
+              status: 'idle',
+              message: externalEnabled
+                ? 'Select Widget mode enabled.'
+                : 'Select Widget mode disabled.',
+            },
+          };
+        });
+      } catch {
+        // Status polling is best-effort. Explicit user actions still surface
+        // request failures through the top bar.
+      }
+    }
+
+    void syncSelectWidgetModeStatus();
+    const intervalId = window.setInterval(syncSelectWidgetModeStatus, 1000);
+
+    return () => {
+      isCurrent = false;
+      window.clearInterval(intervalId);
+    };
+  }, [readySessionId]);
+
   function handleResizePointerDown(event: PointerEvent<HTMLDivElement>) {
     event.currentTarget.setPointerCapture(event.pointerId);
     dragStateRef.current = {
@@ -202,6 +346,17 @@ export function AskUiWorkbench() {
   }
 
   function handleToggleSelectWidget() {
+    if (bridgeSessionState.status !== 'ready') {
+      setTopBarActionState((state) => ({
+        ...state,
+        selectWidget: {
+          status: 'failed',
+          message: 'Bridge session required before Select Widget mode.',
+        },
+      }));
+      return;
+    }
+
     setTopBarActionState(toggleSelectWidgetMode);
   }
 

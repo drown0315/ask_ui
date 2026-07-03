@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:vm_service/vm_service.dart';
 import 'package:vm_service/vm_service_io.dart';
 
+import '../logging/bridge_logger.dart';
 import '../sessions/session_store.dart';
 import '../widget_tree/widget_tree_snapshot.dart';
 
@@ -18,6 +19,15 @@ import '../widget_tree/widget_tree_snapshot.dart';
 /// normalized `WidgetTreeNode` tree for the web Widget Context Panel.
 abstract class FlutterInspectorClient {
   Future<WidgetTreeNode> fetchRootWidgetTree(BridgeSession session);
+
+  Future<SelectWidgetModeResult> setSelectWidgetMode(
+    BridgeSession session, {
+    required bool enabled,
+  });
+
+  Future<SelectWidgetModeStatus> getSelectWidgetModeStatus(
+    BridgeSession session,
+  );
 }
 
 /// Flutter Inspector client backed by Dart VM Service extension calls.
@@ -34,9 +44,15 @@ abstract class FlutterInspectorClient {
 class VmServiceFlutterInspectorClient implements FlutterInspectorClient {
   VmServiceFlutterInspectorClient({
     required FlutterInspectorVmServiceFactory vmServiceFactory,
-  }) : _vmServiceFactory = vmServiceFactory;
+    BridgeLogger? logger,
+  })  : _vmServiceFactory = vmServiceFactory,
+        _logger = logger ?? BridgeLogger(write: print);
 
   final FlutterInspectorVmServiceFactory _vmServiceFactory;
+  final BridgeLogger _logger;
+  final _selectWidgetModeBySession = <String, bool?>{};
+  final _selectWidgetMonitorStarts = <String, Future<void>>{};
+  final _selectWidgetMonitorServices = <String, FlutterInspectorVmService>{};
 
   @override
   Future<WidgetTreeNode> fetchRootWidgetTree(BridgeSession session) async {
@@ -73,6 +89,83 @@ class VmServiceFlutterInspectorClient implements FlutterInspectorClient {
     } finally {
       await vmService.dispose();
     }
+  }
+
+  @override
+  Future<SelectWidgetModeResult> setSelectWidgetMode(
+    BridgeSession session, {
+    required bool enabled,
+  }) async {
+    _logger.info(
+      'select_widget session=${session.id} '
+      'connect_vm_service enabled=$enabled',
+    );
+    final vmService = await _vmServiceFactory.connect(session.vmServiceUri);
+
+    try {
+      final isolateId = await vmService.findMainIsolateId();
+      _logger.info('select_widget session=${session.id} isolate=$isolateId');
+      await vmService.callServiceExtension(
+        'ext.flutter.inspector.show',
+        isolateId: isolateId,
+        args: {
+          'enabled': enabled ? 'true' : 'false',
+        },
+      );
+      _logger.info(
+        'select_widget session=${session.id} '
+        'inspector_show enabled=$enabled',
+      );
+      _selectWidgetModeBySession[session.id] = enabled;
+
+      return SelectWidgetModeResult(
+        enabled: enabled,
+        message: enabled
+            ? 'Select Widget mode enabled.'
+            : 'Select Widget mode disabled.',
+      );
+    } finally {
+      await vmService.dispose();
+    }
+  }
+
+  @override
+  Future<SelectWidgetModeStatus> getSelectWidgetModeStatus(
+    BridgeSession session,
+  ) async {
+    await _ensureSelectWidgetModeMonitor(session);
+
+    return SelectWidgetModeStatus(
+      enabled: _selectWidgetModeBySession[session.id],
+    );
+  }
+
+  Future<void> _ensureSelectWidgetModeMonitor(BridgeSession session) {
+    return _selectWidgetMonitorStarts.putIfAbsent(session.id, () async {
+      _logger.info('select_widget session=${session.id} monitor_start');
+      final vmService = await _vmServiceFactory.connect(session.vmServiceUri);
+      _selectWidgetMonitorServices[session.id] = vmService;
+      await vmService.listenToServiceExtensionStateChanges((change) {
+        if (!_isSelectWidgetModeExtension(change.extension)) {
+          return;
+        }
+
+        final enabled = _parseServiceExtensionBool(change.value);
+        if (enabled == null) {
+          _logger.info(
+            'select_widget session=${session.id} '
+            'monitor_ignore extension=${change.extension} value=${change.value}',
+          );
+          return;
+        }
+
+        _selectWidgetModeBySession[session.id] = enabled;
+        _logger.info(
+          'select_widget session=${session.id} '
+          'monitor_update extension=${change.extension} enabled=$enabled',
+        );
+      });
+    });
   }
 }
 
@@ -111,6 +204,98 @@ class FlutterInspectorServiceUnavailableException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// Result returned after the bridge changes Flutter Inspector select mode.
+///
+/// It contains:
+/// - the enabled state requested by the web UI
+/// - a user-facing message for the top bar status area
+///
+/// Example:
+/// Enabling Select Widget returns `status=ok`, `enabled=true`, and
+/// `message=Select Widget mode enabled.`
+class SelectWidgetModeResult {
+  const SelectWidgetModeResult({
+    required this.enabled,
+    required this.message,
+  });
+
+  final bool enabled;
+  final String message;
+
+  Map<String, Object?> toJson() {
+    return {
+      'status': 'ok',
+      'enabled': enabled,
+      'message': message,
+    };
+  }
+}
+
+/// Cached Select Widget mode state observed from Flutter Inspector.
+///
+/// It contains the last known `enabled` value reported by the app. When the
+/// bridge has not observed a state event yet, `enabled` is `null` and `known`
+/// is `false`.
+///
+/// Example:
+/// After DevTools enables Select Widget mode, the bridge returns
+/// `{status: ok, known: true, enabled: true}`.
+class SelectWidgetModeStatus {
+  const SelectWidgetModeStatus({
+    required this.enabled,
+  });
+
+  final bool? enabled;
+
+  Map<String, Object?> toJson() {
+    return {
+      'status': 'ok',
+      'known': enabled != null,
+      if (enabled != null) 'enabled': enabled,
+    };
+  }
+}
+
+/// Change event emitted when Flutter reports a service extension value update.
+///
+/// It contains the extension name and raw value reported by
+/// `Flutter.ServiceExtensionStateChanged`.
+///
+/// Example:
+/// Flutter sends `extension=ext.flutter.inspector.show` and `value=true` when
+/// another client enables on-device Select Widget mode.
+class FlutterServiceExtensionStateChange {
+  const FlutterServiceExtensionStateChange({
+    required this.extension,
+    required this.value,
+  });
+
+  final String extension;
+  final Object? value;
+}
+
+bool _isSelectWidgetModeExtension(String extension) {
+  return extension == 'ext.flutter.inspector.show' ||
+      extension == 'ext.flutter.inspector.selectMode';
+}
+
+bool? _parseServiceExtensionBool(Object? value) {
+  if (value is bool) {
+    return value;
+  }
+
+  if (value is String) {
+    if (value == 'true') {
+      return true;
+    }
+    if (value == 'false') {
+      return false;
+    }
+  }
+
+  return null;
 }
 
 /// Factory that opens one VM Service connection for a Flutter app target.
@@ -170,6 +355,10 @@ abstract class FlutterInspectorVmService {
   });
 
   Future<Map<String, Object?>> reloadSources(String isolateId);
+
+  Future<void> listenToServiceExtensionStateChanges(
+    void Function(FlutterServiceExtensionStateChange change) onChange,
+  );
 
   Future<void> dispose();
 }
@@ -298,6 +487,30 @@ class VmServiceAdapter implements FlutterInspectorVmService {
   Future<Map<String, Object?>> reloadSources(String isolateId) async {
     final response = await _vmService.reloadSources(isolateId);
     return response.toJson().cast<String, Object?>();
+  }
+
+  @override
+  Future<void> listenToServiceExtensionStateChanges(
+    void Function(FlutterServiceExtensionStateChange change) onChange,
+  ) async {
+    _vmService.onEvent(EventStreams.kExtension).listen((event) {
+      if (event.extensionKind != 'Flutter.ServiceExtensionStateChanged') {
+        return;
+      }
+
+      final data = event.extensionData?.data;
+      final extension = data?['extension'];
+      if (extension is! String) {
+        return;
+      }
+
+      onChange(FlutterServiceExtensionStateChange(
+        extension: extension,
+        value: data?['value'],
+      ));
+    });
+
+    await _vmService.streamListen(EventStreams.kExtension);
   }
 
   @override

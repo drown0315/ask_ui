@@ -46,11 +46,22 @@ response: { "status": "ok", "message"?: string, "reloadReport"?: object }
 
 POST /api/sessions/:sessionId/hot-restart
 response: { "status": "ok", "message"?: string }
+
+POST /api/sessions/:sessionId/select-widget-mode
+body: { "enabled": boolean }
+response: { "status": "ok", "enabled": boolean, "message"?: string }
+
+GET /api/sessions/:sessionId/select-widget-mode
+response: { "status": "ok", "known": boolean, "enabled"?: boolean }
 ```
 
-Widget selection should remain a separate integration slice because it depends
-on device-stage coordinates, selected widget hit testing, Flutter Inspector
-selection state, selected bounds, code location, and tree selection sync.
+Select Widget mode should use the same Inspector switch as Flutter DevTools:
+`ext.flutter.inspector.show` with `enabled` encoded as the string `"true"` or
+`"false"`.
+
+Reading the selected widget result remains a separate integration slice because
+it depends on Flutter Inspector selection state, selected bounds, code
+location, and tree selection sync.
 
 Future widget selection API shape:
 
@@ -73,8 +84,8 @@ For the first real-action slice:
 
 - Keep `Select Widget` as a controlled toggle in the Top Bar.
 - Reflect the active toggle state visually.
-- Pass the toggle state down to the device-stage area so later slices can route
-  clicks as selection gestures instead of normal app operations.
+- Call the bridge before changing the local `Select Widget` toggle state so the
+  UI matches the target app Inspector mode.
 - Add action states for `Hot Reload` and `Hot Restart`: idle, running, failed,
   and unsupported where needed.
 - Reuse the existing bridge session created from `vmServiceUri + projectRoot`.
@@ -118,15 +129,25 @@ Suggested unsupported response:
 | Product capability | Technical evidence needed | Status | Decision |
 | --- | --- | --- | --- |
 | Select Widget toggle UI | Internal React state | Supported | Current UI contract |
-| Select Widget hit testing | Flutter Inspector selection and coordinate mapping | Unknown | Future slice |
+| Select Widget Inspector mode | `ext.flutter.inspector.show` with `enabled: "true" / "false"` | Supported | Current bridge contract |
+| Selected widget result | Flutter Inspector selection state, bounds, and code location | Unknown | Future slice |
 | Hot Reload | Flutter tool uses VM `reloadSources` plus `ext.flutter.reassemble` | Supported by bridge implementation | Real Flutter session smoke test still needed |
 | Hot Restart | Flutter tool registers VM Service method `hotRestart` when runner support exists | Partial | Bridge calls the registered service; unsupported when the method is absent |
 | Refresh Widget Tree after reload | Existing `GET /api/sessions/:sessionId/widget-tree` | Supported | Current contract after hot reload succeeds |
 
 ## Implementation Notes
 
-- `Select Widget` is now a controlled Top Bar toggle and passes its active state
-  to the device stage.
+- The web UI listens for `Select Widget` toggle changes and calls
+  `POST /api/sessions/:sessionId/select-widget-mode`; if the bridge call fails,
+  the toggle is rolled back.
+- The bridge implements Select Widget mode with
+  `ext.flutter.inspector.show(enabled: "true" | "false")`.
+- The bridge listens for Flutter `ServiceExtensionStateChanged` events for
+  `ext.flutter.inspector.show` and `ext.flutter.inspector.selectMode`, caches
+  the latest value, and exposes it through
+  `GET /api/sessions/:sessionId/select-widget-mode`.
+- The web UI polls the status endpoint and updates the toggle when DevTools or
+  another VM Service client changes Select Widget mode.
 - `Hot Reload` calls `POST /api/sessions/:sessionId/hot-reload`.
 - The bridge implements hot reload with VM Service `reloadSources` for the main
   isolate, followed by Flutter framework `ext.flutter.reassemble`.

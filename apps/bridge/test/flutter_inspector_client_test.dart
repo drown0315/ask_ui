@@ -1,4 +1,5 @@
 import 'package:ask_ui_bridge/inspector/flutter_inspector_client.dart';
+import 'package:ask_ui_bridge/logging/bridge_logger.dart';
 import 'package:ask_ui_bridge/sessions/session_store.dart';
 import 'package:test/test.dart';
 
@@ -84,6 +85,91 @@ void main() {
         'children': <Object?>[],
       });
     });
+
+    test('sets Flutter Inspector select widget mode through inspector.show',
+        () async {
+      final vmService = RecordingFlutterInspectorVmService({'result': null});
+      final logs = <String>[];
+      final client = VmServiceFlutterInspectorClient(
+        vmServiceFactory: RecordingFlutterInspectorVmServiceFactory(vmService),
+        logger: BridgeLogger(write: logs.add),
+      );
+
+      final result = await client.setSelectWidgetMode(
+        const BridgeSession(
+          id: 'session-1',
+          vmServiceUri: 'ws://127.0.0.1:12345/ws',
+          projectRoot: '/Users/example/app',
+        ),
+        enabled: true,
+      );
+
+      expect(vmService.calls, [
+        const FlutterInspectorVmServiceCall(
+          method: 'ext.flutter.inspector.show',
+          isolateId: 'isolates/main',
+          args: {
+            'enabled': 'true',
+          },
+        ),
+      ]);
+      expect(vmService.disposed, isTrue);
+      expect(result.toJson(), {
+        'status': 'ok',
+        'enabled': true,
+        'message': 'Select Widget mode enabled.',
+      });
+      expect(logs, [
+        '[ask_ui_bridge] select_widget session=session-1 connect_vm_service enabled=true',
+        '[ask_ui_bridge] select_widget session=session-1 isolate=isolates/main',
+        '[ask_ui_bridge] select_widget session=session-1 inspector_show enabled=true',
+      ]);
+    });
+
+    test('updates Select Widget mode status from service extension events',
+        () async {
+      final vmService = RecordingFlutterInspectorVmService({'result': null});
+      final logs = <String>[];
+      final client = VmServiceFlutterInspectorClient(
+        vmServiceFactory: RecordingFlutterInspectorVmServiceFactory(vmService),
+        logger: BridgeLogger(write: logs.add),
+      );
+      const session = BridgeSession(
+        id: 'session-1',
+        vmServiceUri: 'ws://127.0.0.1:12345/ws',
+        projectRoot: '/Users/example/app',
+      );
+
+      final initialStatus = await client.getSelectWidgetModeStatus(session);
+      vmService.emitServiceExtensionStateChange(
+        const FlutterServiceExtensionStateChange(
+          extension: 'ext.flutter.inspector.show',
+          value: true,
+        ),
+      );
+      final updatedStatus = await client.getSelectWidgetModeStatus(session);
+
+      expect(initialStatus.toJson(), {
+        'status': 'ok',
+        'known': false,
+      });
+      expect(updatedStatus.toJson(), {
+        'status': 'ok',
+        'known': true,
+        'enabled': true,
+      });
+      expect(
+        logs,
+        contains(
+            '[ask_ui_bridge] select_widget session=session-1 monitor_start'),
+      );
+      expect(
+        logs,
+        contains(
+          '[ask_ui_bridge] select_widget session=session-1 monitor_update extension=ext.flutter.inspector.show enabled=true',
+        ),
+      );
+    });
   });
 }
 
@@ -104,6 +190,8 @@ class RecordingFlutterInspectorVmService implements FlutterInspectorVmService {
 
   final Map<String, Object?> widgetTreeResponse;
   final calls = <FlutterInspectorVmServiceCall>[];
+  final serviceExtensionStateListeners =
+      <void Function(FlutterServiceExtensionStateChange change)>[];
   bool didFindMainIsolateId = false;
   bool disposed = false;
 
@@ -154,8 +242,23 @@ class RecordingFlutterInspectorVmService implements FlutterInspectorVmService {
   }
 
   @override
+  Future<void> listenToServiceExtensionStateChanges(
+    void Function(FlutterServiceExtensionStateChange change) onChange,
+  ) async {
+    serviceExtensionStateListeners.add(onChange);
+  }
+
+  @override
   Future<void> dispose() async {
     disposed = true;
+  }
+
+  void emitServiceExtensionStateChange(
+    FlutterServiceExtensionStateChange change,
+  ) {
+    for (final listener in serviceExtensionStateListeners) {
+      listener(change);
+    }
   }
 }
 

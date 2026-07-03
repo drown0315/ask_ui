@@ -13,15 +13,26 @@ test('toggles Select Widget mode without changing action statuses', () => {
   const inactiveState = toggleSelectWidgetMode(activeState);
 
   assert.equal(activeState.isSelectWidgetActive, true);
+  assert.deepEqual(activeState.selectWidget, {
+    status: 'idle',
+    message: 'Select Widget mode enabled.',
+  });
   assert.deepEqual(activeState.hotReload, { status: 'idle' });
   assert.deepEqual(activeState.hotRestart, { status: 'idle' });
   assert.equal(inactiveState.isSelectWidgetActive, false);
+  assert.deepEqual(inactiveState.selectWidget, {
+    status: 'idle',
+    message: 'Select Widget mode disabled.',
+  });
 });
 
 test('describes Select Widget mode as visible top bar feedback', () => {
   const activeState = toggleSelectWidgetMode(initialTopBarActionState);
 
-  assert.equal(getTopBarStatusMessage(activeState), 'Select Widget mode on');
+  assert.equal(
+    getTopBarStatusMessage(activeState),
+    'Select Widget mode enabled.',
+  );
 });
 
 test('describes running and failed hot actions as visible top bar feedback', () => {

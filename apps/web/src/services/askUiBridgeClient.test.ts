@@ -3,10 +3,12 @@ import test from 'node:test';
 
 import {
   BridgeRequestError,
+  getSelectWidgetModeStatus,
   hotReloadSession,
   hotRestartSession,
   parseBridgeJsonResponse,
   resolveBridgeOrigin,
+  setSelectWidgetMode,
 } from './askUiBridgeClient.ts';
 
 test('uses the local Dart bridge as the default bridge origin', () => {
@@ -60,6 +62,73 @@ test('requests hot reload for a bridge session', async () => {
       reloadReport: {
         success: true,
       },
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('requests Select Widget mode for a bridge session', async () => {
+  const requestedUrls: string[] = [];
+  const requestedBodies: unknown[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    requestedUrls.push(String(input));
+    requestedBodies.push(JSON.parse(String(init?.body)));
+    return new Response(
+      JSON.stringify({
+        status: 'ok',
+        enabled: true,
+        message: 'Select Widget mode enabled.',
+      }),
+    );
+  };
+
+  try {
+    const result = await setSelectWidgetMode('session-1', true);
+
+    assert.deepEqual(requestedUrls, [
+      'http://127.0.0.1:8787/api/sessions/session-1/select-widget-mode',
+    ]);
+    assert.deepEqual(requestedBodies, [
+      {
+        enabled: true,
+      },
+    ]);
+    assert.deepEqual(result, {
+      status: 'ok',
+      enabled: true,
+      message: 'Select Widget mode enabled.',
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('requests Select Widget mode status for a bridge session', async () => {
+  const requestedUrls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    requestedUrls.push(String(input));
+    return new Response(
+      JSON.stringify({
+        status: 'ok',
+        known: true,
+        enabled: false,
+      }),
+    );
+  };
+
+  try {
+    const result = await getSelectWidgetModeStatus('session-1');
+
+    assert.deepEqual(requestedUrls, [
+      'http://127.0.0.1:8787/api/sessions/session-1/select-widget-mode',
+    ]);
+    assert.deepEqual(result, {
+      status: 'ok',
+      known: true,
+      enabled: false,
     });
   } finally {
     globalThis.fetch = originalFetch;
