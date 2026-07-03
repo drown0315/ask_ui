@@ -17,7 +17,28 @@ export type GetWidgetTreeResponse = {
   root: WidgetTreeNodeResponse;
 };
 
+export type HotReloadSessionResponse = {
+  status: 'ok';
+  message?: string;
+  reloadReport?: Record<string, unknown>;
+};
+
+export type HotRestartSessionResponse = {
+  status: 'ok';
+  message?: string;
+};
+
 const defaultBridgeOrigin = 'http://127.0.0.1:8787';
+
+export class BridgeRequestError extends Error {
+  readonly code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = 'BridgeRequestError';
+    this.code = code;
+  }
+}
 
 /**
  * Return the bridge origin used by web requests.
@@ -111,8 +132,9 @@ export async function createBridgeSession(
   );
 
   if (!response.ok) {
-    throw new Error(
+    throw new BridgeRequestError(
       body.message ?? body.error ?? 'Failed to create Ask UI bridge session',
+      body.error,
     );
   }
 
@@ -153,8 +175,9 @@ export async function getWidgetTree(
   );
 
   if (!response.ok) {
-    throw new Error(
+    throw new BridgeRequestError(
       body.message ?? body.error ?? 'Failed to fetch Flutter Widget Tree',
+      body.error,
     );
   }
 
@@ -165,4 +188,79 @@ export async function getWidgetTree(
   return {
     root: body.root,
   };
+}
+
+/**
+ * Run Flutter hot reload for one bridge session.
+ *
+ * Args:
+ * - `sessionId`: Existing bridge session id for the running Flutter app.
+ *
+ * Returns:
+ * The bridge action response. On success the web UI should refresh the Widget
+ * Tree because Inspector node ids belong to the previous snapshot.
+ *
+ * Example:
+ * `hotReloadSession('session-1')` calls
+ * `/api/sessions/session-1/hot-reload` and returns `{status: 'ok'}`.
+ */
+export async function hotReloadSession(
+  sessionId: string,
+): Promise<HotReloadSessionResponse> {
+  return postSessionAction<HotReloadSessionResponse>(
+    sessionId,
+    'hot-reload',
+    'Failed to hot reload Flutter app',
+  );
+}
+
+/**
+ * Run Flutter hot restart for one bridge session when the bridge supports it.
+ *
+ * Args:
+ * - `sessionId`: Existing bridge session id for the running Flutter app.
+ *
+ * Returns:
+ * The bridge action response. Unsupported sessions reject with the bridge
+ * message, for example `Hot restart is not available for this bridge session.`
+ */
+export async function hotRestartSession(
+  sessionId: string,
+): Promise<HotRestartSessionResponse> {
+  return postSessionAction<HotRestartSessionResponse>(
+    sessionId,
+    'hot-restart',
+    'Failed to hot restart Flutter app',
+  );
+}
+
+async function postSessionAction<T extends { status: 'ok' }>(
+  sessionId: string,
+  action: 'hot-reload' | 'hot-restart',
+  fallbackMessage: string,
+): Promise<T> {
+  const response = await fetch(
+    `${bridgeOrigin}/api/sessions/${encodeURIComponent(sessionId)}/${action}`,
+    {
+      method: 'POST',
+    },
+  );
+
+  const body = await parseBridgeJsonResponse<Partial<T>>(
+    response,
+    fallbackMessage,
+  );
+
+  if (!response.ok) {
+    throw new BridgeRequestError(
+      body.message ?? body.error ?? fallbackMessage,
+      body.error,
+    );
+  }
+
+  if (body.status !== 'ok') {
+    throw new Error(`${fallbackMessage}: missing ok status`);
+  }
+
+  return body as T;
 }

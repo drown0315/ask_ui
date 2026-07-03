@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:ask_ui_bridge/app_controller/flutter_app_controller.dart';
 import 'package:ask_ui_bridge/inspector/flutter_inspector_client.dart';
 import 'package:ask_ui_bridge/server/ask_ui_bridge_server.dart';
 import 'package:ask_ui_bridge/sessions/session_store.dart';
@@ -11,6 +12,9 @@ Future<void> main(List<String> args) async {
   final server = AskUiBridgeServer(
     sessionStore: SessionStore(),
     inspectorClient: VmServiceFlutterInspectorClient(
+      vmServiceFactory: VmServiceFactory(),
+    ),
+    appController: VmServiceFlutterAppController(
       vmServiceFactory: VmServiceFactory(),
     ),
   );

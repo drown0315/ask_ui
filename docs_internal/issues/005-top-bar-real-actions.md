@@ -1,6 +1,6 @@
 # Issue 005: Top Bar Real Flutter Actions
 
-Status: draft.
+Status: implemented for the first real-action slice.
 
 ## Goal
 
@@ -119,9 +119,22 @@ Suggested unsupported response:
 | --- | --- | --- | --- |
 | Select Widget toggle UI | Internal React state | Supported | Current UI contract |
 | Select Widget hit testing | Flutter Inspector selection and coordinate mapping | Unknown | Future slice |
-| Hot Reload | Real Flutter debug session command output | Unknown | Calibrate before implementation |
+| Hot Reload | `package:vm_service` exposes `reloadSources(isolateId)` | Partial | Implemented through bridge; real Flutter session smoke test still needed |
 | Hot Restart | Runner or Flutter daemon control path | Unknown | Future or unsupported until proven |
 | Refresh Widget Tree after reload | Existing `GET /api/sessions/:sessionId/widget-tree` | Supported | Current contract after hot reload succeeds |
+
+## Implementation Notes
+
+- `Select Widget` is now a controlled Top Bar toggle and passes its active state
+  to the device stage.
+- `Hot Reload` calls `POST /api/sessions/:sessionId/hot-reload`.
+- The bridge implements hot reload with VM Service `reloadSources` for the main
+  isolate.
+- After successful hot reload, the web UI fetches a fresh Widget Tree snapshot
+  through the existing bridge session.
+- `Hot Restart` calls `POST /api/sessions/:sessionId/hot-restart` and currently
+  receives `hot_restart_not_supported_for_session` until runner-level support is
+  proven.
 
 ## Out Of Scope
 
@@ -144,4 +157,3 @@ Suggested unsupported response:
 - Unsupported `Hot Restart` failures use a clear error code and message.
 - The web UI still works as a static Vite build served by the local tool or
   bridge.
-

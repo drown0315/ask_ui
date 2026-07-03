@@ -133,6 +133,11 @@ class RecordingFlutterInspectorVmService implements FlutterInspectorVmService {
   }
 
   @override
+  Future<Map<String, Object?>> reloadSources(String isolateId) {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<void> dispose() async {
     disposed = true;
   }

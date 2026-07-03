@@ -9,10 +9,21 @@ import {
 import { DeviceStage } from '../components/device-stage/DeviceStage';
 import { SelectionNotesPanel } from '../components/selection-notes/SelectionNotesPanel';
 import { TopBar } from '../components/top-bar/TopBar';
+import {
+  initialTopBarActionState,
+  toggleSelectWidgetMode,
+  type TopBarActionState,
+} from '../components/top-bar/topBarActions';
 import { WidgetTreePanel } from '../components/widget-tree/WidgetTreePanel';
-import { createBridgeSession, getWidgetTree } from '../services/askUiBridgeClient';
+import {
+  BridgeRequestError,
+  createBridgeSession,
+  getWidgetTree,
+  hotReloadSession,
+  hotRestartSession,
+} from '../services/askUiBridgeClient';
 import { readSessionBootstrap } from '../session/sessionBootstrap';
-import type { BridgeSessionState } from '../types/bridgeSession';
+import type { BridgeSessionState, WidgetTreeLoadState } from '../types/bridgeSession';
 
 const minWidgetTreeWidth = 260;
 const maxWidgetTreeWidth = 520;
@@ -24,6 +35,9 @@ function clampPanelWidth(width: number) {
 
 export function AskUiWorkbench() {
   const [widgetTreeWidth, setWidgetTreeWidth] = useState(defaultWidgetTreeWidth);
+  const [topBarActionState, setTopBarActionState] = useState<TopBarActionState>(
+    initialTopBarActionState,
+  );
   const [bridgeSessionState, setBridgeSessionState] = useState<BridgeSessionState>(() => {
     const bootstrap = readSessionBootstrap(window.location.href);
 
@@ -176,9 +190,146 @@ export function AskUiWorkbench() {
     }
   }
 
+  async function refreshWidgetTree(sessionId: string): Promise<WidgetTreeLoadState> {
+    const { root } = await getWidgetTree(sessionId);
+
+    return {
+      status: 'loaded',
+      root,
+    };
+  }
+
+  function handleToggleSelectWidget() {
+    setTopBarActionState(toggleSelectWidgetMode);
+  }
+
+  async function handleHotReload() {
+    if (bridgeSessionState.status !== 'ready') {
+      return;
+    }
+
+    const { sessionId } = bridgeSessionState;
+    const previousWidgetTree = bridgeSessionState.widgetTree;
+
+    setTopBarActionState((state) => ({
+      ...state,
+      hotReload: {
+        status: 'running',
+      },
+    }));
+    setBridgeSessionState({
+      status: 'ready',
+      sessionId,
+      widgetTree: {
+        status: 'loading',
+      },
+    });
+
+    try {
+      await hotReloadSession(sessionId);
+    } catch (error: unknown) {
+      setTopBarActionState((state) => ({
+        ...state,
+        hotReload: {
+          status: 'failed',
+          message: error instanceof Error ? error.message : 'Hot reload failed',
+        },
+      }));
+      setBridgeSessionState({
+        status: 'ready',
+        sessionId,
+        widgetTree: previousWidgetTree,
+      });
+      return;
+    }
+
+    try {
+      const widgetTree = await refreshWidgetTree(sessionId);
+      setBridgeSessionState({
+        status: 'ready',
+        sessionId,
+        widgetTree,
+      });
+      setTopBarActionState((state) => ({
+        ...state,
+        hotReload: {
+          status: 'idle',
+          message: 'Hot reload completed.',
+        },
+      }));
+    } catch (error: unknown) {
+      setBridgeSessionState({
+        status: 'ready',
+        sessionId,
+        widgetTree: {
+          status: 'error',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Failed to fetch Flutter Widget Tree',
+        },
+      });
+      setTopBarActionState((state) => ({
+        ...state,
+        hotReload: {
+          status: 'idle',
+          message: 'Hot reload completed, but Widget Tree refresh failed.',
+        },
+      }));
+    }
+  }
+
+  async function handleHotRestart() {
+    if (bridgeSessionState.status !== 'ready') {
+      return;
+    }
+
+    const { sessionId } = bridgeSessionState;
+
+    setTopBarActionState((state) => ({
+      ...state,
+      hotRestart: {
+        status: 'running',
+      },
+    }));
+
+    try {
+      await hotRestartSession(sessionId);
+      setTopBarActionState((state) => ({
+        ...state,
+        hotRestart: {
+          status: 'idle',
+          message: 'Hot restart completed.',
+        },
+      }));
+    } catch (error: unknown) {
+      const isUnsupported =
+        error instanceof BridgeRequestError &&
+        error.code === 'hot_restart_not_supported_for_session';
+
+      setTopBarActionState((state) => ({
+        ...state,
+        hotRestart: {
+          status: isUnsupported ? 'unsupported' : 'failed',
+          message: error instanceof Error ? error.message : 'Hot restart failed',
+        },
+      }));
+    }
+  }
+
+  const canRunSessionActions = bridgeSessionState.status === 'ready';
+
   return (
     <main className="ask-ui-workbench">
-      <TopBar />
+      <TopBar
+        canRunSessionActions={canRunSessionActions}
+        hotReload={topBarActionState.hotReload}
+        hotRestart={topBarActionState.hotRestart}
+        isSelectWidgetActive={topBarActionState.isSelectWidgetActive}
+        onHotReload={handleHotReload}
+        onHotRestart={handleHotRestart}
+        onToggleSelectWidget={handleToggleSelectWidget}
+      />
       <div
         className="workbench-content"
         style={{ '--widget-tree-width': `${widgetTreeWidth}px` } as CSSProperties}
@@ -198,7 +349,7 @@ export function AskUiWorkbench() {
           role="separator"
           tabIndex={0}
         />
-        <DeviceStage />
+        <DeviceStage isSelectWidgetActive={topBarActionState.isSelectWidgetActive} />
         <SelectionNotesPanel />
       </div>
     </main>

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../app_controller/flutter_app_controller.dart';
 import '../inspector/flutter_inspector_client.dart';
 import '../sessions/session_store.dart';
 
@@ -8,11 +9,14 @@ class AskUiBridgeServer {
   AskUiBridgeServer({
     required SessionStore sessionStore,
     required FlutterInspectorClient inspectorClient,
+    required FlutterAppController appController,
   })  : _sessionStore = sessionStore,
-        _inspectorClient = inspectorClient;
+        _inspectorClient = inspectorClient,
+        _appController = appController;
 
   final SessionStore _sessionStore;
   final FlutterInspectorClient _inspectorClient;
+  final FlutterAppController _appController;
   HttpServer? _server;
 
   Future<int> start({required String host, required int port}) async {
@@ -47,6 +51,24 @@ class AskUiBridgeServer {
         request.uri.pathSegments[1] == 'sessions' &&
         request.uri.pathSegments[3] == 'widget-tree') {
       await _getWidgetTree(request);
+      return;
+    }
+
+    if (request.method == 'POST' &&
+        request.uri.pathSegments.length == 4 &&
+        request.uri.pathSegments[0] == 'api' &&
+        request.uri.pathSegments[1] == 'sessions' &&
+        request.uri.pathSegments[3] == 'hot-reload') {
+      await _hotReload(request);
+      return;
+    }
+
+    if (request.method == 'POST' &&
+        request.uri.pathSegments.length == 4 &&
+        request.uri.pathSegments[0] == 'api' &&
+        request.uri.pathSegments[1] == 'sessions' &&
+        request.uri.pathSegments[3] == 'hot-restart') {
+      await _hotRestart(request);
       return;
     }
 
@@ -135,6 +157,60 @@ class AskUiBridgeServer {
         },
       );
     }
+  }
+
+  Future<void> _hotReload(HttpRequest request) async {
+    final sessionId = request.uri.pathSegments[2];
+    final session = _sessionStore.find(sessionId);
+
+    if (session == null) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notFound,
+        body: {'error': 'session_not_found'},
+      );
+      return;
+    }
+
+    try {
+      final result = await _appController.hotReload(session);
+      await _writeJson(
+        request.response,
+        body: result.toJson(),
+      );
+    } catch (error) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badGateway,
+        body: {
+          'error': 'hot_reload_failed',
+          'message': error.toString(),
+        },
+      );
+    }
+  }
+
+  Future<void> _hotRestart(HttpRequest request) async {
+    final sessionId = request.uri.pathSegments[2];
+    final session = _sessionStore.find(sessionId);
+
+    if (session == null) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notFound,
+        body: {'error': 'session_not_found'},
+      );
+      return;
+    }
+
+    await _writeJson(
+      request.response,
+      statusCode: HttpStatus.notImplemented,
+      body: {
+        'error': 'hot_restart_not_supported_for_session',
+        'message': 'Hot restart is not available for this bridge session.',
+      },
+    );
   }
 
   void _setCorsHeaders(HttpResponse response) {

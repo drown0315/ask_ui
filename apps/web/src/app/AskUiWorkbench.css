@@ -136,6 +136,11 @@ body {
   text-overflow: ellipsis;
 }
 
+.toolbar-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .toolbar-button-active {
   border-color: rgba(66, 184, 131, 0.35);
   background: var(--vue-green);
@@ -145,6 +150,11 @@ body {
 
 .toolbar-button-subtle {
   color: var(--muted);
+}
+
+.toolbar-button-error {
+  border-color: rgba(199, 71, 71, 0.24);
+  color: #9a3d3d;
 }
 
 .workbench-content {
@@ -485,6 +495,13 @@ body {
   color: var(--muted);
 }
 
+.device-stage-selecting {
+  background:
+    linear-gradient(90deg, rgba(66, 184, 131, 0.13) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(66, 184, 131, 0.13) 1px, transparent 1px),
+    #e8f7ef;
+}
+
 .selection-notes-panel {
   border-left: 1px solid var(--border);
 }
@@ -511,4 +528,12 @@ body {
   font-size: 13px;
   font-weight: 700;
   text-align: center;
+}
+
+.device-stage-selecting .device-stage-placeholder {
+  border-color: rgba(66, 184, 131, 0.46);
+  box-shadow:
+    0 0 0 3px rgba(66, 184, 131, 0.12),
+    0 10px 28px rgba(53, 73, 94, 0.08);
+  color: var(--vue-green-dark);
 }

@@ -109,11 +109,13 @@ abstract class FlutterInspectorVmServiceFactory {
 ///
 /// It exposes only:
 /// - service extension calls with string keys and JSON-compatible values
+/// - source reload for one isolate group
 /// - disposal of the underlying connection
 ///
 /// Example:
 /// Tests provide a fake implementation to assert that Ask UI requests
-/// `isSummaryTree=true` without connecting to a real Flutter app.
+/// `isSummaryTree=true` or calls `reloadSources` without connecting to a real
+/// Flutter app.
 abstract class FlutterInspectorVmService {
   Future<String> findMainIsolateId();
 
@@ -122,6 +124,8 @@ abstract class FlutterInspectorVmService {
     required String isolateId,
     Map<String, Object?>? args,
   });
+
+  Future<Map<String, Object?>> reloadSources(String isolateId);
 
   Future<void> dispose();
 }
@@ -169,6 +173,12 @@ class VmServiceAdapter implements FlutterInspectorVmService {
     );
 
     return response.json?.cast<String, Object?>() ?? <String, Object?>{};
+  }
+
+  @override
+  Future<Map<String, Object?>> reloadSources(String isolateId) async {
+    final response = await _vmService.reloadSources(isolateId);
+    return response.toJson().cast<String, Object?>();
   }
 
   @override
