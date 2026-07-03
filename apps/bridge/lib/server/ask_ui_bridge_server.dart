@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -64,6 +65,15 @@ class AskUiBridgeServer {
         request.uri.pathSegments[1] == 'sessions' &&
         request.uri.pathSegments[3] == 'select-widget-mode') {
       await _setSelectWidgetMode(request);
+      return;
+    }
+
+    if (request.method == 'GET' &&
+        request.uri.pathSegments.length == 4 &&
+        request.uri.pathSegments[0] == 'api' &&
+        request.uri.pathSegments[1] == 'sessions' &&
+        request.uri.pathSegments[3] == 'events') {
+      await _streamSessionEvents(request);
       return;
     }
 
@@ -311,6 +321,108 @@ class AskUiBridgeServer {
     }
   }
 
+  /// Stream bridge session events to one browser tab using Server-Sent Events.
+  ///
+  /// This method:
+  /// 1. validates that the session exists
+  /// 2. writes one Select Widget mode snapshot as the first SSE event
+  /// 3. forwards later Select Widget mode changes observed by the Inspector
+  ///    client
+  /// 4. clears the subscription and heartbeat when the browser disconnects
+  ///
+  /// Args:
+  /// - `request`: GET request whose path is
+  ///   `/api/sessions/{sessionId}/events`. Unknown sessions receive a JSON
+  ///   `session_not_found` response instead of an SSE stream.
+  ///
+  /// Returns:
+  /// A long-lived `text/event-stream` response. The first event has
+  /// `type=select_widget_mode_snapshot`; later updates use
+  /// `type=select_widget_mode_changed`.
+  ///
+  /// Example:
+  /// A browser subscribing to `session-1` first receives the cached state, then
+  /// receives another event when DevTools toggles Select Widget mode.
+  Future<void> _streamSessionEvents(HttpRequest request) async {
+    final sessionId = request.uri.pathSegments[2];
+    final session = _sessionStore.find(sessionId);
+
+    if (session == null) {
+      _logger.info('events stream session=$sessionId session_not_found');
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notFound,
+        body: {'error': 'session_not_found'},
+      );
+      return;
+    }
+
+    SelectWidgetModeStatus snapshot;
+    try {
+      snapshot = await _inspectorClient.getSelectWidgetModeStatus(session);
+    } catch (error) {
+      _logger.info('events stream session=$sessionId failed error=$error');
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badGateway,
+        body: {
+          'error': 'session_events_failed',
+          'message': error.toString(),
+        },
+      );
+      return;
+    }
+
+    _logger.info('events stream session=$sessionId open');
+    request.response.statusCode = HttpStatus.ok;
+    request.response.bufferOutput = false;
+    request.response.headers
+      ..contentType = ContentType('text', 'event-stream', charset: 'utf-8')
+      ..set(HttpHeaders.cacheControlHeader, 'no-cache')
+      ..set(HttpHeaders.transferEncodingHeader, 'chunked')
+      ..set(HttpHeaders.connectionHeader, 'keep-alive');
+
+    _writeSseEvent(
+      request.response,
+      event: 'bridge_session_event',
+      data: {
+        'type': 'select_widget_mode_snapshot',
+        'sessionId': sessionId,
+        'payload': {
+          'known': snapshot.enabled != null,
+          if (snapshot.enabled != null) 'enabled': snapshot.enabled,
+        },
+      },
+    );
+    await request.response.flush();
+
+    final subscription =
+        _inspectorClient.watchSelectWidgetModeStatus(session).listen((status) {
+      _writeSseEvent(
+        request.response,
+        event: 'bridge_session_event',
+        data: {
+          'type': 'select_widget_mode_changed',
+          'sessionId': sessionId,
+          'payload': {
+            if (status.enabled != null) 'enabled': status.enabled,
+          },
+        },
+      );
+      request.response.flush();
+    });
+    final heartbeat = Timer.periodic(const Duration(seconds: 15), (_) {
+      request.response.add(utf8.encode(': ping\n\n'));
+      request.response.flush();
+    });
+
+    request.response.done.whenComplete(() {
+      heartbeat.cancel();
+      subscription.cancel();
+      _logger.info('events stream session=$sessionId close');
+    });
+  }
+
   Future<void> _hotRestart(HttpRequest request) async {
     final sessionId = request.uri.pathSegments[2];
     final session = _sessionStore.find(sessionId);
@@ -373,5 +485,29 @@ class AskUiBridgeServer {
     response.headers.contentType = ContentType.json;
     response.write(jsonEncode(body));
     await response.close();
+  }
+
+  /// Write one JSON payload as an SSE event frame.
+  ///
+  /// Args:
+  /// - `response`: Open `text/event-stream` response.
+  /// - `event`: Browser-visible event name. The web app listens for
+  ///   `bridge_session_event`.
+  /// - `data`: JSON-serializable payload written to the SSE `data:` line.
+  ///
+  /// Returns:
+  /// Nothing. The caller decides when to flush because snapshot writes and
+  /// change writes happen in different parts of the stream lifecycle.
+  ///
+  /// Example:
+  /// `event=bridge_session_event` and
+  /// `data={type: select_widget_mode_changed, payload: {enabled: true}}`
+  /// becomes an EventSource `bridge_session_event` message in the browser.
+  void _writeSseEvent(
+    HttpResponse response, {
+    required String event,
+    required Map<String, Object?> data,
+  }) {
+    response.add(utf8.encode('event: $event\ndata: ${jsonEncode(data)}\n\n'));
   }
 }

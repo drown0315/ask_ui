@@ -40,6 +40,25 @@ export type SelectWidgetModeStatusResponse = {
   enabled?: boolean;
 };
 
+export type BridgeSessionEvent = {
+  type: 'select_widget_mode_snapshot' | 'select_widget_mode_changed';
+  sessionId: string;
+  payload: {
+    known?: boolean;
+    enabled?: boolean;
+  };
+};
+
+type BridgeSessionEventSource = Pick<
+  EventSource,
+  'addEventListener' | 'close'
+>;
+
+type SubscribeToBridgeSessionEventsOptions = {
+  createEventSource?: (url: string) => BridgeSessionEventSource;
+  onInvalidEvent?: (error: Error) => void;
+};
+
 const defaultBridgeOrigin = 'http://127.0.0.1:8787';
 
 export class BridgeRequestError extends Error {
@@ -334,6 +353,96 @@ export async function getSelectWidgetModeStatus(
   }
 
   return body as SelectWidgetModeStatusResponse;
+}
+
+/**
+ * Subscribe to bridge events for one running Flutter app session.
+ *
+ * Args:
+ * - `sessionId`: Existing bridge session id returned by `createBridgeSession`.
+ * - `onEvent`: Called for each parsed `bridge_session_event` SSE message.
+ * - `options.createEventSource`: Optional factory used by tests. When omitted,
+ *   the browser's native `EventSource` opens the Dart bridge stream.
+ * - `options.onInvalidEvent`: Optional callback for malformed event payloads.
+ *   Invalid payloads are ignored so one bad event does not stop later updates.
+ *
+ * Returns:
+ * An object with `close`, which disconnects this browser tab from the SSE
+ * stream. The browser handles network reconnects while the subscription is
+ * open.
+ *
+ * Example:
+ * Subscribing to `session-1` opens
+ * `/api/sessions/session-1/events` and receives
+ * `select_widget_mode_snapshot` followed by later
+ * `select_widget_mode_changed` events.
+ */
+export function subscribeToBridgeSessionEvents(
+  sessionId: string,
+  onEvent: (event: BridgeSessionEvent) => void,
+  options: SubscribeToBridgeSessionEventsOptions = {},
+): { close: () => void } {
+  const source =
+    options.createEventSource?.(
+      `${bridgeOrigin}/api/sessions/${encodeURIComponent(sessionId)}/events`,
+    ) ??
+    new EventSource(
+      `${bridgeOrigin}/api/sessions/${encodeURIComponent(sessionId)}/events`,
+    );
+
+  source.addEventListener('bridge_session_event', (message) => {
+    try {
+      onEvent(parseBridgeSessionEvent((message as MessageEvent).data));
+    } catch (error) {
+      options.onInvalidEvent?.(
+        error instanceof Error ? error : new Error('Invalid bridge event'),
+      );
+    }
+  });
+
+  return {
+    close() {
+      source.close();
+    },
+  };
+}
+
+/**
+ * Parse one SSE message payload into a bridge session event.
+ *
+ * Args:
+ * - `rawData`: String from the EventSource `data` field. Empty, non-JSON, or
+ *   unknown event shapes throw so callers can ignore malformed updates without
+ *   changing UI state.
+ *
+ * Returns:
+ * A `BridgeSessionEvent` with a supported `type`, a `sessionId`, and a payload
+ * object. The payload is intentionally loose because different event types
+ * carry different fields.
+ *
+ * Example:
+ * `{"type":"select_widget_mode_changed","sessionId":"session-1","payload":{"enabled":true}}`
+ * becomes a typed event that can update the Select Widget toggle.
+ */
+function parseBridgeSessionEvent(rawData: string): BridgeSessionEvent {
+  const decoded = JSON.parse(rawData) as Partial<BridgeSessionEvent>;
+
+  if (
+    decoded.type !== 'select_widget_mode_snapshot' &&
+    decoded.type !== 'select_widget_mode_changed'
+  ) {
+    throw new Error('Bridge session event has an unknown type');
+  }
+
+  if (typeof decoded.sessionId !== 'string') {
+    throw new Error('Bridge session event did not include sessionId');
+  }
+
+  if (!decoded.payload || typeof decoded.payload !== 'object') {
+    throw new Error('Bridge session event did not include payload');
+  }
+
+  return decoded as BridgeSessionEvent;
 }
 
 async function postSessionAction<T extends { status: 'ok' }>(

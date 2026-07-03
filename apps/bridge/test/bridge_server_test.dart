@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -383,6 +384,84 @@ void main() {
       });
     });
 
+    test('streams the current Select Widget mode snapshot over SSE', () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+      inspectorClient.selectWidgetModeStatus = true;
+
+      final sessionId = await createSession(client, baseUri);
+
+      final eventsRequest = await client
+          .getUrl(baseUri.resolve('/api/sessions/$sessionId/events'));
+      final eventsResponse = await eventsRequest.close();
+      addTearDown(() => eventsResponse.detachSocket().then((socket) {
+            socket.destroy();
+          }));
+
+      expect(eventsResponse.statusCode, HttpStatus.ok);
+      expect(
+        eventsResponse.headers.contentType?.mimeType,
+        ContentType('text', 'event-stream').mimeType,
+      );
+
+      final event = await readSseEvent(eventsResponse);
+
+      expect(event.name, 'bridge_session_event');
+      expect(event.data, {
+        'type': 'select_widget_mode_snapshot',
+        'sessionId': sessionId,
+        'payload': {
+          'known': true,
+          'enabled': true,
+        },
+      });
+    });
+
+    test('broadcasts Select Widget mode changes over SSE', () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+
+      final sessionId = await createSession(client, baseUri);
+
+      final eventsRequest = await client
+          .getUrl(baseUri.resolve('/api/sessions/$sessionId/events'));
+      final eventsResponse = await eventsRequest.close();
+      addTearDown(() => eventsResponse.detachSocket().then((socket) {
+            socket.destroy();
+          }));
+      final events = readSseEvents(eventsResponse).asBroadcastStream();
+
+      await events
+          .firstWhere(
+            (event) => event.data['type'] == 'select_widget_mode_snapshot',
+          )
+          .timeout(const Duration(seconds: 2));
+      final changedEvent = events
+          .firstWhere(
+            (event) => event.data['type'] == 'select_widget_mode_changed',
+          )
+          .timeout(const Duration(seconds: 2));
+
+      final selectRequest = await client.postUrl(
+        baseUri.resolve('/api/sessions/$sessionId/select-widget-mode'),
+      );
+      selectRequest.headers.contentType = ContentType.json;
+      selectRequest.write(jsonEncode({'enabled': true}));
+      final selectResponse = await selectRequest.close();
+      await utf8.decodeStream(selectResponse);
+
+      final event = await changedEvent;
+
+      expect(event.name, 'bridge_session_event');
+      expect(event.data, {
+        'type': 'select_widget_mode_changed',
+        'sessionId': sessionId,
+        'payload': {
+          'enabled': true,
+        },
+      });
+    });
+
     test('rejects Select Widget mode requests without an enabled boolean',
         () async {
       final client = HttpClient();
@@ -498,10 +577,69 @@ void main() {
   });
 }
 
+Future<String> createSession(HttpClient client, Uri baseUri) async {
+  final createRequest = await client.postUrl(baseUri.resolve('/api/sessions'));
+  createRequest.headers.contentType = ContentType.json;
+  createRequest.write(
+    jsonEncode({
+      'vmServiceUri': 'ws://127.0.0.1:12345/ws',
+      'projectRoot': '/Users/example/app',
+    }),
+  );
+
+  final createResponse = await createRequest.close();
+  final createBody = jsonDecode(await utf8.decodeStream(createResponse))
+      as Map<String, Object?>;
+
+  return createBody['sessionId']! as String;
+}
+
+Stream<SseEvent> readSseEvents(HttpClientResponse response) async* {
+  String? eventName;
+  final dataLines = <String>[];
+
+  await for (final line
+      in response.transform(utf8.decoder).transform(const LineSplitter())) {
+    if (line.isEmpty) {
+      if (eventName != null) {
+        yield SseEvent(
+          name: eventName,
+          data: jsonDecode(dataLines.join('\n')) as Map<String, Object?>,
+        );
+      }
+      eventName = null;
+      dataLines.clear();
+      continue;
+    }
+
+    if (line.startsWith('event: ')) {
+      eventName = line.substring('event: '.length);
+    } else if (line.startsWith('data: ')) {
+      dataLines.add(line.substring('data: '.length));
+    }
+  }
+}
+
+Future<SseEvent> readSseEvent(HttpClientResponse response) {
+  return readSseEvents(response).first.timeout(const Duration(seconds: 2));
+}
+
+class SseEvent {
+  const SseEvent({
+    required this.name,
+    required this.data,
+  });
+
+  final String name;
+  final Map<String, Object?> data;
+}
+
 class RecordingFlutterInspectorClient implements FlutterInspectorClient {
   final requestedSessionIds = <String>[];
   final selectWidgetModeRequests = <RecordedSelectWidgetModeRequest>[];
   final selectWidgetModeStatusSessionIds = <String>[];
+  final _selectWidgetModeControllers =
+      <String, StreamController<SelectWidgetModeStatus>>{};
   Exception? failure;
   bool? selectWidgetModeStatus;
 
@@ -537,12 +675,16 @@ class RecordingFlutterInspectorClient implements FlutterInspectorClient {
       enabled: enabled,
     ));
 
-    return SelectWidgetModeResult(
+    final result = SelectWidgetModeResult(
       enabled: enabled,
       message: enabled
           ? 'Select Widget mode enabled.'
           : 'Select Widget mode disabled.',
     );
+    _selectWidgetModeControllers[session.id]
+        ?.add(SelectWidgetModeStatus(enabled: result.enabled));
+
+    return result;
   }
 
   @override
@@ -551,6 +693,18 @@ class RecordingFlutterInspectorClient implements FlutterInspectorClient {
   ) async {
     selectWidgetModeStatusSessionIds.add(session.id);
     return SelectWidgetModeStatus(enabled: selectWidgetModeStatus);
+  }
+
+  @override
+  Stream<SelectWidgetModeStatus> watchSelectWidgetModeStatus(
+    BridgeSession session,
+  ) {
+    return _selectWidgetModeControllers
+        .putIfAbsent(
+          session.id,
+          () => StreamController<SelectWidgetModeStatus>.broadcast(),
+        )
+        .stream;
   }
 }
 

@@ -20,11 +20,12 @@ import { WidgetTreePanel } from '../components/widget-tree/WidgetTreePanel';
 import {
   BridgeRequestError,
   createBridgeSession,
-  getSelectWidgetModeStatus,
   getWidgetTree,
   hotReloadSession,
   hotRestartSession,
   setSelectWidgetMode,
+  subscribeToBridgeSessionEvents,
+  type BridgeSessionEvent,
 } from '../services/askUiBridgeClient';
 import { readSessionBootstrap } from '../session/sessionBootstrap';
 import type { BridgeSessionState, WidgetTreeLoadState } from '../types/bridgeSession';
@@ -235,55 +236,45 @@ export function AskUiWorkbench() {
       return;
     }
 
-    let isCurrent = true;
-
-    async function syncSelectWidgetModeStatus() {
-      if (readySessionId === null) {
-        return;
-      }
-
-      try {
-        const status = await getSelectWidgetModeStatus(readySessionId);
-        if (
-          !isCurrent ||
-          !status.known ||
-          typeof status.enabled !== 'boolean'
-        ) {
-          return;
-        }
-
-        const externalEnabled = status.enabled;
-        setTopBarActionState((state) => {
-          if (state.isSelectWidgetActive === externalEnabled) {
-            return state;
-          }
-
-          selectWidgetSyncRef.current.skipNextSync = true;
-          return {
-            ...state,
-            isSelectWidgetActive: externalEnabled,
-            selectWidget: {
-              status: 'idle',
-              message: externalEnabled
-                ? 'Select Widget mode enabled.'
-                : 'Select Widget mode disabled.',
-            },
-          };
-        });
-      } catch {
-        // Status polling is best-effort. Explicit user actions still surface
-        // request failures through the top bar.
-      }
-    }
-
-    void syncSelectWidgetModeStatus();
-    const intervalId = window.setInterval(syncSelectWidgetModeStatus, 1000);
+    const subscription = subscribeToBridgeSessionEvents(
+      readySessionId,
+      syncSelectWidgetModeFromBridgeEvent,
+    );
 
     return () => {
-      isCurrent = false;
-      window.clearInterval(intervalId);
+      subscription.close();
     };
   }, [readySessionId]);
+
+  function syncSelectWidgetModeFromBridgeEvent(event: BridgeSessionEvent) {
+    if (
+      event.sessionId !== readySessionId ||
+      (event.type !== 'select_widget_mode_snapshot' &&
+        event.type !== 'select_widget_mode_changed') ||
+      typeof event.payload.enabled !== 'boolean'
+    ) {
+      return;
+    }
+
+    const externalEnabled = event.payload.enabled;
+    setTopBarActionState((state) => {
+      if (state.isSelectWidgetActive === externalEnabled) {
+        return state;
+      }
+
+      selectWidgetSyncRef.current.skipNextSync = true;
+      return {
+        ...state,
+        isSelectWidgetActive: externalEnabled,
+        selectWidget: {
+          status: 'idle',
+          message: externalEnabled
+            ? 'Select Widget mode enabled.'
+            : 'Select Widget mode disabled.',
+        },
+      };
+    });
+  }
 
   function handleResizePointerDown(event: PointerEvent<HTMLDivElement>) {
     event.currentTarget.setPointerCapture(event.pointerId);

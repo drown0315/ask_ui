@@ -28,6 +28,25 @@ abstract class FlutterInspectorClient {
   Future<SelectWidgetModeStatus> getSelectWidgetModeStatus(
     BridgeSession session,
   );
+
+  /// Watch Select Widget mode changes observed for one bridge session.
+  ///
+  /// Args:
+  /// - `session`: Existing bridge session whose VM Service extension stream is
+  ///   monitored. If the monitor is not running yet, this method starts it.
+  ///
+  /// Returns:
+  /// A broadcast stream of cached Inspector mode values. The stream emits only
+  /// changes observed after the caller subscribes; callers that need an initial
+  /// value should first call `getSelectWidgetModeStatus`.
+  ///
+  /// Example:
+  /// The bridge SSE endpoint calls `getSelectWidgetModeStatus` for the first
+  /// event, then forwards this stream as later `select_widget_mode_changed`
+  /// events.
+  Stream<SelectWidgetModeStatus> watchSelectWidgetModeStatus(
+    BridgeSession session,
+  );
 }
 
 /// Flutter Inspector client backed by Dart VM Service extension calls.
@@ -53,6 +72,8 @@ class VmServiceFlutterInspectorClient implements FlutterInspectorClient {
   final _selectWidgetModeBySession = <String, bool?>{};
   final _selectWidgetMonitorStarts = <String, Future<void>>{};
   final _selectWidgetMonitorServices = <String, FlutterInspectorVmService>{};
+  final _selectWidgetModeControllers =
+      <String, StreamController<SelectWidgetModeStatus>>{};
 
   @override
   Future<WidgetTreeNode> fetchRootWidgetTree(BridgeSession session) async {
@@ -117,6 +138,7 @@ class VmServiceFlutterInspectorClient implements FlutterInspectorClient {
         'inspector_show enabled=$enabled',
       );
       _selectWidgetModeBySession[session.id] = enabled;
+      _publishSelectWidgetModeStatus(session.id, enabled);
 
       return SelectWidgetModeResult(
         enabled: enabled,
@@ -140,6 +162,14 @@ class VmServiceFlutterInspectorClient implements FlutterInspectorClient {
     );
   }
 
+  @override
+  Stream<SelectWidgetModeStatus> watchSelectWidgetModeStatus(
+    BridgeSession session,
+  ) {
+    unawaited(_ensureSelectWidgetModeMonitor(session));
+    return _selectWidgetModeController(session.id).stream;
+  }
+
   Future<void> _ensureSelectWidgetModeMonitor(BridgeSession session) {
     return _selectWidgetMonitorStarts.putIfAbsent(session.id, () async {
       _logger.info('select_widget session=${session.id} monitor_start');
@@ -160,12 +190,58 @@ class VmServiceFlutterInspectorClient implements FlutterInspectorClient {
         }
 
         _selectWidgetModeBySession[session.id] = enabled;
+        _publishSelectWidgetModeStatus(session.id, enabled);
         _logger.info(
           'select_widget session=${session.id} '
           'monitor_update extension=${change.extension} enabled=$enabled',
         );
       });
     });
+  }
+
+  /// Return the broadcast controller for Select Widget mode events.
+  ///
+  /// Args:
+  /// - `sessionId`: Bridge session id whose browser subscribers should receive
+  ///   Inspector state changes.
+  ///
+  /// Returns:
+  /// A broadcast controller so multiple browser tabs can watch the same bridge
+  /// session without competing for a single-subscription stream.
+  ///
+  /// Example:
+  /// Two tabs connected to `session-1` both receive the next
+  /// `SelectWidgetModeStatus(enabled: true)` event.
+  StreamController<SelectWidgetModeStatus> _selectWidgetModeController(
+    String sessionId,
+  ) {
+    return _selectWidgetModeControllers.putIfAbsent(
+      sessionId,
+      () => StreamController<SelectWidgetModeStatus>.broadcast(),
+    );
+  }
+
+  /// Publish one Select Widget mode value to active browser subscribers.
+  ///
+  /// Args:
+  /// - `sessionId`: Bridge session whose SSE clients should receive the event.
+  /// - `enabled`: Current Inspector mode value reported by the app or accepted
+  ///   by a bridge request.
+  ///
+  /// Returns:
+  /// Nothing. If no browser has subscribed yet, the value stays only in
+  /// `_selectWidgetModeBySession` and will be sent later as the SSE snapshot.
+  ///
+  /// Example:
+  /// Calling this with `enabled=false` sends one
+  /// `SelectWidgetModeStatus(enabled: false)` to current subscribers.
+  void _publishSelectWidgetModeStatus(String sessionId, bool enabled) {
+    final controller = _selectWidgetModeControllers[sessionId];
+    if (controller == null || controller.isClosed) {
+      return;
+    }
+
+    controller.add(SelectWidgetModeStatus(enabled: enabled));
   }
 }
 

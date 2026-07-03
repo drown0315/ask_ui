@@ -9,6 +9,7 @@ import {
   parseBridgeJsonResponse,
   resolveBridgeOrigin,
   setSelectWidgetMode,
+  subscribeToBridgeSessionEvents,
 } from './askUiBridgeClient.ts';
 
 test('uses the local Dart bridge as the default bridge origin', () => {
@@ -133,6 +134,54 @@ test('requests Select Widget mode status for a bridge session', async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('subscribes to bridge session events with EventSource', () => {
+  const openedUrls: string[] = [];
+  const listeners = new Map<string, (event: MessageEvent) => void>();
+  const closed: boolean[] = [];
+
+  const subscription = subscribeToBridgeSessionEvents(
+    'session-1',
+    (event) => {
+      assert.deepEqual(event, {
+        type: 'select_widget_mode_changed',
+        sessionId: 'session-1',
+        payload: {
+          enabled: true,
+        },
+      });
+    },
+    {
+      createEventSource(url) {
+        openedUrls.push(url);
+        return {
+          addEventListener(eventName, listener) {
+            listeners.set(eventName, listener as (event: MessageEvent) => void);
+          },
+          close() {
+            closed.push(true);
+          },
+        };
+      },
+    },
+  );
+
+  listeners.get('bridge_session_event')?.({
+    data: JSON.stringify({
+      type: 'select_widget_mode_changed',
+      sessionId: 'session-1',
+      payload: {
+        enabled: true,
+      },
+    }),
+  } as MessageEvent);
+  subscription.close();
+
+  assert.deepEqual(openedUrls, [
+    'http://127.0.0.1:8787/api/sessions/session-1/events',
+  ]);
+  assert.deepEqual(closed, [true]);
 });
 
 test('reports unsupported hot restart responses from the bridge', async () => {
