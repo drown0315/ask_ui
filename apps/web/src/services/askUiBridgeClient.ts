@@ -19,6 +19,21 @@ export type GetWidgetTreeResponse = {
 
 const defaultBridgeOrigin = 'http://127.0.0.1:8787';
 
+/**
+ * Return the bridge origin used by web requests.
+ *
+ * Args:
+ * - `envOrigin`: Optional value from `VITE_ASK_UI_BRIDGE_ORIGIN`. Empty or
+ *   whitespace-only values mean the web page should use the local Dart bridge
+ *   default.
+ *
+ * Returns:
+ * A normalized origin without trailing slashes.
+ *
+ * Example:
+ * `undefined` returns `http://127.0.0.1:8787`; `http://localhost:9000/`
+ * returns `http://localhost:9000`.
+ */
 export function resolveBridgeOrigin(envOrigin: string | undefined): string {
   const trimmedOrigin = envOrigin?.trim().replace(/\/+$/, '');
 
@@ -29,6 +44,23 @@ export function resolveBridgeOrigin(envOrigin: string | undefined): string {
   return trimmedOrigin;
 }
 
+/**
+ * Decode a bridge HTTP response as JSON and normalize empty response failures.
+ *
+ * Args:
+ * - `response`: Fetch response returned by the bridge request.
+ * - `fallbackMessage`: User-facing action message used when the response body
+ *   is empty or not JSON.
+ *
+ * Returns:
+ * Parsed JSON object from the bridge. The returned object may include bridge
+ * error fields such as `error` or `message`.
+ *
+ * Example:
+ * A 404 HTML or empty response from the web dev server becomes
+ * `Failed to create Ask UI bridge session: empty response` instead of a raw
+ * browser JSON parse error.
+ */
 export async function parseBridgeJsonResponse<T>(
   response: Response,
   fallbackMessage: string,
@@ -48,6 +80,20 @@ export async function parseBridgeJsonResponse<T>(
 
 const bridgeOrigin = resolveBridgeOrigin(import.meta.env?.VITE_ASK_UI_BRIDGE_ORIGIN);
 
+/**
+ * Create or reuse one bridge session for a running Flutter app target.
+ *
+ * Args:
+ * - `request`: VM Service URI and project root read from the page URL.
+ *
+ * Returns:
+ * The bridge session id for that target. The Dart bridge may return an existing
+ * session id when another tab already opened the same target.
+ *
+ * Example:
+ * Passing `ws://127.0.0.1:12345/ws` and `/Users/example/app` returns a
+ * response such as `{sessionId: 'session-1'}`.
+ */
 export async function createBridgeSession(
   request: CreateBridgeSessionRequest,
 ): Promise<CreateBridgeSessionResponse> {
@@ -79,6 +125,21 @@ export async function createBridgeSession(
   };
 }
 
+/**
+ * Fetch the normalized Flutter Widget Tree for one bridge session.
+ *
+ * Args:
+ * - `sessionId`: Session id returned by `createBridgeSession`.
+ *
+ * Returns:
+ * A root `WidgetTreeNodeResponse` whose descendants are already normalized by
+ * the bridge into `id`, `label`, and `children`.
+ *
+ * Example:
+ * `getWidgetTree('session-1')` calls
+ * `/api/sessions/session-1/widget-tree` and returns the current Inspector
+ * summary tree snapshot.
+ */
 export async function getWidgetTree(
   sessionId: string,
 ): Promise<GetWidgetTreeResponse> {

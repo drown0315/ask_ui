@@ -15,6 +15,27 @@ type WidgetTreeIconKind =
   | 'custom'
   | 'widget';
 
+/**
+ * Choose the icon shown beside one Widget Tree row label.
+ *
+ * This method:
+ * 1. checks for likely project widgets first
+ * 2. matches common Flutter widget label fragments to broad UI categories
+ * 3. falls back to a neutral widget icon when no rule matches
+ *
+ * Args:
+ * - `label`: Widget label from the bridge response. It is usually the Flutter
+ *   Inspector `description`, such as `Scaffold`, `GestureDetector`, or
+ *   `WonderIllustration`.
+ *
+ * Returns:
+ * A small icon record containing the category key, rendered glyph, and tooltip
+ * text for the row.
+ *
+ * Example:
+ * `GestureDetector` returns the interaction icon, `SizedBox.expand` returns
+ * the layout icon, and `WonderIllustration` returns the project widget icon.
+ */
 function getWidgetTreeIcon(label: string): {
   kind: WidgetTreeIconKind;
   glyph: string;
@@ -128,10 +149,39 @@ function getWidgetTreeIcon(label: string): {
   };
 }
 
+/**
+ * Return whether a widget label looks like a project widget.
+ *
+ * Args:
+ * - `label`: Widget label from the bridge response. The current web payload
+ *   does not include `createdByLocalProject` or creation location, so this
+ *   function can only use the label text.
+ *
+ * Returns:
+ * `true` for known Ask UI demo app naming patterns, otherwise `false`.
+ *
+ * Example:
+ * `WonderIllustration` and `HomeScreen` return `true`; `Container` returns
+ * `false`.
+ */
 function isCustomWidget(label: string) {
   return /^[A-Z]/.test(label) && /^Wonder|Wonders|Home|Previous|Bottom/.test(label);
 }
 
+/**
+ * Return whether a widget label contains any category pattern.
+ *
+ * Args:
+ * - `label`: Widget label from the bridge response.
+ * - `patterns`: Case-sensitive fragments that identify one broad widget
+ *   category. For example, `Gesture` matches `GestureDetector`.
+ *
+ * Returns:
+ * `true` when at least one pattern appears in the label.
+ *
+ * Example:
+ * `matchesWidget('DefaultTextStyle', ['Text', 'RichText'])` returns `true`.
+ */
 function matchesWidget(label: string, patterns: string[]) {
   return patterns.some((pattern) => label.includes(pattern));
 }
