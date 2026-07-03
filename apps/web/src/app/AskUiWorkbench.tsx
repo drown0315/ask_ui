@@ -430,6 +430,43 @@ export function AskUiWorkbench() {
     }
   }
 
+  async function handleRefreshWidgetTree() {
+    if (bridgeSessionState.status !== 'ready') {
+      return;
+    }
+
+    const { sessionId } = bridgeSessionState;
+
+    setBridgeSessionState({
+      status: 'ready',
+      sessionId,
+      widgetTree: {
+        status: 'loading',
+      },
+    });
+
+    try {
+      const widgetTree = await refreshWidgetTree(sessionId);
+      setBridgeSessionState({
+        status: 'ready',
+        sessionId,
+        widgetTree,
+      });
+    } catch (error: unknown) {
+      setBridgeSessionState({
+        status: 'ready',
+        sessionId,
+        widgetTree: {
+          status: 'error',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Failed to fetch Flutter Widget Tree',
+        },
+      });
+    }
+  }
+
   async function handleHotRestart() {
     if (bridgeSessionState.status !== 'ready') {
       setTopBarActionState((state) =>
@@ -486,7 +523,14 @@ export function AskUiWorkbench() {
         className="workbench-content"
         style={{ '--widget-tree-width': `${widgetTreeWidth}px` } as CSSProperties}
       >
-        <WidgetTreePanel bridgeSessionState={bridgeSessionState} />
+        <WidgetTreePanel
+          bridgeSessionState={bridgeSessionState}
+          canRefresh={
+            bridgeSessionState.status === 'ready' &&
+            bridgeSessionState.widgetTree.status !== 'loading'
+          }
+          onRefresh={handleRefreshWidgetTree}
+        />
         <div
           aria-label="Resize widget tree panel"
           aria-orientation="vertical"

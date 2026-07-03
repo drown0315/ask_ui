@@ -331,8 +331,12 @@ function WidgetTreeSessionState({ state }: { state: BridgeSessionState }) {
 
 export function WidgetTreePanel({
   bridgeSessionState,
+  canRefresh,
+  onRefresh,
 }: {
   bridgeSessionState: BridgeSessionState;
+  canRefresh: boolean;
+  onRefresh: () => void;
 }) {
   return (
     <aside className="workbench-panel widget-tree-panel">
@@ -344,7 +348,9 @@ export function WidgetTreePanel({
         <button
           aria-label="Refresh widget tree"
           className="widget-tree-icon-button"
-          disabled
+          disabled={!canRefresh}
+          onClick={onRefresh}
+          title="Refresh widget tree"
           type="button"
         >
           ↻
