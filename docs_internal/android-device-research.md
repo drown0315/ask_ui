@@ -1,4 +1,4 @@
-# Android Device Surface 调研记录
+# Android Device 调研记录
 
 日期：2026-07-03
 
@@ -13,7 +13,7 @@ Ask UI 的中心区域应成为 `Live App Surface`：用户可以在 Workbench �
 ## 已确认的产品语义
 
 - 中心区域的产品术语仍是 `Live App Surface`。
-- React 组件名倾向使用 `DeviceSurface`。
+- React 组件名倾向使用 `Device`。
 - 不引入 `Operate Mode` 按钮或开关。
 - Live App Surface 始终可点击，点击始终发送给 Target Device。
 - Select Widget 只改变 Flutter Inspector 如何解释触摸；Ask UI 不在前端引入另一套“拦截点击但不转发”的模式。
@@ -30,7 +30,7 @@ Android 设备画面和输入控制应由本地 bridge 托管，而不是由 Web
 
 该决策已记录在：
 
-- `docs/adr/0001-bridge-owned-android-device-surface.md`
+- `docs/adr/0001-bridge-owned-android-device.md`
 
 ## 本机校准环境
 
@@ -276,7 +276,7 @@ http://127.0.0.1:3010
 
 - 这是早期刷新帧 demo，不是最终低延迟 live stream。
 - 早期点击使用 ADB input；后续 WebCodecs 页面已切到 scrcpy control socket。
-- 该 demo 只证明官方 scrcpy 工具链可以驱动网页内画面和点击回传；最终低延迟验证见 `docs_internal/android-device-surface-scrcpy-webcodecs-summary.md`。
+- 该 demo 只证明官方 scrcpy 工具链可以驱动网页内画面和点击回传；最终低延迟验证见 `docs_internal/android-device-scrcpy-webcodecs-summary.md`。
 
 ## 当前能力矩阵
 
@@ -298,7 +298,7 @@ http://127.0.0.1:3010
 ## 推荐下一步
 
 1. 保留 `test_scrcpy/` 作为能力校准 demo，不并入正式产品代码。
-2. WebCodecs live decode demo 已完成，当前经验总结见 `docs_internal/android-device-surface-scrcpy-webcodecs-summary.md`。
+2. WebCodecs live decode demo 已完成，当前经验总结见 `docs_internal/android-device-scrcpy-webcodecs-summary.md`。
 3. 输入路径已从 ADB `input tap/swipe` 切到官方 scrcpy 4.0 control socket；后续再补多点触控、滚轮和键盘。
 
 ## 当前建议的产品 contract
@@ -308,7 +308,7 @@ http://127.0.0.1:3010
 - Android-only。
 - 页面 URL 必填 `deviceId`。
 - bridge 托管设备画面和输入生命周期。
-- Web 中有一个 `DeviceSurface`/Live App Surface。
+- Web 中有一个 `Device`/Live App Surface。
 - 点击 Live App Surface 会转发到 Target Device。
 
 当前不应承诺：

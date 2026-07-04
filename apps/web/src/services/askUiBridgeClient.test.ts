@@ -4,7 +4,7 @@ import test from 'node:test';
 import {
   BridgeRequestError,
   createBridgeSession,
-  getDeviceSurfaceWebSocketUrl,
+  getDeviceWebSocketUrl,
   getSelectWidgetModeStatus,
   hotReloadSession,
   hotRestartSession,
@@ -27,17 +27,17 @@ test('normalizes configured bridge origins', () => {
   );
 });
 
-test('builds the session-scoped device surface WebSocket URL', () => {
+test('builds the session-scoped device WebSocket URL', () => {
   assert.equal(
-    getDeviceSurfaceWebSocketUrl(
+    getDeviceWebSocketUrl(
       'session/with space',
       'http://127.0.0.1:9000/',
     ),
-    'ws://127.0.0.1:9000/api/sessions/session%2Fwith%20space/device-surface',
+    'ws://127.0.0.1:9000/api/sessions/session%2Fwith%20space/device',
   );
   assert.equal(
-    getDeviceSurfaceWebSocketUrl('session-1', 'https://ask-ui.example'),
-    'wss://ask-ui.example/api/sessions/session-1/device-surface',
+    getDeviceWebSocketUrl('session-1', 'https://ask-ui.example'),
+    'wss://ask-ui.example/api/sessions/session-1/device',
   );
 });
 

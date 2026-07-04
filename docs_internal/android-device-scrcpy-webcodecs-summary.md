@@ -1,8 +1,8 @@
-# Android DeviceSurface scrcpy/WebCodecs 方案总结
+# Android Device scrcpy/WebCodecs 方案总结
 
 日期：2026-07-04
 
-本文总结 `test_scrcpy/` spike 中最终跑通的 Android DeviceSurface 技术路线、实测参数、关键经验和生产化风险。本文是阶段性方案总结，不代表正式 `apps/web` 产品代码已经集成。
+本文总结 `test_scrcpy/` spike 中最终跑通的 Android Device 技术路线、实测参数、关键经验和生产化风险。本文是阶段性方案总结，不代表正式 `apps/web` 产品代码已经集成。
 
 ## 最终验证方案
 
@@ -64,7 +64,7 @@ WebCodecs 的优势是链路短、可控、适合低延迟。相比 MSE，它不
 
 ### 不采用通用播放器框架
 
-`video.js`、HLS、DASH、MSE 播放器等通常以“稳定播放”为目标，会引入缓冲、时间轴和重排策略。DeviceSurface 的目标是“显示最新手机画面”，必要时应该丢帧，而不是完整播放历史帧。
+`video.js`、HLS、DASH、MSE 播放器等通常以“稳定播放”为目标，会引入缓冲、时间轴和重排策略。Device 的目标是“显示最新手机画面”，必要时应该丢帧，而不是完整播放历史帧。
 
 ### 不采用 WebRTC 作为 MVP
 
@@ -133,7 +133,7 @@ adb shell input tap ...
 adb shell input swipe ...
 ```
 
-这能验证交互闭环，但延迟和手感不适合正式 DeviceSurface。
+这能验证交互闭环，但延迟和手感不适合正式 Device。
 
 当前 WebCodecs 页面已改为 scrcpy control socket：
 
@@ -226,11 +226,11 @@ raw stream already active
 
 ## 产品化建议
 
-正式 `DeviceSurface` 不应直接管理 scrcpy 进程。边界应保持：
+正式 `Device` 不应直接管理 scrcpy 进程。边界应保持：
 
 ```text
-apps/web DeviceSurface
--> bridge DeviceSurface session API
+apps/web Device
+-> bridge Device session API
 -> bridge owns ADB/scrcpy lifecycle
 -> Web consumes video WebSocket and sends input events
 ```
@@ -249,6 +249,6 @@ apps/web DeviceSurface
 2. 用保存的 `.h264` 样本补 parser 测试。
 3. 给 Node/Web 两侧 buffer 和日志加硬上限。
 4. 实现 WebSocket backpressure 和低延迟丢包策略。
-5. 抽象 bridge-owned DeviceSurface session API。
-6. 集成到 `apps/web` 的 `DeviceSurface`。
+5. 抽象 bridge-owned Device session API。
+6. 集成到 `apps/web` 的 `Device`。
 7. 后续再评估 MSE/fMP4 fallback、键盘、滚轮、多点触控。

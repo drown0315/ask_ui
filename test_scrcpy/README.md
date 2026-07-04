@@ -1,6 +1,6 @@
 # Official scrcpy Server Calibration Demo
 
-This is a throwaway capability demo for Ask UI Android device surface work.
+This is a throwaway capability demo for Ask UI Android device work.
 
 It verifies a minimal path using the official scrcpy toolchain:
 

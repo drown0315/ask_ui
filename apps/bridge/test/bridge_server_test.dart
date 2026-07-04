@@ -253,16 +253,16 @@ void main() {
       expect(secondSessionId, firstSessionId);
     });
 
-    test('opens a device surface WebSocket with ready metadata', () async {
+    test('opens a device WebSocket with ready metadata', () async {
       final client = HttpClient();
       addTearDown(client.close);
       final sessionId = await createSession(client, baseUri);
-      final surfaceUri = baseUri.replace(
+      final deviceUri = baseUri.replace(
         scheme: 'ws',
-        path: '/api/sessions/$sessionId/device-surface',
+        path: '/api/sessions/$sessionId/device',
       );
 
-      final socket = await WebSocket.connect(surfaceUri.toString());
+      final socket = await WebSocket.connect(deviceUri.toString());
       addTearDown(socket.close);
 
       final message = jsonDecode(await socket.first.timeout(
@@ -280,21 +280,20 @@ void main() {
       });
     });
 
-    test('rejects a second active device surface WebSocket for one session',
-        () async {
+    test('rejects a second active device WebSocket for one session', () async {
       final client = HttpClient();
       addTearDown(client.close);
       final sessionId = await createSession(client, baseUri);
-      final surfaceUri = baseUri.replace(
+      final deviceUri = baseUri.replace(
         scheme: 'ws',
-        path: '/api/sessions/$sessionId/device-surface',
+        path: '/api/sessions/$sessionId/device',
       );
 
-      final firstSocket = await WebSocket.connect(surfaceUri.toString());
+      final firstSocket = await WebSocket.connect(deviceUri.toString());
       addTearDown(firstSocket.close);
       await firstSocket.first.timeout(const Duration(seconds: 2));
 
-      final secondSocket = await WebSocket.connect(surfaceUri.toString());
+      final secondSocket = await WebSocket.connect(deviceUri.toString());
       addTearDown(secondSocket.close);
       final message = jsonDecode(await secondSocket.first.timeout(
         const Duration(seconds: 2),
@@ -302,26 +301,25 @@ void main() {
 
       expect(message, {
         'type': 'error',
-        'error': 'device_surface_already_active',
-        'message': 'Device surface is already active for this bridge session.',
+        'error': 'device_already_active',
+        'message': 'Device is already active for this bridge session.',
       });
     });
 
-    test('allows a new device surface WebSocket after the active one closes',
-        () async {
+    test('allows a new device WebSocket after the active one closes', () async {
       final client = HttpClient();
       addTearDown(client.close);
       final sessionId = await createSession(client, baseUri);
-      final surfaceUri = baseUri.replace(
+      final deviceUri = baseUri.replace(
         scheme: 'ws',
-        path: '/api/sessions/$sessionId/device-surface',
+        path: '/api/sessions/$sessionId/device',
       );
 
-      final firstSocket = await WebSocket.connect(surfaceUri.toString());
+      final firstSocket = await WebSocket.connect(deviceUri.toString());
       await firstSocket.first.timeout(const Duration(seconds: 2));
       await firstSocket.close();
 
-      final secondSocket = await WebSocket.connect(surfaceUri.toString());
+      final secondSocket = await WebSocket.connect(deviceUri.toString());
       addTearDown(secondSocket.close);
       final message = jsonDecode(await secondSocket.first.timeout(
         const Duration(seconds: 2),
@@ -331,30 +329,29 @@ void main() {
       expect(message, containsPair('deviceId', '19271FDF6007TY'));
     });
 
-    test('rejects a device surface WebSocket for an unknown session', () async {
-      final surfaceUri = baseUri.replace(
+    test('rejects a device WebSocket for an unknown session', () async {
+      final deviceUri = baseUri.replace(
         scheme: 'ws',
-        path: '/api/sessions/session-missing/device-surface',
+        path: '/api/sessions/session-missing/device',
       );
 
       await expectLater(
-        WebSocket.connect(surfaceUri.toString()),
+        WebSocket.connect(deviceUri.toString()),
         throwsA(isA<WebSocketException>()),
       );
     });
 
-    test('sends a complete device surface metadata update in shell mode',
-        () async {
+    test('sends a complete device metadata update in shell mode', () async {
       final client = HttpClient();
       addTearDown(client.close);
       final sessionId = await createSession(client, baseUri);
-      final surfaceUri = baseUri.replace(
+      final deviceUri = baseUri.replace(
         scheme: 'ws',
-        path: '/api/sessions/$sessionId/device-surface',
+        path: '/api/sessions/$sessionId/device',
         queryParameters: {'debugMetadata': 'rotation'},
       );
 
-      final socket = await WebSocket.connect(surfaceUri.toString());
+      final socket = await WebSocket.connect(deviceUri.toString());
       addTearDown(socket.close);
       final messages = <Map<String, Object?>>[];
 

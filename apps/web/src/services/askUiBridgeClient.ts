@@ -104,7 +104,7 @@ export function resolveBridgeOrigin(envOrigin: string | undefined): string {
 }
 
 /**
- * Build the bridge-owned Live App Surface WebSocket URL for one session.
+ * Build the bridge-owned Live App Surface Device WebSocket URL for one session.
  *
  * Args:
  * - `sessionId`: Existing bridge session id. The URL does not include
@@ -114,19 +114,19 @@ export function resolveBridgeOrigin(envOrigin: string | undefined): string {
  *   default is used.
  *
  * Returns:
- * A `ws:` or `wss:` URL under `/api/sessions/:sessionId/device-surface`.
+ * A `ws:` or `wss:` URL under `/api/sessions/:sessionId/device`.
  *
  * Example:
- * `getDeviceSurfaceWebSocketUrl('session-1', 'http://127.0.0.1:8787')`
- * returns `ws://127.0.0.1:8787/api/sessions/session-1/device-surface`.
+ * `getDeviceWebSocketUrl('session-1', 'http://127.0.0.1:8787')`
+ * returns `ws://127.0.0.1:8787/api/sessions/session-1/device`.
  */
-export function getDeviceSurfaceWebSocketUrl(
+export function getDeviceWebSocketUrl(
   sessionId: string,
   envOrigin?: string,
 ): string {
   const url = new URL(resolveBridgeOrigin(envOrigin));
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  url.pathname = `/api/sessions/${encodeURIComponent(sessionId)}/device-surface`;
+  url.pathname = `/api/sessions/${encodeURIComponent(sessionId)}/device`;
   url.search = '';
   url.hash = '';
   return url.toString();

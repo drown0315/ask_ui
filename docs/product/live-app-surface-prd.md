@@ -8,11 +8,11 @@ Without a real Live App Surface, Ask UI cannot close the loop between observing 
 
 ## Solution
 
-Build the Live App Surface as a bridge-owned Android device stream under the existing bridge session. The web app opens a Surface WebSocket for the ready bridge session, receives metadata and raw H.264 video from the bridge, decodes and renders the stream with WebCodecs, and sends touch/system-control events back over the same WebSocket.
+Build the Live App Surface as a bridge-owned Android device stream under the existing bridge session. The web app opens a Device WebSocket for the ready bridge session, receives metadata and raw H.264 video from the bridge, decodes and renders the stream with WebCodecs, and sends touch/system-control events back over the same WebSocket.
 
 The bridge owns Flutter device availability checks, Target Device binding consistency, scrcpy server lifecycle, ADB reverse/forward state, video/control sockets, and cleanup. The web app owns layout, Device View scaling, pointer coordinate mapping, WebCodecs decoding, user-visible state, and retry controls.
 
-The first implementation should proceed through a Surface WebSocket shell before connecting the real scrcpy/WebCodecs path. This fixes the protocol, UI states, metadata handling, and coordinate mapping before introducing the full video/control lifecycle.
+The first implementation should proceed through a Device WebSocket shell before connecting the real scrcpy/WebCodecs path. This fixes the protocol, UI states, metadata handling, and coordinate mapping before introducing the full video/control lifecycle.
 
 ## User Stories
 
@@ -28,7 +28,7 @@ The first implementation should proceed through a Surface WebSocket shell before
 10. As a Flutter developer, I want the Live App Surface to show device connection states, so that I understand whether it is connecting, waiting for video, ready, or failed.
 11. As a Flutter developer, I want Ask UI to automatically start the Live App Surface when the bridge session is ready, so that I do not need an extra start step.
 12. As a Flutter developer, I want Surface retry to reuse the existing bridge session, so that a video/control failure does not reset the whole workbench.
-13. As a Flutter developer, I want Surface startup failures to show a retry path, so that I can recover after fixing local device state.
+13. As a Flutter developer, I want Device startup failures to show a retry path, so that I can recover after fixing local device state.
 14. As a Flutter developer, I want runtime Surface disconnects to show a retry path, so that I can recover from transient device or socket failures.
 15. As a Flutter developer, I want a clear WebCodecs unavailable error, so that I know the browser cannot run the first-version video path.
 16. As a Flutter developer, I want the Device View to show the Target Device screen, so that I can inspect the app visually inside Ask UI.
@@ -49,8 +49,8 @@ The first implementation should proceed through a Surface WebSocket shell before
 31. As a Flutter developer, I want startup and runtime Surface errors to have stable error codes, so that the web app can display consistent failure states.
 32. As a Flutter developer, I want detailed server logs available for debugging but not rendered as high-frequency UI, so that diagnostics do not harm video latency.
 33. As a Flutter developer, I want low-latency video behavior that prioritizes the latest frame, so that interacting with the device feels responsive.
-34. As a Flutter developer, I want the Surface implementation to clean up scrcpy and ADB resources immediately on close, so that future connections do not get stuck behind stale sessions.
-35. As a Flutter developer, I want only one active Surface connection per bridge session in the first version, so that scrcpy lifecycle ownership is clear.
+34. As a Flutter developer, I want the Device implementation to clean up scrcpy and ADB resources immediately on close, so that future connections do not get stuck behind stale sessions.
+35. As a Flutter developer, I want only one active Device connection per bridge session in the first version, so that scrcpy lifecycle ownership is clear.
 36. As a Flutter developer, I want a tested H.264 parser module, so that video decoding does not depend on one device's TCP chunk shape.
 
 ## Implementation Decisions
@@ -78,9 +78,9 @@ The first implementation should proceed through a Surface WebSocket shell before
 - Back, Home, and Recents live below the Device View, not as an overlay on the video.
 - Surface Controls remain available during Select Widget mode once control is ready.
 - Back/Home/Recents do not automatically exit Select Widget mode.
-- The Surface WebSocket is under the existing bridge session and does not accept a separate `deviceId`.
-- One bridge session allows one active Surface WebSocket in the first version.
-- A second active Surface connection fails with `device_surface_already_active`.
+- The Device WebSocket is under the existing bridge session and does not accept a separate `deviceId`.
+- One bridge session allows one active Device WebSocket in the first version.
+- A second active Device connection fails with `device_already_active`.
 - One WebSocket carries both binary H.264 frames and text JSON protocol messages.
 - Binary frames are raw H.264 Annex B chunks from scrcpy.
 - Text JSON frames carry ready/metadata, control messages, logs, and errors.
@@ -101,17 +101,17 @@ The first implementation should proceed through a Surface WebSocket shell before
 - Invalid `screenWidth/screenHeight` returns `control-error`.
 - System key messages use `systemKey` with `back`, `home`, and `recents`.
 - Bridge maps `recents` to the Android app-switch key behavior internally.
-- Invalid control messages return `control-error` and do not close the Surface WebSocket.
-- Underlying video or control socket failures fail the whole Surface session.
-- Surface startup failures use `device_surface_start_failed`.
-- Surface runtime failures use `device_surface_failed`.
-- Surface WebSocket close or startup cancellation triggers immediate scrcpy server, socket, ADB reverse/forward, parser, buffer, and Surface state cleanup.
+- Invalid control messages return `control-error` and do not close the Device WebSocket.
+- Underlying video or control socket failures fail the whole Device session.
+- Device startup failures use `device_start_failed`.
+- Device runtime failures use `device_failed`.
+- Device WebSocket close or startup cancellation triggers immediate scrcpy server, socket, ADB reverse/forward, parser, buffer, and Device state cleanup.
 - The bridge uses a project-controlled official scrcpy server jar, not a desktop scrcpy CLI window.
 - Scrcpy server version is logged by bridge but not included in Surface ready metadata.
 - WebCodecs is the only first-version decode path; no MSE/fMP4 fallback is included.
 - Web owns Annex B parsing and access-unit assembly in a media module rather than inside a React component.
 - Low-latency decoding prioritizes the latest frame and may drop delta access units when decode queue pressure grows.
-- Surface implementation should start with a WebSocket shell that sends fake metadata and validates control messages, then connect the real scrcpy/WebCodecs stream.
+- Device implementation should start with a WebSocket shell that sends fake metadata and validates control messages, then connect the real scrcpy/WebCodecs stream.
 
 ## Testing Decisions
 
@@ -119,7 +119,7 @@ The first implementation should proceed through a Surface WebSocket shell before
 - The Target Device availability checker should be tested with machine JSON fixtures covering Android success, non-Android rejection, exact `deviceId` matching, unsupported devices, malformed output, command failure, missing `isSupported`, and case-sensitive id matching.
 - Bridge session tests should cover required `deviceId`, trimming, session reuse for the same Target Device, and `device_mismatch_for_session` for conflicting Target Devices.
 - Bridge server tests should cover `target_device_not_found`, `target_device_unavailable`, `target_device_check_failed`, and creation success using a fake device checker.
-- Surface WebSocket shell tests should cover single active connection, ready metadata, metadata update, unsupported control type, invalid JSON, invalid touch fields, invalid system keys, and the fact that `control-error` does not close the socket.
+- Device WebSocket shell tests should cover single active connection, ready metadata, metadata update, unsupported control type, invalid JSON, invalid touch fields, invalid system keys, and the fact that `control-error` does not close the socket.
 - Surface lifecycle tests should cover startup cancellation, WebSocket close cleanup, startup failure cleanup, runtime failure cleanup, and second connection rejection.
 - Web protocol tests should cover parsing ready/metadata messages, Surface state transitions, retry behavior, disconnected behavior, and WebCodecs unavailable behavior.
 - Web layout tests should cover Device View fit calculations, allowed upscaling, letterbox hit rejection, long `deviceId` truncation behavior, and metadata-driven remapping.
@@ -133,9 +133,9 @@ The first implementation should proceed through a Surface WebSocket shell before
 
 - Strict proof that `vmServiceUri` came from the same Android device as `deviceId`.
 - Automatic Surface reconnect.
-- Surface startup timeout policy for `flutter devices --machine`.
+- Device startup timeout policy for `flutter devices --machine`.
 - User-facing configuration for Flutter executable path.
-- Multiple simultaneous Surface WebSocket clients or fan-out.
+- Multiple simultaneous Device WebSocket clients or fan-out.
 - MSE/fMP4, WebRTC, Broadway, or TinyH264 fallback paths.
 - Multi-touch, keyboard text input, mouse wheel, power button, menu button, and additional Android system controls beyond Back/Home/Recents.
 - Desktop, web, iOS, or non-Android Target Devices.
@@ -148,4 +148,4 @@ The first implementation should proceed through a Surface WebSocket shell before
 - The current calibration documents support the WebCodecs + official scrcpy server route and warn against treating TCP chunks as video frames.
 - The first-version availability check is intentionally less strict than a true VM Service/device binding verification.
 - The implementation should preserve bridge ownership of ADB and scrcpy lifecycle. The web app should never directly run ADB or encode scrcpy binary control messages.
-- The PRD respects the accepted ADRs for bridge-owned Android device surface and the Live App Surface WebSocket protocol.
+- The PRD respects the accepted ADRs for bridge-owned Android device and the Live App Surface Device WebSocket protocol.

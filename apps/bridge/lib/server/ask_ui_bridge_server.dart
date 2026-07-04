@@ -27,7 +27,7 @@ class AskUiBridgeServer {
   final FlutterAppController _appController;
   final FlutterDeviceChecker _flutterDeviceChecker;
   final BridgeLogger _logger;
-  final Set<String> _activeDeviceSurfaceSessionIds = {};
+  final Set<String> _activeDeviceSessionIds = {};
   HttpServer? _server;
 
   Future<int> start({required String host, required int port}) async {
@@ -60,8 +60,8 @@ class AskUiBridgeServer {
         request.uri.pathSegments.length == 4 &&
         request.uri.pathSegments[0] == 'api' &&
         request.uri.pathSegments[1] == 'sessions' &&
-        request.uri.pathSegments[3] == 'device-surface') {
-      await _openDeviceSurface(request);
+        request.uri.pathSegments[3] == 'device') {
+      await _openDevice(request);
       return;
     }
 
@@ -260,7 +260,7 @@ class AskUiBridgeServer {
     }
   }
 
-  Future<void> _openDeviceSurface(HttpRequest request) async {
+  Future<void> _openDevice(HttpRequest request) async {
     final sessionId = request.uri.pathSegments[2];
     final session = _sessionStore.find(sessionId);
 
@@ -274,29 +274,29 @@ class AskUiBridgeServer {
     }
 
     final socket = await WebSocketTransformer.upgrade(request);
-    if (_activeDeviceSurfaceSessionIds.contains(sessionId)) {
+    if (_activeDeviceSessionIds.contains(sessionId)) {
       socket.add(jsonEncode({
         'type': 'error',
-        'error': 'device_surface_already_active',
-        'message': 'Device surface is already active for this bridge session.',
+        'error': 'device_already_active',
+        'message': 'Device is already active for this bridge session.',
       }));
       await socket.close();
       return;
     }
 
-    _activeDeviceSurfaceSessionIds.add(sessionId);
+    _activeDeviceSessionIds.add(sessionId);
     socket.listen(
       (_) {},
       onDone: () {
-        _activeDeviceSurfaceSessionIds.remove(sessionId);
+        _activeDeviceSessionIds.remove(sessionId);
       },
       onError: (_) {
-        _activeDeviceSurfaceSessionIds.remove(sessionId);
+        _activeDeviceSessionIds.remove(sessionId);
       },
     );
     socket.add(jsonEncode({
       'type': 'ready',
-      ..._buildDeviceSurfaceMetadata(
+      ..._buildDeviceMetadata(
         deviceId: session.deviceId,
         screenWidth: 1080,
         screenHeight: 2400,
@@ -305,7 +305,7 @@ class AskUiBridgeServer {
     if (request.uri.queryParameters['debugMetadata'] == 'rotation') {
       socket.add(jsonEncode({
         'type': 'metadata',
-        ..._buildDeviceSurfaceMetadata(
+        ..._buildDeviceMetadata(
           deviceId: session.deviceId,
           screenWidth: 2400,
           screenHeight: 1080,
@@ -314,7 +314,7 @@ class AskUiBridgeServer {
     }
   }
 
-  Map<String, Object?> _buildDeviceSurfaceMetadata({
+  Map<String, Object?> _buildDeviceMetadata({
     required String deviceId,
     required int screenWidth,
     required int screenHeight,

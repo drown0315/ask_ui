@@ -32,7 +32,7 @@ export type LiveAppSurfaceState =
  *   exists.
  *
  * Returns:
- * `connecting` when a session can open the Surface WebSocket, otherwise `idle`.
+ * `connecting` when a session can open the Device WebSocket, otherwise `idle`.
  */
 export function getInitialLiveAppSurfaceState(
   sessionId: string | null,
@@ -49,11 +49,11 @@ export function getInitialLiveAppSurfaceState(
 }
 
 /**
- * Apply one text message from the Surface WebSocket to the visible state.
+ * Apply one text message from the Device WebSocket to the visible state.
  *
  * Args:
  * - `state`: Current Live App Surface state.
- * - `rawMessage`: Text frame received from the bridge Surface WebSocket.
+ * - `rawMessage`: Text frame received from the bridge Device WebSocket.
  *
  * Returns:
  * The next Live App Surface state. `ready` and `metadata` messages must carry
@@ -87,7 +87,7 @@ export function reduceLiveAppSurfaceMessage(
       message:
         typeof message.message === 'string'
           ? message.message
-          : 'Device surface failed.',
+          : 'Device failed.',
     };
   }
 

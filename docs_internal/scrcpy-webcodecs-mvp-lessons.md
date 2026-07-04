@@ -109,7 +109,7 @@ BINARY 23246 total 23277
 - 清理时 kill scrcpy server process、关闭 video socket、关闭 capture server、移除 ADB reverse/forward。
 - 如果旧 session 的 WebSocket 已 destroyed，允许下一次连接先清理旧 session。
 
-经验：DeviceSurface 正式实现必须把 session lifecycle 当作一等能力，而不是附属逻辑。
+经验：Device 正式实现必须把 session lifecycle 当作一等能力，而不是附属逻辑。
 
 ### 4. 单连接限制要明确
 
@@ -247,7 +247,7 @@ adb shell input tap x y
 - 没有 MSE fallback。
 - 没有 Broadway/TinyH264 fallback。
 - WebCodecs 页面点击/滑动已走 scrcpy control socket；原始 JPEG demo 仍走 ADB input。
-- 没有集成到 `apps/web` 的 `DeviceSurface`。
+- 没有集成到 `apps/web` 的 `Device`。
 - 没有单元测试；这是 calibration demo。
 
 ## 下一步建议
@@ -260,9 +260,9 @@ adb shell input tap x y
 6. 再决定是否把这套能力提升到 bridge API 设计。
 7. bridge API 设计时保留 MSE fallback 的扩展点，但首期实现继续 WebCodecs first。
 
-## 对正式 DeviceSurface 的启发
+## 对正式 Device 的启发
 
-正式实现里，`DeviceSurface` 不应该直接管理 scrcpy 进程。它应该消费 bridge 提供的 surface session：
+正式实现里，`Device` 不应该直接管理 scrcpy 进程。它应该消费 bridge 提供的 surface session：
 
 - `deviceId` 来自页面 URL，必填。
 - bridge 校验 `deviceId` 和 `vmServiceUri` 对应同一台稳定设备。

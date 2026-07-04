@@ -1,6 +1,6 @@
-# Bridge-Owned Android Device Surface
+# Bridge-Owned Android Device
 
-Ask UI will route Android device screen and input control through the local bridge session instead of letting the web app manage scrcpy or ADB directly. The bridge already owns local Flutter session integration, and scrcpy adds local process, device serial, port, stream, and input lifecycle concerns that belong beside that session boundary; the web app should consume bridge-provided surface state and send user input through bridge APIs.
+Ask UI will route Android device screen and input control through the local bridge session instead of letting the web app manage scrcpy or ADB directly. The bridge already owns local Flutter session integration, and scrcpy adds local process, device serial, port, stream, and input lifecycle concerns that belong beside that session boundary; the web app should consume bridge-provided Device state and send user input through bridge APIs.
 
 The page startup contract includes `deviceId` so the bridge can target the same Android device with ADB/scrcpy. In the first version, the bridge performs a Target Device availability check by confirming that the requested `deviceId` appears in `flutter devices --machine` output before creating a session. This check proves that Flutter currently sees the requested device; it does not strictly prove that the session's `vmServiceUri` came from that same device.
 
