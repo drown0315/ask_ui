@@ -5,7 +5,12 @@ import {
   type CSSProperties,
   type KeyboardEvent,
 } from 'react';
-import type { BridgeSessionState, WidgetTreeNode } from '../../types/bridgeSession';
+import { selectWidgetById } from '../../services/askUiBridgeClient';
+import type {
+  BridgeSessionState,
+  WidgetTreeLoadState,
+  WidgetTreeNode,
+} from '../../types/bridgeSession';
 import {
   buildVisibleWidgetTreeRows,
   collectExpandableNodeIds,
@@ -14,7 +19,7 @@ import {
   collectAncestorNodeIds,
   findWidgetTreeMatches,
   getNextMatchIndex,
-  type WidgetTreeSearchMatch,
+  getPreviousMatchIndex,
 } from './widgetTreeSearch';
 
 type WidgetTreeIconKind =
@@ -27,27 +32,6 @@ type WidgetTreeIconKind =
   | 'custom'
   | 'widget';
 
-/**
- * Choose the icon shown beside one Widget Tree row label.
- *
- * This method:
- * 1. checks for likely project widgets first
- * 2. matches common Flutter widget label fragments to broad UI categories
- * 3. falls back to a neutral widget icon when no rule matches
- *
- * Args:
- * - `label`: Widget label from the bridge response. It is usually the Flutter
- *   Inspector `description`, such as `Scaffold`, `GestureDetector`, or
- *   `WonderIllustration`.
- *
- * Returns:
- * A small icon record containing the category key, rendered glyph, and tooltip
- * text for the row.
- *
- * Example:
- * `GestureDetector` returns the interaction icon, `SizedBox.expand` returns
- * the layout icon, and `WonderIllustration` returns the project widget icon.
- */
 function getWidgetTreeIcon(label: string): {
   kind: WidgetTreeIconKind;
   glyph: string;
@@ -161,39 +145,10 @@ function getWidgetTreeIcon(label: string): {
   };
 }
 
-/**
- * Return whether a widget label looks like a project widget.
- *
- * Args:
- * - `label`: Widget label from the bridge response. The current web payload
- *   does not include `createdByLocalProject` or creation location, so this
- *   function can only use the label text.
- *
- * Returns:
- * `true` for known Ask UI demo app naming patterns, otherwise `false`.
- *
- * Example:
- * `WonderIllustration` and `HomeScreen` return `true`; `Container` returns
- * `false`.
- */
 function isCustomWidget(label: string) {
   return /^[A-Z]/.test(label) && /^Wonder|Wonders|Home|Previous|Bottom/.test(label);
 }
 
-/**
- * Return whether a widget label contains any category pattern.
- *
- * Args:
- * - `label`: Widget label from the bridge response.
- * - `patterns`: Case-sensitive fragments that identify one broad widget
- *   category. For example, `Gesture` matches `GestureDetector`.
- *
- * Returns:
- * `true` when at least one pattern appears in the label.
- *
- * Example:
- * `matchesWidget('DefaultTextStyle', ['Text', 'RichText'])` returns `true`.
- */
 function matchesWidget(label: string, patterns: string[]) {
   return patterns.some((pattern) => label.includes(pattern));
 }
@@ -326,31 +281,33 @@ function WidgetTreeRows({
 }
 
 function WidgetTreeSessionState({
-  state,
+  bridgeSessionState,
+  widgetTreeState,
   selectedWidgetId,
   searchActiveWidgetId,
   searchExpandedAncestorIds,
   onSelectWidget,
 }: {
-  state: BridgeSessionState;
+  bridgeSessionState: BridgeSessionState;
+  widgetTreeState: WidgetTreeLoadState;
   selectedWidgetId: string | null;
   searchActiveWidgetId: string | null;
   searchExpandedAncestorIds: string[];
   onSelectWidget: (widgetId: string) => void;
 }) {
-  if (state.status === 'incomplete') {
+  if (bridgeSessionState.status === 'incomplete') {
     return (
       <div className="widget-tree-state">
         <div className="widget-tree-state-title">Session parameters required</div>
         <div className="widget-tree-state-copy">
-          Add {state.missing.join(' and ')} to the page URL to create an Ask UI
-          bridge session.
+          Add {bridgeSessionState.missing.join(' and ')} to the page URL to
+          create an Ask UI bridge session.
         </div>
       </div>
     );
   }
 
-  if (state.status === 'creating') {
+  if (bridgeSessionState.status === 'creating') {
     return (
       <div className="widget-tree-state">
         <div className="widget-tree-state-title">Creating bridge session</div>
@@ -362,31 +319,32 @@ function WidgetTreeSessionState({
     );
   }
 
-  if (state.status === 'error') {
+  if (bridgeSessionState.status === 'error') {
     return (
       <div className="widget-tree-state widget-tree-state-error">
         <div className="widget-tree-state-title">Bridge session failed</div>
-        <div className="widget-tree-state-copy">{state.message}</div>
+        <div className="widget-tree-state-copy">{bridgeSessionState.message}</div>
       </div>
     );
   }
 
-  if (state.widgetTree.status === 'loading') {
+  if (widgetTreeState.status === 'loading') {
     return (
       <div className="widget-tree-state">
         <div className="widget-tree-state-title">Fetching Widget Tree</div>
         <div className="widget-tree-state-copy">
-          Session {state.sessionId} is reading the Flutter Inspector summary tree.
+          Session {bridgeSessionState.sessionId} is reading the Flutter Inspector
+          summary tree.
         </div>
       </div>
     );
   }
 
-  if (state.widgetTree.status === 'error') {
+  if (widgetTreeState.status === 'error') {
     return (
       <div className="widget-tree-state widget-tree-state-error">
         <div className="widget-tree-state-title">Widget Tree failed</div>
-        <div className="widget-tree-state-copy">{state.widgetTree.message}</div>
+        <div className="widget-tree-state-copy">{widgetTreeState.message}</div>
       </div>
     );
   }
@@ -394,7 +352,7 @@ function WidgetTreeSessionState({
   return (
     <div className="widget-tree-root-list">
       <WidgetTreeRows
-        root={state.widgetTree.root}
+        root={widgetTreeState.root}
         selectedWidgetId={selectedWidgetId}
         searchActiveWidgetId={searchActiveWidgetId}
         searchExpandedAncestorIds={searchExpandedAncestorIds}
@@ -406,33 +364,28 @@ function WidgetTreeSessionState({
 
 export function WidgetTreePanel({
   bridgeSessionState,
-  canRefresh,
-  searchQuery,
-  searchMatches,
-  searchActiveIndex,
-  searchActiveWidgetId,
-  selectedWidgetId,
-  selectionError,
   onRefresh,
-  onSearchQueryChange,
-  onSearchNext,
-  onSearchPrevious,
-  onSelectWidget,
+  widgetTreeState,
 }: {
   bridgeSessionState: BridgeSessionState;
-  canRefresh: boolean;
-  searchQuery: string;
-  searchMatches: WidgetTreeSearchMatch[];
-  searchActiveIndex: number;
-  searchActiveWidgetId: string | null;
-  selectedWidgetId: string | null;
-  selectionError: string | null;
   onRefresh: () => void;
-  onSearchQueryChange: (query: string) => void;
-  onSearchNext: () => void;
-  onSearchPrevious: () => void;
-  onSelectWidget: (widgetId: string) => void;
+  widgetTreeState: WidgetTreeLoadState;
 }) {
+  const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchActiveIndex, setSearchActiveIndex] = useState(-1);
+  const searchMatches = useMemo(() => {
+    if (widgetTreeState.status !== 'loaded') {
+      return [];
+    }
+
+    return findWidgetTreeMatches(widgetTreeState.root, searchQuery);
+  }, [searchQuery, widgetTreeState]);
+  const searchActiveWidgetId =
+    searchActiveIndex >= 0
+      ? searchMatches[searchActiveIndex]?.nodeId ?? null
+      : null;
   const searchExpandedAncestorIds = useMemo(
     () => collectAncestorNodeIds(searchMatches),
     [searchMatches],
@@ -444,6 +397,82 @@ export function WidgetTreePanel({
       : hasSearchQuery
         ? `0/0`
         : '';
+  const canRefresh =
+    bridgeSessionState.status === 'ready' && widgetTreeState.status !== 'loading';
+
+  useEffect(() => {
+    setSelectedWidgetId(null);
+    setSelectionError(null);
+    setSearchActiveIndex(-1);
+  }, [widgetTreeState]);
+
+  async function handleSelectWidget(widgetId: string) {
+    if (bridgeSessionState.status !== 'ready') {
+      return;
+    }
+
+    const previousWidgetId = selectedWidgetId;
+    setSelectedWidgetId(widgetId);
+    setSelectionError(null);
+
+    try {
+      await selectWidgetById(bridgeSessionState.sessionId, widgetId);
+    } catch (error: unknown) {
+      setSelectedWidgetId(previousWidgetId);
+      setSelectionError(
+        error instanceof Error ? error.message : 'Failed to select Flutter widget',
+      );
+    }
+  }
+
+  function selectSearchMatch(nextIndex: number) {
+    const match = searchMatches[nextIndex];
+
+    if (!match) {
+      setSearchActiveIndex(-1);
+      return;
+    }
+
+    setSearchActiveIndex(nextIndex);
+    void handleSelectWidget(match.nodeId);
+  }
+
+  function handleSearchQueryChange(query: string) {
+    setSearchQuery(query);
+
+    if (!query.trim() || widgetTreeState.status !== 'loaded') {
+      setSearchActiveIndex(-1);
+      return;
+    }
+
+    const matches = findWidgetTreeMatches(widgetTreeState.root, query);
+
+    if (matches.length === 0) {
+      setSearchActiveIndex(-1);
+      return;
+    }
+
+    setSearchActiveIndex(0);
+    void handleSelectWidget(matches[0].nodeId);
+  }
+
+  function handleSearchNext() {
+    selectSearchMatch(
+      getNextMatchIndex({
+        currentIndex: searchActiveIndex,
+        total: searchMatches.length,
+      }),
+    );
+  }
+
+  function handleSearchPrevious() {
+    selectSearchMatch(
+      getPreviousMatchIndex({
+        currentIndex: searchActiveIndex,
+        total: searchMatches.length,
+      }),
+    );
+  }
 
   return (
     <aside className="workbench-panel widget-tree-panel">
@@ -470,11 +499,11 @@ export function WidgetTreePanel({
         <input
           aria-label="Search widget tree"
           className="widget-tree-search-input"
-          onChange={(event) => onSearchQueryChange(event.currentTarget.value)}
+          onChange={(event) => handleSearchQueryChange(event.currentTarget.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault();
-              onSearchNext();
+              handleSearchNext();
             }
           }}
           placeholder="Search widgets"
@@ -490,7 +519,7 @@ export function WidgetTreePanel({
               aria-label="Previous widget tree search match"
               className="widget-tree-search-action widget-tree-search-action-previous"
               disabled={searchMatches.length === 0}
-              onClick={onSearchPrevious}
+              onClick={handleSearchPrevious}
               title="Previous match"
               type="button"
             />
@@ -498,7 +527,7 @@ export function WidgetTreePanel({
               aria-label="Next widget tree search match"
               className="widget-tree-search-action widget-tree-search-action-next"
               disabled={searchMatches.length === 0}
-              onClick={onSearchNext}
+              onClick={handleSearchNext}
               title="Next match"
               type="button"
             />
@@ -509,11 +538,12 @@ export function WidgetTreePanel({
         <div className="widget-tree-selection-error">{selectionError}</div>
       ) : null}
       <WidgetTreeSessionState
-        state={bridgeSessionState}
+        bridgeSessionState={bridgeSessionState}
+        widgetTreeState={widgetTreeState}
         selectedWidgetId={selectedWidgetId}
         searchActiveWidgetId={searchActiveWidgetId}
         searchExpandedAncestorIds={searchExpandedAncestorIds}
-        onSelectWidget={onSelectWidget}
+        onSelectWidget={handleSelectWidget}
       />
     </aside>
   );

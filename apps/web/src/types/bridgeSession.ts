@@ -29,7 +29,6 @@ export type BridgeSessionState =
       status: 'ready';
       sessionId: string;
       targetDeviceId: string;
-      widgetTree: WidgetTreeLoadState;
     }
   | {
       status: 'error';

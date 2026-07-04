@@ -48,9 +48,6 @@ test('describes ready Target Device state with the real device id', () => {
       status: 'ready',
       sessionId: 'session-1',
       targetDeviceId: '19271FDF6007TY',
-      widgetTree: {
-        status: 'loading',
-      },
     }),
     {
       topBarLabel: 'Device 19271FDF6007TY',
