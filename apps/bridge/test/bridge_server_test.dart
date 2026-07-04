@@ -253,6 +253,131 @@ void main() {
       expect(secondSessionId, firstSessionId);
     });
 
+    test('opens a device surface WebSocket with ready metadata', () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+      final sessionId = await createSession(client, baseUri);
+      final surfaceUri = baseUri.replace(
+        scheme: 'ws',
+        path: '/api/sessions/$sessionId/device-surface',
+      );
+
+      final socket = await WebSocket.connect(surfaceUri.toString());
+      addTearDown(socket.close);
+
+      final message = jsonDecode(await socket.first.timeout(
+        const Duration(seconds: 2),
+      )) as Map<String, Object?>;
+
+      expect(message, {
+        'type': 'ready',
+        'deviceId': '19271FDF6007TY',
+        'screenWidth': 1080,
+        'screenHeight': 2400,
+        'maxFps': 60,
+        'videoCodec': 'h264',
+        'controlReady': true,
+      });
+    });
+
+    test('rejects a second active device surface WebSocket for one session',
+        () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+      final sessionId = await createSession(client, baseUri);
+      final surfaceUri = baseUri.replace(
+        scheme: 'ws',
+        path: '/api/sessions/$sessionId/device-surface',
+      );
+
+      final firstSocket = await WebSocket.connect(surfaceUri.toString());
+      addTearDown(firstSocket.close);
+      await firstSocket.first.timeout(const Duration(seconds: 2));
+
+      final secondSocket = await WebSocket.connect(surfaceUri.toString());
+      addTearDown(secondSocket.close);
+      final message = jsonDecode(await secondSocket.first.timeout(
+        const Duration(seconds: 2),
+      )) as Map<String, Object?>;
+
+      expect(message, {
+        'type': 'error',
+        'error': 'device_surface_already_active',
+        'message': 'Device surface is already active for this bridge session.',
+      });
+    });
+
+    test('allows a new device surface WebSocket after the active one closes',
+        () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+      final sessionId = await createSession(client, baseUri);
+      final surfaceUri = baseUri.replace(
+        scheme: 'ws',
+        path: '/api/sessions/$sessionId/device-surface',
+      );
+
+      final firstSocket = await WebSocket.connect(surfaceUri.toString());
+      await firstSocket.first.timeout(const Duration(seconds: 2));
+      await firstSocket.close();
+
+      final secondSocket = await WebSocket.connect(surfaceUri.toString());
+      addTearDown(secondSocket.close);
+      final message = jsonDecode(await secondSocket.first.timeout(
+        const Duration(seconds: 2),
+      )) as Map<String, Object?>;
+
+      expect(message, containsPair('type', 'ready'));
+      expect(message, containsPair('deviceId', '19271FDF6007TY'));
+    });
+
+    test('rejects a device surface WebSocket for an unknown session', () async {
+      final surfaceUri = baseUri.replace(
+        scheme: 'ws',
+        path: '/api/sessions/session-missing/device-surface',
+      );
+
+      await expectLater(
+        WebSocket.connect(surfaceUri.toString()),
+        throwsA(isA<WebSocketException>()),
+      );
+    });
+
+    test('sends a complete device surface metadata update in shell mode',
+        () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+      final sessionId = await createSession(client, baseUri);
+      final surfaceUri = baseUri.replace(
+        scheme: 'ws',
+        path: '/api/sessions/$sessionId/device-surface',
+        queryParameters: {'debugMetadata': 'rotation'},
+      );
+
+      final socket = await WebSocket.connect(surfaceUri.toString());
+      addTearDown(socket.close);
+      final messages = <Map<String, Object?>>[];
+
+      await for (final rawMessage
+          in socket.timeout(const Duration(seconds: 2))) {
+        messages.add(jsonDecode(rawMessage as String) as Map<String, Object?>);
+        if (messages.length == 2) {
+          break;
+        }
+      }
+
+      expect(messages.first, containsPair('type', 'ready'));
+      expect(messages.last, {
+        'type': 'metadata',
+        'deviceId': '19271FDF6007TY',
+        'screenWidth': 2400,
+        'screenHeight': 1080,
+        'maxFps': 60,
+        'videoCodec': 'h264',
+        'controlReady': true,
+      });
+    });
+
     test('rejects a different deviceId for an existing Flutter app session',
         () async {
       final client = HttpClient();

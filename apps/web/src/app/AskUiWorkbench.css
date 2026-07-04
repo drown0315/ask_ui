@@ -628,6 +628,33 @@ body {
   text-align: center;
 }
 
+.live-app-surface-detail {
+  max-width: 240px;
+  margin-top: 6px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-app-surface-retry {
+  margin-top: 12px;
+  padding: 7px 11px;
+  border: 1px solid rgba(66, 184, 131, 0.28);
+  border-radius: 7px;
+  background: #ffffff;
+  color: var(--vue-green-dark);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.live-app-surface-retry:not(:disabled) {
+  cursor: pointer;
+}
+
 .live-app-surface-selecting .live-app-surface-placeholder {
   border-color: rgba(66, 184, 131, 0.46);
   box-shadow:

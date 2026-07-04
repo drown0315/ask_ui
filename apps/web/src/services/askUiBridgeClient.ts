@@ -104,6 +104,35 @@ export function resolveBridgeOrigin(envOrigin: string | undefined): string {
 }
 
 /**
+ * Build the bridge-owned Live App Surface WebSocket URL for one session.
+ *
+ * Args:
+ * - `sessionId`: Existing bridge session id. The URL does not include
+ *   `deviceId` because the bridge session already owns the Target Device
+ *   binding.
+ * - `envOrigin`: Optional bridge HTTP origin. When omitted, the local bridge
+ *   default is used.
+ *
+ * Returns:
+ * A `ws:` or `wss:` URL under `/api/sessions/:sessionId/device-surface`.
+ *
+ * Example:
+ * `getDeviceSurfaceWebSocketUrl('session-1', 'http://127.0.0.1:8787')`
+ * returns `ws://127.0.0.1:8787/api/sessions/session-1/device-surface`.
+ */
+export function getDeviceSurfaceWebSocketUrl(
+  sessionId: string,
+  envOrigin?: string,
+): string {
+  const url = new URL(resolveBridgeOrigin(envOrigin));
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  url.pathname = `/api/sessions/${encodeURIComponent(sessionId)}/device-surface`;
+  url.search = '';
+  url.hash = '';
+  return url.toString();
+}
+
+/**
  * Decode a bridge HTTP response as JSON and normalize empty response failures.
  *
  * Args:

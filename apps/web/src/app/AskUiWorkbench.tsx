@@ -4,6 +4,7 @@ import { TopBar } from '../components/top-bar/TopBar';
 import { getTopBarStatusMessage } from '../components/top-bar/topBarActions';
 import { WidgetTreePanel } from '../components/widget-tree/WidgetTreePanel';
 import { getTargetDeviceDisplay } from '../session/targetDeviceDisplay';
+import { useLiveAppSurface } from '../live-app-surface/useLiveAppSurface';
 import { useBridgeSession } from '../session/useBridgeSession';
 import { useWidgetTree } from '../widget-tree/useWidgetTree';
 import { useWorkbenchActions } from '../workbench-actions/useWorkbenchActions';
@@ -13,6 +14,7 @@ export function AskUiWorkbench() {
   const { bridgeSessionState, readySessionId } = useBridgeSession(
     window.location.href,
   );
+  const liveAppSurface = useLiveAppSurface(readySessionId);
   const widgetTree = useWidgetTree(readySessionId);
   const actions = useWorkbenchActions({
     sessionId: readySessionId,
@@ -48,6 +50,8 @@ export function AskUiWorkbench() {
         <div {...panelResize.resizeHandleProps} />
         <LiveAppSurface
           isSelectWidgetActive={actions.topBarActionState.isSelectWidgetActive}
+          onRetry={liveAppSurface.retryLiveAppSurface}
+          surfaceState={liveAppSurface.surfaceState}
           targetDeviceDisplay={targetDeviceDisplay}
         />
         <SelectionNotesPanel />

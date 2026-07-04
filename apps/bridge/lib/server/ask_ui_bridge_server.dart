@@ -27,6 +27,7 @@ class AskUiBridgeServer {
   final FlutterAppController _appController;
   final FlutterDeviceChecker _flutterDeviceChecker;
   final BridgeLogger _logger;
+  final Set<String> _activeDeviceSurfaceSessionIds = {};
   HttpServer? _server;
 
   Future<int> start({required String host, required int port}) async {
@@ -52,6 +53,15 @@ class AskUiBridgeServer {
 
     if (request.method == 'POST' && request.uri.path == '/api/sessions') {
       await _createSession(request);
+      return;
+    }
+
+    if (request.method == 'GET' &&
+        request.uri.pathSegments.length == 4 &&
+        request.uri.pathSegments[0] == 'api' &&
+        request.uri.pathSegments[1] == 'sessions' &&
+        request.uri.pathSegments[3] == 'device-surface') {
+      await _openDeviceSurface(request);
       return;
     }
 
@@ -248,6 +258,75 @@ class AskUiBridgeServer {
         },
       );
     }
+  }
+
+  Future<void> _openDeviceSurface(HttpRequest request) async {
+    final sessionId = request.uri.pathSegments[2];
+    final session = _sessionStore.find(sessionId);
+
+    if (session == null) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notFound,
+        body: {'error': 'session_not_found'},
+      );
+      return;
+    }
+
+    final socket = await WebSocketTransformer.upgrade(request);
+    if (_activeDeviceSurfaceSessionIds.contains(sessionId)) {
+      socket.add(jsonEncode({
+        'type': 'error',
+        'error': 'device_surface_already_active',
+        'message': 'Device surface is already active for this bridge session.',
+      }));
+      await socket.close();
+      return;
+    }
+
+    _activeDeviceSurfaceSessionIds.add(sessionId);
+    socket.listen(
+      (_) {},
+      onDone: () {
+        _activeDeviceSurfaceSessionIds.remove(sessionId);
+      },
+      onError: (_) {
+        _activeDeviceSurfaceSessionIds.remove(sessionId);
+      },
+    );
+    socket.add(jsonEncode({
+      'type': 'ready',
+      ..._buildDeviceSurfaceMetadata(
+        deviceId: session.deviceId,
+        screenWidth: 1080,
+        screenHeight: 2400,
+      ),
+    }));
+    if (request.uri.queryParameters['debugMetadata'] == 'rotation') {
+      socket.add(jsonEncode({
+        'type': 'metadata',
+        ..._buildDeviceSurfaceMetadata(
+          deviceId: session.deviceId,
+          screenWidth: 2400,
+          screenHeight: 1080,
+        ),
+      }));
+    }
+  }
+
+  Map<String, Object?> _buildDeviceSurfaceMetadata({
+    required String deviceId,
+    required int screenWidth,
+    required int screenHeight,
+  }) {
+    return {
+      'deviceId': deviceId,
+      'screenWidth': screenWidth,
+      'screenHeight': screenHeight,
+      'maxFps': 60,
+      'videoCodec': 'h264',
+      'controlReady': true,
+    };
   }
 
   Future<void> _getWidgetTree(HttpRequest request) async {
