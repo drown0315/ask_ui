@@ -18,6 +18,12 @@ Expected URL shape:
 http://127.0.0.1:<ask-ui-port>/?vmServiceUri=<encoded-vm-service-ws-uri>&projectRoot=<encoded-local-path>
 ```
 
+Future Android device surface work extends this URL with a required target device parameter:
+
+```text
+http://127.0.0.1:<ask-ui-port>/?vmServiceUri=<encoded-vm-service-ws-uri>&projectRoot=<encoded-local-path>&deviceId=<encoded-android-device-id>
+```
+
 The user should see:
 
 - Missing-parameter state when `vmServiceUri` or `projectRoot` is absent.

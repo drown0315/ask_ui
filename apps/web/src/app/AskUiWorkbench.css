@@ -106,6 +106,12 @@ body {
   text-overflow: ellipsis;
 }
 
+.target-device-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .toolbar-button:not(:disabled) {
   cursor: pointer;
 }
@@ -575,7 +581,7 @@ body {
   white-space: nowrap;
 }
 
-.device-stage {
+.live-app-surface {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -587,7 +593,7 @@ body {
   color: var(--muted);
 }
 
-.device-stage-selecting {
+.live-app-surface-selecting {
   background:
     linear-gradient(90deg, rgba(66, 184, 131, 0.13) 1px, transparent 1px),
     linear-gradient(180deg, rgba(66, 184, 131, 0.13) 1px, transparent 1px),
@@ -609,7 +615,7 @@ body {
   font-weight: 700;
 }
 
-.device-stage-placeholder {
+.live-app-surface-placeholder {
   min-width: 180px;
   padding: 16px 22px;
   border: 1px solid rgba(66, 184, 131, 0.28);
@@ -622,7 +628,7 @@ body {
   text-align: center;
 }
 
-.device-stage-selecting .device-stage-placeholder {
+.live-app-surface-selecting .live-app-surface-placeholder {
   border-color: rgba(66, 184, 131, 0.46);
   box-shadow:
     0 0 0 3px rgba(66, 184, 131, 0.12),

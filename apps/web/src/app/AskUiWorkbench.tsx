@@ -7,7 +7,7 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from 'react';
-import { DeviceStage } from '../components/device-stage/DeviceStage';
+import { LiveAppSurface } from '../components/live-app-surface/LiveAppSurface';
 import { SelectionNotesPanel } from '../components/selection-notes/SelectionNotesPanel';
 import { TopBar } from '../components/top-bar/TopBar';
 import {
@@ -35,6 +35,7 @@ import {
   type BridgeSessionEvent,
 } from '../services/askUiBridgeClient';
 import { readSessionBootstrap } from '../session/sessionBootstrap';
+import { getTargetDeviceDisplay } from '../session/targetDeviceDisplay';
 import type { BridgeSessionState, WidgetTreeLoadState } from '../types/bridgeSession';
 
 const minWidgetTreeWidth = 260;
@@ -99,6 +100,7 @@ export function AskUiWorkbench() {
     widgetSearchActiveIndex >= 0
       ? widgetSearchMatches[widgetSearchActiveIndex]?.nodeId ?? null
       : null;
+  const targetDeviceDisplay = getTargetDeviceDisplay(bridgeSessionState);
 
   useEffect(() => {
     const bootstrap = readSessionBootstrap(window.location.href);
@@ -113,6 +115,7 @@ export function AskUiWorkbench() {
     createBridgeSession({
       vmServiceUri: bootstrap.vmServiceUri,
       projectRoot: bootstrap.projectRoot,
+      deviceId: bootstrap.deviceId,
     }).then(
       ({ sessionId }) => {
         if (!isCurrent) {
@@ -122,6 +125,7 @@ export function AskUiWorkbench() {
         setBridgeSessionState({
           status: 'ready',
           sessionId,
+          targetDeviceId: bootstrap.deviceId,
           widgetTree: {
             status: 'loading',
           },
@@ -136,6 +140,7 @@ export function AskUiWorkbench() {
             setBridgeSessionState({
               status: 'ready',
               sessionId,
+              targetDeviceId: bootstrap.deviceId,
               widgetTree: {
                 status: 'loaded',
                 root,
@@ -150,6 +155,7 @@ export function AskUiWorkbench() {
             setBridgeSessionState({
               status: 'ready',
               sessionId,
+              targetDeviceId: bootstrap.deviceId,
               widgetTree: {
                 status: 'error',
                 message:
@@ -461,7 +467,7 @@ export function AskUiWorkbench() {
       return;
     }
 
-    const { sessionId } = bridgeSessionState;
+    const { sessionId, targetDeviceId } = bridgeSessionState;
     const previousWidgetTree = bridgeSessionState.widgetTree;
 
     setTopBarActionState((state) => ({
@@ -476,6 +482,7 @@ export function AskUiWorkbench() {
     setBridgeSessionState({
       status: 'ready',
       sessionId,
+      targetDeviceId,
       widgetTree: {
         status: 'loading',
       },
@@ -494,6 +501,7 @@ export function AskUiWorkbench() {
       setBridgeSessionState({
         status: 'ready',
         sessionId,
+        targetDeviceId,
         widgetTree: previousWidgetTree,
       });
       return;
@@ -504,6 +512,7 @@ export function AskUiWorkbench() {
       setBridgeSessionState({
         status: 'ready',
         sessionId,
+        targetDeviceId,
         widgetTree,
       });
       setTopBarActionState((state) => ({
@@ -517,6 +526,7 @@ export function AskUiWorkbench() {
       setBridgeSessionState({
         status: 'ready',
         sessionId,
+        targetDeviceId,
         widgetTree: {
           status: 'error',
           message:
@@ -540,7 +550,7 @@ export function AskUiWorkbench() {
       return;
     }
 
-    const { sessionId } = bridgeSessionState;
+    const { sessionId, targetDeviceId } = bridgeSessionState;
 
     setSelectedWidgetId(null);
     setWidgetSelectionError(null);
@@ -548,6 +558,7 @@ export function AskUiWorkbench() {
     setBridgeSessionState({
       status: 'ready',
       sessionId,
+      targetDeviceId,
       widgetTree: {
         status: 'loading',
       },
@@ -558,12 +569,14 @@ export function AskUiWorkbench() {
       setBridgeSessionState({
         status: 'ready',
         sessionId,
+        targetDeviceId,
         widgetTree,
       });
     } catch (error: unknown) {
       setBridgeSessionState({
         status: 'ready',
         sessionId,
+        targetDeviceId,
         widgetTree: {
           status: 'error',
           message:
@@ -626,6 +639,7 @@ export function AskUiWorkbench() {
         onHotRestart={handleHotRestart}
         onToggleSelectWidget={handleToggleSelectWidget}
         statusMessage={getTopBarStatusMessage(topBarActionState)}
+        targetDeviceDisplay={targetDeviceDisplay}
       />
       <div
         className="workbench-content"
@@ -663,7 +677,10 @@ export function AskUiWorkbench() {
           role="separator"
           tabIndex={0}
         />
-        <DeviceStage isSelectWidgetActive={topBarActionState.isSelectWidgetActive} />
+        <LiveAppSurface
+          isSelectWidgetActive={topBarActionState.isSelectWidgetActive}
+          targetDeviceDisplay={targetDeviceDisplay}
+        />
         <SelectionNotesPanel />
       </div>
     </main>

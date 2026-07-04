@@ -67,7 +67,7 @@ Future widget selection API shape:
 
 ```text
 POST /api/sessions/:sessionId/inspector/select-widget
-body: { "x": number, "y": number, "coordinateSpace": "device-stage" }
+body: { "x": number, "y": number, "coordinateSpace": "live-app-surface" }
 response: {
   "selectedNodeId": string,
   "widgetType"?: string,

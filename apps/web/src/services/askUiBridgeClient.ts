@@ -1,6 +1,7 @@
 export type CreateBridgeSessionRequest = {
   vmServiceUri: string;
   projectRoot: string;
+  deviceId: string;
 };
 
 export type CreateBridgeSessionResponse = {
@@ -142,15 +143,16 @@ const bridgeOrigin = resolveBridgeOrigin(import.meta.env?.VITE_ASK_UI_BRIDGE_ORI
  * Create or reuse one bridge session for a running Flutter app target.
  *
  * Args:
- * - `request`: VM Service URI and project root read from the page URL.
+ * - `request`: VM Service URI, project root, and device id read from the page
+ *   URL.
  *
  * Returns:
  * The bridge session id for that target. The Dart bridge may return an existing
  * session id when another tab already opened the same target.
  *
  * Example:
- * Passing `ws://127.0.0.1:12345/ws` and `/Users/example/app` returns a
- * response such as `{sessionId: 'session-1'}`.
+ * Passing `ws://127.0.0.1:12345/ws`, `/Users/example/app`, and
+ * `19271FDF6007TY` returns a response such as `{sessionId: 'session-1'}`.
  */
 export async function createBridgeSession(
   request: CreateBridgeSessionRequest,

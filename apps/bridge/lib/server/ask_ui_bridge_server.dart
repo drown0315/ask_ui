@@ -5,6 +5,7 @@ import 'dart:io';
 import '../app_controller/flutter_app_controller.dart';
 import '../inspector/flutter_inspector_client.dart';
 import '../logging/bridge_logger.dart';
+import '../sessions/flutter_device_checker.dart';
 import '../sessions/session_store.dart';
 
 class AskUiBridgeServer {
@@ -12,15 +13,19 @@ class AskUiBridgeServer {
     required SessionStore sessionStore,
     required FlutterInspectorClient inspectorClient,
     required FlutterAppController appController,
+    FlutterDeviceChecker? flutterDeviceChecker,
     BridgeLogger? logger,
   })  : _sessionStore = sessionStore,
         _inspectorClient = inspectorClient,
         _appController = appController,
+        _flutterDeviceChecker =
+            flutterDeviceChecker ?? const FlutterDevicesCommandChecker(),
         _logger = logger ?? BridgeLogger(write: print);
 
   final SessionStore _sessionStore;
   final FlutterInspectorClient _inspectorClient;
   final FlutterAppController _appController;
+  final FlutterDeviceChecker _flutterDeviceChecker;
   final BridgeLogger _logger;
   HttpServer? _server;
 
@@ -141,8 +146,11 @@ class AskUiBridgeServer {
 
     final vmServiceUri = body['vmServiceUri'];
     final projectRoot = body['projectRoot'];
+    final deviceId = body['deviceId'];
 
-    if (vmServiceUri is! String || projectRoot is! String) {
+    if (vmServiceUri is! String ||
+        projectRoot is! String ||
+        deviceId is! String) {
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badRequest,
@@ -151,10 +159,71 @@ class AskUiBridgeServer {
       return;
     }
 
+    if (vmServiceUri.trim().isEmpty ||
+        projectRoot.trim().isEmpty ||
+        deviceId.trim().isEmpty) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'missing_session_parameters'},
+      );
+      return;
+    }
+
+    late final FlutterDeviceAvailability targetDeviceAvailability;
+    try {
+      targetDeviceAvailability = await _flutterDeviceChecker.checkDeviceId(
+        deviceId,
+      );
+    } catch (error, stackTrace) {
+      _logger.info(
+        'target_device_check_failed command="flutter devices --machine" '
+        'deviceId=$deviceId error=$error\n'
+        'Stack trace:\n$stackTrace',
+      );
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {
+          'error': 'target_device_check_failed',
+          'message': 'Ask UI could not check Flutter target devices.',
+          'deviceId': deviceId,
+        },
+      );
+      return;
+    }
+
+    if (targetDeviceAvailability == FlutterDeviceAvailability.notFound) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {
+          'error': 'target_device_not_found',
+          'message': 'Target Device $deviceId is not listed by Flutter.',
+          'deviceId': deviceId,
+        },
+      );
+      return;
+    }
+
+    if (targetDeviceAvailability == FlutterDeviceAvailability.unavailable) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {
+          'error': 'target_device_unavailable',
+          'message': 'Target Device $deviceId is not available.',
+          'deviceId': deviceId,
+        },
+      );
+      return;
+    }
+
     try {
       final session = _sessionStore.createSession(
         vmServiceUri: vmServiceUri,
         projectRoot: projectRoot,
+        deviceId: deviceId,
       );
       await _writeJson(
         request.response,
@@ -165,6 +234,18 @@ class AskUiBridgeServer {
         request.response,
         statusCode: HttpStatus.badRequest,
         body: {'error': 'missing_session_parameters'},
+      );
+    } on DeviceMismatchForSession catch (error) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {
+          'error': 'device_mismatch_for_session',
+          'message': 'VM Service device does not match Target Device '
+              '${error.requestedDeviceId}.',
+          'expectedDeviceId': error.expectedDeviceId,
+          'requestedDeviceId': error.requestedDeviceId,
+        },
       );
     }
   }

@@ -39,7 +39,7 @@ apps/
       components/
         top-bar/
         widget-tree/
-        device-stage/
+        live-app-surface/
         selection-notes/
       data/
         mockWorkbenchData.ts
@@ -111,15 +111,15 @@ This means the web stack choice should remain lightweight and easy to bundle as 
 
 ## Runtime Connection Boundary
 
-The browser URL should include the target Flutter VM Service URI and Flutter project root as session bootstrap parameters.
+The browser URL should include the target Flutter VM Service URI, Flutter project root, and target Android device id as session bootstrap parameters.
 
 Example:
 
 ```text
-http://127.0.0.1:<ask-ui-port>/?vmServiceUri=<encoded-vm-service-ws-uri>&projectRoot=<encoded-local-path>
+http://127.0.0.1:<ask-ui-port>/?vmServiceUri=<encoded-vm-service-ws-uri>&projectRoot=<encoded-local-path>&deviceId=<encoded-android-device-id>
 ```
 
-Both `vmServiceUri` and `projectRoot` are required for the first real Widget Tree integration.
+`vmServiceUri`, `projectRoot`, and `deviceId` are required to establish a workbench session. Missing any of them should leave the session incomplete.
 
 The React web UI should not connect to Flutter VM Service directly. It should pass the VM Service URI and project root to the local Dart bridge/server, and the bridge should own the VM Service connection.
 
@@ -131,10 +131,11 @@ Reasoning:
 - Future actions such as widget selection, selected bounds, hot reload, hot restart, and agent handoff can share one local session boundary.
 - The web UI remains static, lightweight, and easy to bundle.
 
-For the first real Widget Tree integration, the intended scope is:
+For the first real Widget Tree integration, the intended scope was:
 
 - Read `vmServiceUri` from the page URL.
 - Read `projectRoot` from the page URL.
+- Current follow-up work should also read required `deviceId` from the page URL before considering the workbench session established.
 - Create a local bridge session from those parameters.
 - Configure Flutter Inspector pub root directories during session creation.
 - Fetch the Flutter Inspector summary widget tree through that bridge session.

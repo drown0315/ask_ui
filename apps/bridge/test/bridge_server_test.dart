@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:ask_ui_bridge/app_controller/flutter_app_controller.dart';
 import 'package:ask_ui_bridge/logging/bridge_logger.dart';
 import 'package:ask_ui_bridge/server/ask_ui_bridge_server.dart';
+import 'package:ask_ui_bridge/sessions/flutter_device_checker.dart';
 import 'package:ask_ui_bridge/sessions/session_store.dart';
 import 'package:ask_ui_bridge/inspector/flutter_inspector_client.dart';
 import 'package:ask_ui_bridge/widget_tree/widget_tree_snapshot.dart';
@@ -26,6 +27,8 @@ void main() {
         sessionStore: SessionStore(),
         inspectorClient: inspectorClient,
         appController: appController,
+        flutterDeviceChecker: FakeFlutterDeviceChecker(
+            {'19271FDF6007TY', 'device-1', 'device-2'}),
         logger: BridgeLogger(write: logs.add),
       );
       final port =
@@ -54,6 +57,28 @@ void main() {
           containsPair('error', 'missing_session_parameters'));
     });
 
+    test('returns 400 when creating a session with a blank deviceId', () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+
+      final request = await client.postUrl(baseUri.resolve('/api/sessions'));
+      request.headers.contentType = ContentType.json;
+      request.write(
+        jsonEncode({
+          'vmServiceUri': 'ws://127.0.0.1:12345/ws',
+          'projectRoot': '/Users/example/app',
+          'deviceId': '  ',
+        }),
+      );
+
+      final response = await request.close();
+      final body = await utf8.decodeStream(response);
+
+      expect(response.statusCode, HttpStatus.badRequest);
+      expect(jsonDecode(body),
+          containsPair('error', 'missing_session_parameters'));
+    });
+
     test('creates a session from vmServiceUri and projectRoot', () async {
       final client = HttpClient();
       addTearDown(client.close);
@@ -64,6 +89,7 @@ void main() {
         jsonEncode({
           'vmServiceUri': 'ws://127.0.0.1:12345/ws',
           'projectRoot': '/Users/example/app',
+          'deviceId': '19271FDF6007TY',
         }),
       );
 
@@ -74,6 +100,128 @@ void main() {
       expect(response.statusCode, HttpStatus.ok);
       expect(body['sessionId'], isA<String>());
       expect(body['sessionId'], isNotEmpty);
+    });
+
+    test('returns 400 when target device is not visible to Flutter', () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+
+      final request = await client.postUrl(baseUri.resolve('/api/sessions'));
+      request.headers.contentType = ContentType.json;
+      request.write(
+        jsonEncode({
+          'vmServiceUri': 'ws://127.0.0.1:12345/ws',
+          'projectRoot': '/Users/example/app',
+          'deviceId': 'missing-device',
+        }),
+      );
+
+      final response = await request.close();
+      final body =
+          jsonDecode(await utf8.decodeStream(response)) as Map<String, Object?>;
+
+      expect(response.statusCode, HttpStatus.badRequest);
+      expect(body, containsPair('error', 'target_device_not_found'));
+      expect(
+        body,
+        containsPair(
+          'message',
+          'Target Device missing-device is not listed by Flutter.',
+        ),
+      );
+      expect(body, containsPair('deviceId', 'missing-device'));
+    });
+
+    test('returns 400 when target device is visible but unavailable', () async {
+      await server.close();
+      server = AskUiBridgeServer(
+        sessionStore: SessionStore(),
+        inspectorClient: inspectorClient,
+        appController: appController,
+        flutterDeviceChecker: FakeFlutterDeviceChecker(
+          const {'unavailable-device'},
+          unavailableDeviceIds: const {'unavailable-device'},
+        ),
+        logger: BridgeLogger(write: logs.add),
+      );
+      final port =
+          await server.start(host: InternetAddress.loopbackIPv4.host, port: 0);
+      baseUri = Uri.parse('http://${InternetAddress.loopbackIPv4.host}:$port');
+
+      final client = HttpClient();
+      addTearDown(client.close);
+
+      final request = await client.postUrl(baseUri.resolve('/api/sessions'));
+      request.headers.contentType = ContentType.json;
+      request.write(
+        jsonEncode({
+          'vmServiceUri': 'ws://127.0.0.1:12345/ws',
+          'projectRoot': '/Users/example/app',
+          'deviceId': 'unavailable-device',
+        }),
+      );
+
+      final response = await request.close();
+      final body =
+          jsonDecode(await utf8.decodeStream(response)) as Map<String, Object?>;
+
+      expect(response.statusCode, HttpStatus.badRequest);
+      expect(body, containsPair('error', 'target_device_unavailable'));
+      expect(
+        body,
+        containsPair(
+          'message',
+          'Target Device unavailable-device is not available.',
+        ),
+      );
+      expect(body, containsPair('deviceId', 'unavailable-device'));
+    });
+
+    test('returns 400 and logs when target device check fails', () async {
+      await server.close();
+      server = AskUiBridgeServer(
+        sessionStore: SessionStore(),
+        inspectorClient: inspectorClient,
+        appController: appController,
+        flutterDeviceChecker: FailingFlutterDeviceChecker(),
+        logger: BridgeLogger(write: logs.add),
+      );
+      final port =
+          await server.start(host: InternetAddress.loopbackIPv4.host, port: 0);
+      baseUri = Uri.parse('http://${InternetAddress.loopbackIPv4.host}:$port');
+
+      final client = HttpClient();
+      addTearDown(client.close);
+
+      final request = await client.postUrl(baseUri.resolve('/api/sessions'));
+      request.headers.contentType = ContentType.json;
+      request.write(
+        jsonEncode({
+          'vmServiceUri': 'ws://127.0.0.1:12345/ws',
+          'projectRoot': '/Users/example/app',
+          'deviceId': 'device-1',
+        }),
+      );
+
+      final response = await request.close();
+      final body =
+          jsonDecode(await utf8.decodeStream(response)) as Map<String, Object?>;
+
+      expect(response.statusCode, HttpStatus.badRequest);
+      expect(body, containsPair('error', 'target_device_check_failed'));
+      expect(
+        body,
+        containsPair(
+          'message',
+          'Ask UI could not check Flutter target devices.',
+        ),
+      );
+      expect(jsonEncode(body), isNot(contains('flutter devices --machine')));
+      expect(jsonEncode(body), isNot(contains('Flutter devices exploded')));
+      expect(logs, contains(contains('target_device_check_failed')));
+      expect(logs, contains(contains('flutter devices --machine')));
+      expect(logs, contains(contains('Flutter devices exploded')));
+      expect(logs, contains(contains('Stack trace')));
     });
 
     test('returns the same session for repeated target parameters', () async {
@@ -87,6 +235,7 @@ void main() {
           jsonEncode({
             'vmServiceUri': 'ws://127.0.0.1:12345/ws',
             'projectRoot': '/Users/example/app',
+            'deviceId': '19271FDF6007TY',
           }),
         );
 
@@ -104,6 +253,45 @@ void main() {
       expect(secondSessionId, firstSessionId);
     });
 
+    test('rejects a different deviceId for an existing Flutter app session',
+        () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+
+      Future<HttpClientResponse> createSession(String deviceId) async {
+        final request = await client.postUrl(baseUri.resolve('/api/sessions'));
+        request.headers.contentType = ContentType.json;
+        request.write(
+          jsonEncode({
+            'vmServiceUri': 'ws://127.0.0.1:12345/ws',
+            'projectRoot': '/Users/example/app',
+            'deviceId': deviceId,
+          }),
+        );
+        return request.close();
+      }
+
+      final firstResponse = await createSession('device-1');
+      await utf8.decodeStream(firstResponse);
+
+      final secondResponse = await createSession('device-2');
+      final secondBody = jsonDecode(await utf8.decodeStream(secondResponse))
+          as Map<String, Object?>;
+
+      expect(firstResponse.statusCode, HttpStatus.ok);
+      expect(secondResponse.statusCode, HttpStatus.badRequest);
+      expect(secondBody, containsPair('error', 'device_mismatch_for_session'));
+      expect(
+        secondBody,
+        containsPair(
+          'message',
+          'VM Service device does not match Target Device device-2.',
+        ),
+      );
+      expect(secondBody, containsPair('expectedDeviceId', 'device-1'));
+      expect(secondBody, containsPair('requestedDeviceId', 'device-2'));
+    });
+
     test('returns a normalized widget tree for an existing session', () async {
       final client = HttpClient();
       addTearDown(client.close);
@@ -115,6 +303,7 @@ void main() {
         jsonEncode({
           'vmServiceUri': 'ws://127.0.0.1:12345/ws',
           'projectRoot': '/Users/example/app',
+          'deviceId': '19271FDF6007TY',
         }),
       );
 
@@ -178,6 +367,7 @@ void main() {
         jsonEncode({
           'vmServiceUri': 'ws://127.0.0.1:12345/ws',
           'projectRoot': '/Users/example/app',
+          'deviceId': '19271FDF6007TY',
         }),
       );
 
@@ -208,6 +398,7 @@ void main() {
         jsonEncode({
           'vmServiceUri': 'ws://127.0.0.1:12345/ws',
           'projectRoot': '/Users/example/app',
+          'deviceId': '19271FDF6007TY',
         }),
       );
 
@@ -255,6 +446,7 @@ void main() {
         jsonEncode({
           'vmServiceUri': 'ws://127.0.0.1:12345/ws',
           'projectRoot': '/Users/example/app',
+          'deviceId': '19271FDF6007TY',
         }),
       );
 
@@ -303,6 +495,7 @@ void main() {
         jsonEncode({
           'vmServiceUri': 'ws://127.0.0.1:12345/ws',
           'projectRoot': '/Users/example/app',
+          'deviceId': '19271FDF6007TY',
         }),
       );
 
@@ -360,6 +553,7 @@ void main() {
         jsonEncode({
           'vmServiceUri': 'ws://127.0.0.1:12345/ws',
           'projectRoot': '/Users/example/app',
+          'deviceId': '19271FDF6007TY',
         }),
       );
 
@@ -531,6 +725,7 @@ void main() {
         jsonEncode({
           'vmServiceUri': 'ws://127.0.0.1:12345/ws',
           'projectRoot': '/Users/example/app',
+          'deviceId': '19271FDF6007TY',
         }),
       );
 
@@ -569,6 +764,7 @@ void main() {
         jsonEncode({
           'vmServiceUri': 'ws://127.0.0.1:12345/ws',
           'projectRoot': '/Users/example/app',
+          'deviceId': '19271FDF6007TY',
         }),
       );
 
@@ -600,6 +796,7 @@ void main() {
         jsonEncode({
           'vmServiceUri': 'ws://127.0.0.1:12345/ws',
           'projectRoot': '/Users/example/app',
+          'deviceId': '19271FDF6007TY',
         }),
       );
 
@@ -641,6 +838,7 @@ Future<String> createSession(HttpClient client, Uri baseUri) async {
     jsonEncode({
       'vmServiceUri': 'ws://127.0.0.1:12345/ws',
       'projectRoot': '/Users/example/app',
+      'deviceId': '19271FDF6007TY',
     }),
   );
 
@@ -817,6 +1015,13 @@ class RecordingFlutterAppController implements FlutterAppController {
     throw const HotRestartUnsupportedException(
       'Hot restart is not available for this bridge session.',
     );
+  }
+}
+
+class FailingFlutterDeviceChecker implements FlutterDeviceChecker {
+  @override
+  Future<FlutterDeviceAvailability> checkDeviceId(String deviceId) async {
+    throw StateError('Flutter devices exploded');
   }
 }
 

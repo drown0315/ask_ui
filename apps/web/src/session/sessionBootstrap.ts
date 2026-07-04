@@ -3,10 +3,11 @@ export type SessionBootstrap =
       status: 'ready';
       vmServiceUri: string;
       projectRoot: string;
+      deviceId: string;
     }
   | {
       status: 'incomplete';
-      missing: Array<'vmServiceUri' | 'projectRoot'>;
+      missing: Array<'vmServiceUri' | 'projectRoot' | 'deviceId'>;
     };
 
 /**
@@ -14,21 +15,23 @@ export type SessionBootstrap =
  *
  * Args:
  * - `url`: Browser URL for the Ask UI web page. The function reads
- *   `vmServiceUri` and `projectRoot` from its query string and trims both.
+ *   `vmServiceUri`, `projectRoot`, and `deviceId` from its query string and
+ *   trims each value.
  *
  * Returns:
- * A ready result with both required values, or an incomplete result listing the
+ * A ready result with all required values, or an incomplete result listing the
  * missing parameter names.
  *
  * Example:
- * `/?vmServiceUri=ws://127.0.0.1:12345/ws&projectRoot=/Users/example/app`
- * returns `{status: 'ready', vmServiceUri, projectRoot}`.
+ * `/?vmServiceUri=ws://127.0.0.1:12345/ws&projectRoot=/Users/example/app&deviceId=19271FDF6007TY`
+ * returns `{status: 'ready', vmServiceUri, projectRoot, deviceId}`.
  */
 export function readSessionBootstrap(url: string): SessionBootstrap {
   const searchParams = new URL(url).searchParams;
   const vmServiceUri = searchParams.get('vmServiceUri')?.trim() ?? '';
   const projectRoot = searchParams.get('projectRoot')?.trim() ?? '';
-  const missing: Array<'vmServiceUri' | 'projectRoot'> = [];
+  const deviceId = searchParams.get('deviceId')?.trim() ?? '';
+  const missing: Array<'vmServiceUri' | 'projectRoot' | 'deviceId'> = [];
 
   if (!vmServiceUri) {
     missing.push('vmServiceUri');
@@ -36,6 +39,10 @@ export function readSessionBootstrap(url: string): SessionBootstrap {
 
   if (!projectRoot) {
     missing.push('projectRoot');
+  }
+
+  if (!deviceId) {
+    missing.push('deviceId');
   }
 
   if (missing.length > 0) {
@@ -49,5 +56,6 @@ export function readSessionBootstrap(url: string): SessionBootstrap {
     status: 'ready',
     vmServiceUri,
     projectRoot,
+    deviceId,
   };
 }

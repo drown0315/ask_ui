@@ -15,7 +15,7 @@ This round only establishes the top-level layout and placeholder regions:
 ```text
 TopBar
 ------------------------------------------------
-WidgetTreePanel | DeviceStage | SelectionNotesPanel
+WidgetTreePanel | LiveAppSurface | SelectionNotesPanel
 ```
 
 ## Progress Checklist
@@ -24,7 +24,7 @@ WidgetTreePanel | DeviceStage | SelectionNotesPanel
 - [x] Add `AskUiWorkbench` root component.
 - [x] Add placeholder `TopBar`.
 - [x] Add placeholder `WidgetTreePanel`.
-- [x] Add placeholder `DeviceStage`.
+- [x] Add placeholder `LiveAppSurface`.
 - [x] Add placeholder `SelectionNotesPanel`.
 - [x] Add full viewport layout CSS.
 - [x] Verify local dev server starts.
@@ -63,7 +63,7 @@ Keep this file updated during the implementation round. It is an internal workin
 ## Work Log
 
 - Created the minimal `apps/web` Vite + React + TypeScript shell.
-- Added the `AskUiWorkbench` root component with `TopBar`, `WidgetTreePanel`, `DeviceStage`, and `SelectionNotesPanel` placeholders.
+- Added the `AskUiWorkbench` root component with `TopBar`, `WidgetTreePanel`, `LiveAppSurface`, and `SelectionNotesPanel` placeholders.
 - Added viewport-level CSS for the top bar and three-column workbench layout.
 - Installed local web dependencies using a project-local npm cache because the user-level npm cache has permission errors.
 - Verified `npm run build` succeeds.
