@@ -14,6 +14,52 @@ import {
 } from './deviceVideoPipeline';
 import type { DeviceVideoFrameRenderer } from './deviceVideoFrameRenderer';
 
+type DeviceVideoFrame = CanvasImageSource & { close?: () => void };
+
+export function createDeviceVideoFrameHandoff({
+  onFrameRendered,
+}: {
+  onFrameRendered: () => void;
+}) {
+  let renderer: DeviceVideoFrameRenderer | null = null;
+  let pendingFrame: DeviceVideoFrame | null = null;
+
+  const renderFrame = (
+    nextRenderer: DeviceVideoFrameRenderer,
+    videoFrame: DeviceVideoFrame,
+  ) => {
+    nextRenderer.render(videoFrame);
+    onFrameRendered();
+  };
+
+  return {
+    setRenderer(nextRenderer: DeviceVideoFrameRenderer | null) {
+      renderer = nextRenderer;
+      if (!renderer || !pendingFrame) {
+        return;
+      }
+
+      const videoFrame = pendingFrame;
+      pendingFrame = null;
+      renderFrame(renderer, videoFrame);
+    },
+    render(videoFrame: unknown) {
+      const nextFrame = videoFrame as DeviceVideoFrame;
+      if (!renderer) {
+        pendingFrame?.close?.();
+        pendingFrame = nextFrame;
+        return;
+      }
+
+      renderFrame(renderer, nextFrame);
+    },
+    close() {
+      pendingFrame?.close?.();
+      pendingFrame = null;
+    },
+  };
+}
+
 /**
  * Open and manage the Live App Surface Device WebSocket for a bridge session.
  *
@@ -38,10 +84,21 @@ export function useLiveAppSurface(sessionId: string | null): {
 } {
   const [retryToken, setRetryToken] = useState(0);
   const socketRef = useRef<WebSocket | null>(null);
-  const videoRendererRef = useRef<DeviceVideoFrameRenderer | null>(null);
+  const videoFrameHandoffRef = useRef<ReturnType<
+    typeof createDeviceVideoFrameHandoff
+  > | null>(null);
   const [surfaceState, setSurfaceState] = useState<LiveAppSurfaceState>(() =>
     getInitialLiveAppSurfaceState(sessionId),
   );
+  if (videoFrameHandoffRef.current === null) {
+    videoFrameHandoffRef.current = createDeviceVideoFrameHandoff({
+      onFrameRendered() {
+        setSurfaceState((state) =>
+          reduceLiveAppSurfaceFirstFrameRendered(state),
+        );
+      },
+    });
+  }
   const sendDeviceControlMessage = useCallback(
     (message: DeviceControlMessage) => {
       const socket = socketRef.current;
@@ -54,7 +111,7 @@ export function useLiveAppSurface(sessionId: string | null): {
   );
   const setDeviceVideoRenderer = useCallback(
     (renderer: DeviceVideoFrameRenderer | null) => {
-      videoRendererRef.current = renderer;
+      videoFrameHandoffRef.current?.setRenderer(renderer);
     },
     [],
   );
@@ -83,19 +140,7 @@ export function useLiveAppSurface(sessionId: string | null): {
         });
       },
       onFrame: (videoFrame) => {
-        const videoRenderer = videoRendererRef.current;
-        if (!videoRenderer) {
-          const maybeClosableFrame = videoFrame as { close?: () => void };
-          maybeClosableFrame.close?.();
-          return;
-        }
-
-        videoRenderer.render(
-          videoFrame as CanvasImageSource & { close?: () => void },
-        );
-        setSurfaceState((state) =>
-          reduceLiveAppSurfaceFirstFrameRendered(state),
-        );
+        videoFrameHandoffRef.current?.render(videoFrame);
       },
       onFirstFrameRendered: () => {},
     });
@@ -182,6 +227,7 @@ export function useLiveAppSurface(sessionId: string | null): {
       if (socketRef.current === socket) {
         socketRef.current = null;
       }
+      videoFrameHandoffRef.current?.close();
       readyVideoPipeline.close();
       socket.close();
     };
