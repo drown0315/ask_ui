@@ -33,10 +33,11 @@ void main() {
         },
       );
 
-      expect(
-        await checker.checkDeviceId('19271FDF6007TY'),
-        FlutterDeviceAvailability.available,
-      );
+      final result = await checker.checkDeviceId('19271FDF6007TY');
+
+      expect(result.availability, FlutterDeviceAvailability.available);
+      expect(result.device?.id, '19271FDF6007TY');
+      expect(result.device?.displayName, 'Pixel 6');
       expect(recordedArguments, [
         ['devices', '--machine'],
       ]);
@@ -52,10 +53,9 @@ void main() {
         ),
       );
 
-      expect(
-        await checker.checkDeviceId('device-1'),
-        FlutterDeviceAvailability.notFound,
-      );
+      final result = await checker.checkDeviceId('device-1');
+
+      expect(result.availability, FlutterDeviceAvailability.notFound);
     });
 
     test('does not accept non-Android Flutter devices', () async {
@@ -74,11 +74,11 @@ void main() {
       );
 
       expect(
-        await checker.checkDeviceId('macos'),
+        (await checker.checkDeviceId('macos')).availability,
         FlutterDeviceAvailability.notFound,
       );
       expect(
-        await checker.checkDeviceId('chrome'),
+        (await checker.checkDeviceId('chrome')).availability,
         FlutterDeviceAvailability.notFound,
       );
     });
@@ -98,7 +98,7 @@ void main() {
       );
 
       expect(
-        await checker.checkDeviceId('device-1'),
+        (await checker.checkDeviceId('device-1')).availability,
         FlutterDeviceAvailability.available,
       );
     });
@@ -118,7 +118,7 @@ void main() {
       );
 
       expect(
-        await checker.checkDeviceId('device-1'),
+        (await checker.checkDeviceId('device-1')).availability,
         FlutterDeviceAvailability.available,
       );
     });
@@ -142,7 +142,7 @@ void main() {
       );
 
       expect(
-        await checker.checkDeviceId('offline-device'),
+        (await checker.checkDeviceId('offline-device')).availability,
         FlutterDeviceAvailability.unavailable,
       );
     });

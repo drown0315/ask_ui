@@ -7,13 +7,43 @@ typedef FlutterDevicesRunner = Future<ProcessResult> Function(
 );
 
 abstract interface class FlutterDeviceChecker {
-  Future<FlutterDeviceAvailability> checkDeviceId(String deviceId);
+  Future<FlutterDeviceCheckResult> checkDeviceId(String deviceId);
 }
 
 enum FlutterDeviceAvailability {
   available,
   notFound,
   unavailable,
+}
+
+class FlutterDeviceInfo {
+  const FlutterDeviceInfo({
+    required this.id,
+    required this.displayName,
+  });
+
+  final String id;
+  final String displayName;
+}
+
+class FlutterDeviceCheckResult {
+  const FlutterDeviceCheckResult({
+    required this.availability,
+    this.device,
+  });
+
+  const FlutterDeviceCheckResult.notFound()
+      : availability = FlutterDeviceAvailability.notFound,
+        device = null;
+
+  const FlutterDeviceCheckResult.available(this.device)
+      : availability = FlutterDeviceAvailability.available;
+
+  const FlutterDeviceCheckResult.unavailable(this.device)
+      : availability = FlutterDeviceAvailability.unavailable;
+
+  final FlutterDeviceAvailability availability;
+  final FlutterDeviceInfo? device;
 }
 
 class FlutterDeviceCheckFailed implements Exception {
@@ -35,10 +65,10 @@ class FlutterDevicesCommandChecker implements FlutterDeviceChecker {
   final FlutterDevicesRunner runProcess;
 
   @override
-  Future<FlutterDeviceAvailability> checkDeviceId(String deviceId) async {
+  Future<FlutterDeviceCheckResult> checkDeviceId(String deviceId) async {
     final trimmedDeviceId = deviceId.trim();
     if (trimmedDeviceId.isEmpty) {
-      return FlutterDeviceAvailability.notFound;
+      return const FlutterDeviceCheckResult.notFound();
     }
 
     final result = await runProcess(executable, const ['devices', '--machine']);
@@ -66,40 +96,47 @@ class FlutterDevicesCommandChecker implements FlutterDeviceChecker {
     }
 
     for (final device in decoded) {
-      final availability = _targetDeviceAvailability(device, trimmedDeviceId);
-      if (availability != FlutterDeviceAvailability.notFound) {
-        return availability;
+      final result = _targetDeviceResult(device, trimmedDeviceId);
+      if (result.availability != FlutterDeviceAvailability.notFound) {
+        return result;
       }
     }
 
-    return FlutterDeviceAvailability.notFound;
+    return const FlutterDeviceCheckResult.notFound();
   }
 
-  FlutterDeviceAvailability _targetDeviceAvailability(
+  FlutterDeviceCheckResult _targetDeviceResult(
     Object? device,
     String deviceId,
   ) {
     if (device is! Map<String, Object?>) {
-      return FlutterDeviceAvailability.notFound;
+      return const FlutterDeviceCheckResult.notFound();
     }
 
     final listedDeviceId = device['id'];
     final targetPlatform = device['targetPlatform'];
     if (listedDeviceId is! String || targetPlatform is! String) {
-      return FlutterDeviceAvailability.notFound;
+      return const FlutterDeviceCheckResult.notFound();
     }
 
     final normalizedTargetPlatform = targetPlatform.toLowerCase();
     if (listedDeviceId != deviceId ||
         !normalizedTargetPlatform.startsWith('android')) {
-      return FlutterDeviceAvailability.notFound;
+      return const FlutterDeviceCheckResult.notFound();
     }
+
+    final displayName =
+        device['name'] is String ? (device['name']! as String).trim() : '';
+    final deviceInfo = FlutterDeviceInfo(
+      id: listedDeviceId,
+      displayName: displayName,
+    );
 
     if (device['isSupported'] == false) {
-      return FlutterDeviceAvailability.unavailable;
+      return FlutterDeviceCheckResult.unavailable(deviceInfo);
     }
 
-    return FlutterDeviceAvailability.available;
+    return FlutterDeviceCheckResult.available(deviceInfo);
   }
 }
 
@@ -113,14 +150,19 @@ class FakeFlutterDeviceChecker implements FlutterDeviceChecker {
   final Set<String> unavailableDeviceIds;
 
   @override
-  Future<FlutterDeviceAvailability> checkDeviceId(String deviceId) async {
+  Future<FlutterDeviceCheckResult> checkDeviceId(String deviceId) async {
     final trimmedDeviceId = deviceId.trim();
     if (!deviceIds.contains(trimmedDeviceId)) {
-      return FlutterDeviceAvailability.notFound;
+      return const FlutterDeviceCheckResult.notFound();
     }
+    final deviceInfo = FlutterDeviceInfo(
+      id: trimmedDeviceId,
+      displayName:
+          trimmedDeviceId == '19271FDF6007TY' ? 'Pixel 6' : trimmedDeviceId,
+    );
     if (unavailableDeviceIds.contains(trimmedDeviceId)) {
-      return FlutterDeviceAvailability.unavailable;
+      return FlutterDeviceCheckResult.unavailable(deviceInfo);
     }
-    return FlutterDeviceAvailability.available;
+    return FlutterDeviceCheckResult.available(deviceInfo);
   }
 }

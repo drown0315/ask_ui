@@ -59,7 +59,7 @@ export function useBridgeSession(locationHref: string): {
       projectRoot: bootstrap.projectRoot,
       deviceId: bootstrap.deviceId,
     }).then(
-      ({ sessionId }) => {
+      ({ sessionId, targetDevice }) => {
         if (!isCurrent) {
           return;
         }
@@ -68,6 +68,8 @@ export function useBridgeSession(locationHref: string): {
           status: 'ready',
           sessionId,
           targetDeviceId: bootstrap.deviceId,
+          targetDeviceDisplayName:
+            targetDevice?.displayName?.trim() || undefined,
         });
       },
       (error: unknown) => {

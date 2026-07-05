@@ -216,9 +216,9 @@ class AskUiBridgeServer {
       return;
     }
 
-    late final FlutterDeviceAvailability targetDeviceAvailability;
+    late final FlutterDeviceCheckResult targetDeviceCheck;
     try {
-      targetDeviceAvailability = await _flutterDeviceChecker.checkDeviceId(
+      targetDeviceCheck = await _flutterDeviceChecker.checkDeviceId(
         deviceId,
       );
     } catch (error, stackTrace) {
@@ -239,7 +239,7 @@ class AskUiBridgeServer {
       return;
     }
 
-    if (targetDeviceAvailability == FlutterDeviceAvailability.notFound) {
+    if (targetDeviceCheck.availability == FlutterDeviceAvailability.notFound) {
       _logger.info(
         'session create failed error=target_device_not_found deviceId=$deviceId',
       );
@@ -255,7 +255,8 @@ class AskUiBridgeServer {
       return;
     }
 
-    if (targetDeviceAvailability == FlutterDeviceAvailability.unavailable) {
+    if (targetDeviceCheck.availability ==
+        FlutterDeviceAvailability.unavailable) {
       _logger.info(
         'session create failed error=target_device_unavailable deviceId=$deviceId',
       );
@@ -276,10 +277,17 @@ class AskUiBridgeServer {
         vmServiceUri: vmServiceUri,
         projectRoot: projectRoot,
         deviceId: deviceId,
+        deviceDisplayName: targetDeviceCheck.device?.displayName ?? '',
       );
       await _writeJson(
         request.response,
-        body: {'sessionId': session.id},
+        body: {
+          'sessionId': session.id,
+          'targetDevice': {
+            'id': session.deviceId,
+            'displayName': session.deviceDisplayName,
+          },
+        },
       );
       _logger.info(
         'session create success session=${session.id} deviceId=${session.deviceId}',

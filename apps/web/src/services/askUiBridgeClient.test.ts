@@ -73,6 +73,10 @@ test('creates bridge session with target device id', async () => {
     return new Response(
       JSON.stringify({
         sessionId: 'session-1',
+        targetDevice: {
+          id: '19271FDF6007TY',
+          displayName: 'Pixel 6',
+        },
       }),
     );
   };
@@ -93,6 +97,10 @@ test('creates bridge session with target device id', async () => {
     ]);
     assert.deepEqual(result, {
       sessionId: 'session-1',
+      targetDevice: {
+        id: '19271FDF6007TY',
+        displayName: 'Pixel 6',
+      },
     });
   } finally {
     globalThis.fetch = originalFetch;

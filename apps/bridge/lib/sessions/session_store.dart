@@ -12,17 +12,19 @@
 /// the same values receives the same session because Ask UI treats that target
 /// as a singleton session.
 class BridgeSession {
-  const BridgeSession({
+  BridgeSession({
     required this.id,
     required this.vmServiceUri,
     required this.projectRoot,
     required this.deviceId,
+    this.deviceDisplayName = '',
   });
 
   final String id;
   final String vmServiceUri;
   final String projectRoot;
   final String deviceId;
+  String deviceDisplayName;
 }
 
 class InvalidSessionRequest implements Exception {
@@ -86,10 +88,12 @@ class SessionStore {
     required String vmServiceUri,
     required String projectRoot,
     required String deviceId,
+    String deviceDisplayName = '',
   }) {
     final trimmedVmServiceUri = vmServiceUri.trim();
     final trimmedProjectRoot = projectRoot.trim();
     final trimmedDeviceId = deviceId.trim();
+    final trimmedDeviceDisplayName = deviceDisplayName.trim();
 
     if (trimmedVmServiceUri.isEmpty ||
         trimmedProjectRoot.isEmpty ||
@@ -113,6 +117,9 @@ class SessionStore {
             requestedDeviceId: trimmedDeviceId,
           );
         }
+        if (trimmedDeviceDisplayName.isNotEmpty) {
+          existingSession.deviceDisplayName = trimmedDeviceDisplayName;
+        }
         return existingSession;
       }
     }
@@ -122,6 +129,7 @@ class SessionStore {
       vmServiceUri: trimmedVmServiceUri,
       projectRoot: trimmedProjectRoot,
       deviceId: trimmedDeviceId,
+      deviceDisplayName: trimmedDeviceDisplayName,
     );
     _sessions[session.id] = session;
     _sessionIdsByTarget[targetKey] = session.id;
