@@ -3,6 +3,10 @@ import type { LiveAppSurfaceState } from '../../live-app-surface/liveAppSurfaceS
 import type { DeviceControlMessage } from '../../live-app-surface/deviceControlProtocol';
 import type { DeviceVideoFrameRenderer } from '../../live-app-surface/deviceVideoFrameRenderer';
 import { DeviceShell } from './DeviceShell';
+import {
+  getLiveAppSurfacePhoneStateContent,
+  type LiveAppSurfacePhoneStateContent,
+} from './liveAppSurfaceContent';
 
 type LiveAppSurfaceProps = {
   isSelectWidgetActive: boolean;
@@ -23,82 +27,95 @@ export function LiveAppSurface({
   surfaceState,
   targetDeviceDisplay,
 }: LiveAppSurfaceProps) {
-  const content = getLiveAppSurfaceContent(surfaceState, targetDeviceDisplay);
-
   return (
     <section
       className={`workbench-panel live-app-surface ${
         isSelectWidgetActive ? 'live-app-surface-selecting' : ''
       }`}
     >
-      {surfaceState.status === 'waitingForVideo' ||
-      surfaceState.status === 'renderingVideo' ? (
+      {surfaceState.status === 'renderingVideo' ? (
         <DeviceShell
           onDeviceControlMessage={onDeviceControlMessage}
           onDeviceVideoRendererChange={onDeviceVideoRendererChange}
           surfaceState={surfaceState}
         />
-      ) : (
-        <div className="live-app-surface-placeholder" title={content.title}>
-          <div>{content.label}</div>
-          {content.detail ? (
-            <div className="live-app-surface-detail">{content.detail}</div>
-          ) : null}
-          {surfaceState.status === 'failed' ? (
-            <button
-              className="live-app-surface-retry"
-              onClick={onRetry}
-              type="button"
-            >
-              Retry
-            </button>
-          ) : null}
+      ) : surfaceState.status === 'waitingForVideo' ? (
+        <div className="live-app-surface-waiting-stack">
+          <div className="live-app-surface-hidden-device-shell" aria-hidden="true">
+            <DeviceShell
+              onDeviceControlMessage={onDeviceControlMessage}
+              onDeviceVideoRendererChange={onDeviceVideoRendererChange}
+              surfaceState={surfaceState}
+            />
+          </div>
+          <PhoneStatePlaceholder
+            content={getLiveAppSurfacePhoneStateContent(
+              surfaceState,
+              targetDeviceDisplay,
+            )}
+            onRetry={onRetry}
+          />
         </div>
+      ) : (
+        <PhoneStatePlaceholder
+          content={getLiveAppSurfacePhoneStateContent(
+            surfaceState,
+            targetDeviceDisplay,
+          )}
+          onRetry={onRetry}
+        />
       )}
     </section>
   );
 }
 
-function getLiveAppSurfaceContent(
-  surfaceState: LiveAppSurfaceState,
-  targetDeviceDisplay: TargetDeviceDisplay,
-): {
-  label: string;
-  detail?: string;
-  title: string;
-} {
-  if (surfaceState.status === 'connecting') {
-    return {
-      label: 'Connecting device',
-      title: 'Connecting device',
-    };
-  }
-
-  if (surfaceState.status === 'waitingForVideo') {
-    return {
-      label: 'Waiting for video',
-      detail: surfaceState.metadata.deviceId,
-      title: surfaceState.metadata.deviceId,
-    };
-  }
-
-  if (surfaceState.status === 'renderingVideo') {
-    return {
-      label: 'Device video',
-      detail: surfaceState.metadata.deviceId,
-      title: surfaceState.metadata.deviceId,
-    };
-  }
-
-  if (surfaceState.status === 'failed') {
-    return {
-      label: surfaceState.message,
-      title: surfaceState.message,
-    };
-  }
-
-  return {
-    label: targetDeviceDisplay.surfaceLabel,
-    title: targetDeviceDisplay.title,
-  };
+function PhoneStatePlaceholder({
+  content,
+  onRetry,
+}: {
+  content: LiveAppSurfacePhoneStateContent;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="live-app-phone-state-shell" title={content.title}>
+      <div className="live-app-phone-state-hardware">
+        <div className="live-app-phone-state-speaker" />
+        <div className="live-app-phone-state-screen">
+          <div className="live-app-phone-status-bar">
+            <span>9:41</span>
+            <span>Ask UI</span>
+          </div>
+          <div className="live-app-phone-skeleton">
+            <div className="live-app-phone-skeleton-hero" />
+            <div className="live-app-phone-skeleton-line live-app-phone-skeleton-line-wide" />
+            <div className="live-app-phone-skeleton-line" />
+            <div className="live-app-phone-skeleton-grid">
+              <div />
+              <div />
+              <div />
+              <div />
+            </div>
+          </div>
+          <div className="live-app-phone-state-overlay">
+            <div className="live-app-phone-spinner" />
+            <div className="live-app-phone-state-title">{content.label}</div>
+            {content.detail ? (
+              <div className="live-app-phone-state-detail">
+                {content.detail}
+              </div>
+            ) : null}
+            {content.retryable ? (
+              <button
+                className="live-app-surface-retry"
+                onClick={onRetry}
+                type="button"
+              >
+                Retry
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }

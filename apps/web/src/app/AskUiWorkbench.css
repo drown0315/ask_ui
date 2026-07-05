@@ -600,6 +600,24 @@ body {
     #effaf4;
 }
 
+.live-app-surface-waiting-stack {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.live-app-surface-hidden-device-shell {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .selection-notes-panel {
   border-left: 1px solid var(--border);
 }
@@ -615,52 +633,183 @@ body {
   font-weight: 700;
 }
 
-.live-app-surface-placeholder {
-  min-width: 180px;
-  padding: 16px 22px;
-  border: 1px solid rgba(66, 184, 131, 0.28);
+.live-app-phone-state-shell {
+  display: grid;
+  width: min(82%, 360px);
+  max-height: calc(100% - 40px);
+}
+
+.live-app-phone-state-hardware {
+  position: relative;
+  aspect-ratio: 9 / 19.5;
+  min-height: 360px;
+  max-height: 720px;
+  padding: 14px;
+  border-radius: 32px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent 30%),
+    #121a22;
+  box-shadow:
+    0 24px 60px rgba(15, 23, 42, 0.24),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.live-app-phone-state-speaker {
+  position: absolute;
+  top: 9px;
+  left: 50%;
+  width: 54px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  transform: translateX(-50%);
+}
+
+.live-app-phone-state-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 22px;
+  background: #eef4f7;
+  color: #24384a;
+}
+
+.live-app-phone-status-bar {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 34px;
+  padding: 0 18px;
+  color: rgba(26, 42, 55, 0.78);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.live-app-phone-skeleton {
+  display: grid;
+  gap: 14px;
+  height: 100%;
+  padding: 58px 20px 24px;
+  background:
+    linear-gradient(180deg, rgba(66, 184, 131, 0.1), transparent 42%),
+    #f8fcfa;
+}
+
+.live-app-phone-skeleton-hero,
+.live-app-phone-skeleton-line,
+.live-app-phone-skeleton-grid div {
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 10px 28px rgba(53, 73, 94, 0.08);
-  color: var(--vue-ink);
-  font-size: 13px;
-  font-weight: 700;
+  background: linear-gradient(
+    90deg,
+    rgba(136, 159, 174, 0.16),
+    rgba(66, 184, 131, 0.2),
+    rgba(136, 159, 174, 0.16)
+  );
+}
+
+.live-app-phone-skeleton-hero {
+  height: 82px;
+}
+
+.live-app-phone-skeleton-line {
+  width: 68%;
+  height: 14px;
+}
+
+.live-app-phone-skeleton-line-wide {
+  width: 92%;
+}
+
+.live-app-phone-skeleton-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.live-app-phone-skeleton-grid div {
+  aspect-ratio: 1;
+}
+
+.live-app-phone-state-overlay {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 9px;
+  padding: 28px;
+  background: rgba(248, 252, 250, 0.72);
+  backdrop-filter: blur(2px);
+  color: #1f3446;
   text-align: center;
 }
 
-.live-app-surface-detail {
-  max-width: 240px;
-  margin-top: 6px;
+.live-app-phone-spinner {
+  justify-self: center;
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgba(66, 184, 131, 0.22);
+  border-top-color: var(--vue-green);
+  border-radius: 999px;
+  animation: live-app-phone-spinner-spin 900ms linear infinite;
+}
+
+@keyframes live-app-phone-spinner-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-app-phone-spinner {
+    animation: none;
+  }
+}
+
+.live-app-phone-state-title {
+  color: inherit;
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.live-app-phone-state-detail {
+  max-width: 230px;
   overflow: hidden;
-  color: var(--muted);
+  color: rgba(78, 96, 112, 0.82);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 650;
+  line-height: 1.45;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .live-app-surface-retry {
-  margin-top: 12px;
-  padding: 7px 11px;
+  margin-top: 4px;
+  padding: 7px 14px;
   border: 1px solid rgba(66, 184, 131, 0.28);
-  border-radius: 7px;
+  border-radius: 999px;
   background: #ffffff;
   color: var(--vue-green-dark);
   font: inherit;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 750;
 }
 
 .live-app-surface-retry:not(:disabled) {
   cursor: pointer;
 }
 
-.live-app-surface-selecting .live-app-surface-placeholder {
-  border-color: rgba(66, 184, 131, 0.46);
+.live-app-surface-selecting .live-app-phone-state-hardware {
   box-shadow:
-    0 0 0 3px rgba(66, 184, 131, 0.12),
-    0 10px 28px rgba(53, 73, 94, 0.08);
-  color: var(--vue-green-dark);
+    0 0 0 3px rgba(66, 184, 131, 0.14),
+    0 24px 60px rgba(15, 23, 42, 0.24),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .device-shell {
