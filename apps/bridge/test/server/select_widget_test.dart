@@ -164,6 +164,48 @@ void main() {
       });
     });
 
+    test('keeps SSE heartbeat and events serialized', () async {
+      await fixture.close();
+      await fixture.start(
+        sessionEventsHeartbeatInterval: const Duration(milliseconds: 10),
+      );
+      final client = HttpClient();
+      addTearDown(client.close);
+
+      final sessionId = await createSession(client, fixture.baseUri);
+
+      final eventsRequest = await client
+          .getUrl(fixture.baseUri.resolve('/api/sessions/$sessionId/events'));
+      final eventsResponse = await eventsRequest.close();
+      addTearDown(() => eventsResponse.detachSocket().then((socket) {
+            socket.destroy();
+          }));
+      final lines = eventsResponse
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .asBroadcastStream();
+
+      await lines
+          .firstWhere((line) => line.contains('select_widget_mode_snapshot'))
+          .timeout(const Duration(seconds: 2));
+      await lines
+          .firstWhere((line) => line == ': ping')
+          .timeout(const Duration(seconds: 2));
+
+      final changedLine = lines
+          .firstWhere((line) => line.contains('select_widget_mode_changed'))
+          .timeout(const Duration(seconds: 2));
+      final selectRequest = await client.postUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/select-widget-mode'),
+      );
+      selectRequest.headers.contentType = ContentType.json;
+      selectRequest.write(jsonEncode({'enabled': true}));
+      final selectResponse = await selectRequest.close();
+      await utf8.decodeStream(selectResponse);
+
+      expect(await changedLine, contains('select_widget_mode_changed'));
+    });
+
     test('rejects Select Widget mode requests without an enabled boolean',
         () async {
       final client = HttpClient();

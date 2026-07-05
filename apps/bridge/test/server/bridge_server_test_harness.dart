@@ -23,6 +23,7 @@ class BridgeServerFixture {
       {'19271FDF6007TY', 'device-1', 'device-2'},
     ),
     DeviceStreamFactory deviceStreamFactory = const ShellDeviceStreamFactory(),
+    Duration sessionEventsHeartbeatInterval = const Duration(seconds: 15),
   }) async {
     inspectorClient = RecordingFlutterInspectorClient();
     appController = RecordingFlutterAppController();
@@ -30,6 +31,7 @@ class BridgeServerFixture {
     await _startServer(
       flutterDeviceChecker: flutterDeviceChecker,
       deviceStreamFactory: deviceStreamFactory,
+      sessionEventsHeartbeatInterval: sessionEventsHeartbeatInterval,
     );
   }
 
@@ -40,6 +42,7 @@ class BridgeServerFixture {
     await _startServer(
       flutterDeviceChecker: flutterDeviceChecker,
       deviceStreamFactory: const ShellDeviceStreamFactory(),
+      sessionEventsHeartbeatInterval: const Duration(seconds: 15),
     );
   }
 
@@ -52,6 +55,7 @@ class BridgeServerFixture {
         {'19271FDF6007TY', 'device-1', 'device-2'},
       ),
       deviceStreamFactory: deviceStreamFactory,
+      sessionEventsHeartbeatInterval: const Duration(seconds: 15),
     );
   }
 
@@ -62,6 +66,7 @@ class BridgeServerFixture {
   Future<void> _startServer({
     required FlutterDeviceChecker flutterDeviceChecker,
     required DeviceStreamFactory deviceStreamFactory,
+    required Duration sessionEventsHeartbeatInterval,
   }) async {
     server = AskUiBridgeServer(
       sessionStore: SessionStore(),
@@ -69,6 +74,7 @@ class BridgeServerFixture {
       appController: appController,
       flutterDeviceChecker: flutterDeviceChecker,
       deviceStreamFactory: deviceStreamFactory,
+      sessionEventsHeartbeatInterval: sessionEventsHeartbeatInterval,
       logger: BridgeLogger(write: logs.add),
     );
     final port = await server.start(

@@ -18,6 +18,7 @@ class AskUiBridgeServer {
     required FlutterAppController appController,
     FlutterDeviceChecker? flutterDeviceChecker,
     DeviceStreamFactory? deviceStreamFactory,
+    Duration sessionEventsHeartbeatInterval = const Duration(seconds: 15),
     BridgeLogger? logger,
   })  : _sessionStore = sessionStore,
         _inspectorClient = inspectorClient,
@@ -26,6 +27,7 @@ class AskUiBridgeServer {
             flutterDeviceChecker ?? const FlutterDevicesCommandChecker(),
         _deviceStreamFactory =
             deviceStreamFactory ?? ScrcpyDeviceStreamFactory(),
+        _sessionEventsHeartbeatInterval = sessionEventsHeartbeatInterval,
         _logger = logger ?? BridgeLogger(write: print);
 
   final SessionStore _sessionStore;
@@ -33,6 +35,7 @@ class AskUiBridgeServer {
   final FlutterAppController _appController;
   final FlutterDeviceChecker _flutterDeviceChecker;
   final DeviceStreamFactory _deviceStreamFactory;
+  final Duration _sessionEventsHeartbeatInterval;
   final BridgeLogger _logger;
   final Set<String> _activeDeviceSessionIds = {};
   HttpServer? _server;
@@ -732,44 +735,80 @@ class AskUiBridgeServer {
       ..set(HttpHeaders.transferEncodingHeader, 'chunked')
       ..set(HttpHeaders.connectionHeader, 'keep-alive');
 
-    _writeSseEvent(
-      request.response,
-      event: 'bridge_session_event',
-      data: {
-        'type': 'select_widget_mode_snapshot',
-        'sessionId': sessionId,
-        'payload': {
-          'known': snapshot.enabled != null,
-          if (snapshot.enabled != null) 'enabled': snapshot.enabled,
-        },
-      },
-    );
-    await request.response.flush();
+    Timer? heartbeat;
+    StreamSubscription<SelectWidgetModeStatus>? subscription;
+    var streamClosed = false;
+    var writeQueue = Future<void>.value();
 
-    final subscription =
-        _inspectorClient.watchSelectWidgetModeStatus(session).listen((status) {
+    Future<void> closeSseStream() async {
+      if (streamClosed) {
+        return;
+      }
+      streamClosed = true;
+      heartbeat?.cancel();
+      await subscription?.cancel();
+      _logger.info('events stream session=$sessionId close');
+    }
+
+    Future<void> enqueueSseWrite(void Function() write) {
+      final nextWrite = writeQueue.then((_) async {
+        if (streamClosed) {
+          return;
+        }
+
+        try {
+          write();
+          await request.response.flush();
+        } catch (error) {
+          _logger.info(
+            'events stream session=$sessionId write_failed error=$error',
+          );
+          await closeSseStream();
+        }
+      });
+      writeQueue = nextWrite.catchError((_) {});
+      return nextWrite;
+    }
+
+    await enqueueSseWrite(() {
       _writeSseEvent(
         request.response,
         event: 'bridge_session_event',
         data: {
-          'type': 'select_widget_mode_changed',
+          'type': 'select_widget_mode_snapshot',
           'sessionId': sessionId,
           'payload': {
-            if (status.enabled != null) 'enabled': status.enabled,
+            'known': snapshot.enabled != null,
+            if (snapshot.enabled != null) 'enabled': snapshot.enabled,
           },
         },
       );
-      request.response.flush();
     });
-    final heartbeat = Timer.periodic(const Duration(seconds: 15), (_) {
-      request.response.add(utf8.encode(': ping\n\n'));
-      request.response.flush();
+
+    subscription =
+        _inspectorClient.watchSelectWidgetModeStatus(session).listen((status) {
+      unawaited(enqueueSseWrite(() {
+        _writeSseEvent(
+          request.response,
+          event: 'bridge_session_event',
+          data: {
+            'type': 'select_widget_mode_changed',
+            'sessionId': sessionId,
+            'payload': {
+              if (status.enabled != null) 'enabled': status.enabled,
+            },
+          },
+        );
+      }));
+    });
+    heartbeat = Timer.periodic(_sessionEventsHeartbeatInterval, (_) {
+      unawaited(enqueueSseWrite(() {
+        request.response.add(utf8.encode(': ping\n\n'));
+      }));
     });
 
     request.response.done.whenComplete(() {
-      heartbeat.cancel();
-      subscription.cancel();
-      _logger.info('events stream session=$sessionId close');
+      unawaited(closeSseStream());
     });
   }
 
