@@ -18,6 +18,7 @@ class AskUiBridgeServer {
     required FlutterAppController appController,
     FlutterDeviceChecker? flutterDeviceChecker,
     DeviceStreamFactory? deviceStreamFactory,
+    bool Function(String projectRoot)? projectRootExists,
     Duration sessionEventsHeartbeatInterval = const Duration(seconds: 15),
     BridgeLogger? logger,
   })  : _sessionStore = sessionStore,
@@ -27,6 +28,8 @@ class AskUiBridgeServer {
             flutterDeviceChecker ?? const FlutterDevicesCommandChecker(),
         _deviceStreamFactory =
             deviceStreamFactory ?? ScrcpyDeviceStreamFactory(),
+        _projectRootExists = projectRootExists ??
+            ((projectRoot) => Directory(projectRoot).existsSync()),
         _sessionEventsHeartbeatInterval = sessionEventsHeartbeatInterval,
         _logger = logger ?? BridgeLogger(write: print);
 
@@ -35,6 +38,7 @@ class AskUiBridgeServer {
   final FlutterAppController _appController;
   final FlutterDeviceChecker _flutterDeviceChecker;
   final DeviceStreamFactory _deviceStreamFactory;
+  final bool Function(String projectRoot) _projectRootExists;
   final Duration _sessionEventsHeartbeatInterval;
   final BridgeLogger _logger;
   final Set<String> _activeDeviceSessionIds = {};
@@ -190,6 +194,24 @@ class AskUiBridgeServer {
         request.response,
         statusCode: HttpStatus.badRequest,
         body: {'error': 'missing_session_parameters'},
+      );
+      return;
+    }
+
+    final trimmedProjectRoot = projectRoot.trim();
+    if (!_projectRootExists(trimmedProjectRoot)) {
+      _logger.info(
+        'session create failed error=invalid_project_root '
+        'projectRoot=$trimmedProjectRoot',
+      );
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {
+          'error': 'invalid_project_root',
+          'message': 'Project root $trimmedProjectRoot does not exist.',
+          'projectRoot': trimmedProjectRoot,
+        },
       );
       return;
     }

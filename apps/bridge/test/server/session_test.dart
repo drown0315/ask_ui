@@ -60,6 +60,42 @@ void main() {
           containsPair('error', 'missing_session_parameters'));
     });
 
+    test('returns 400 when projectRoot does not exist', () async {
+      await fixture.close();
+      await fixture.start(projectRootExists: (_) => false);
+      final client = HttpClient();
+      addTearDown(client.close);
+
+      final request =
+          await client.postUrl(fixture.baseUri.resolve('/api/sessions'));
+      request.headers.contentType = ContentType.json;
+      request.write(
+        jsonEncode({
+          'vmServiceUri': 'ws://127.0.0.1:12345/ws',
+          'projectRoot': '/User/example/app',
+          'deviceId': '19271FDF6007TY',
+        }),
+      );
+
+      final response = await request.close();
+      final body =
+          jsonDecode(await utf8.decodeStream(response)) as Map<String, Object?>;
+
+      expect(response.statusCode, HttpStatus.badRequest);
+      expect(body, {
+        'error': 'invalid_project_root',
+        'message': 'Project root /User/example/app does not exist.',
+        'projectRoot': '/User/example/app',
+      });
+      expect(
+        fixture.logs,
+        contains(
+          '[ask_ui_bridge] session create failed error=invalid_project_root '
+          'projectRoot=/User/example/app',
+        ),
+      );
+    });
+
     test('creates a session from vmServiceUri and projectRoot', () async {
       final client = HttpClient();
       addTearDown(client.close);

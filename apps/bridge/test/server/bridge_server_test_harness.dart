@@ -23,6 +23,7 @@ class BridgeServerFixture {
       {'19271FDF6007TY', 'device-1', 'device-2'},
     ),
     DeviceStreamFactory deviceStreamFactory = const ShellDeviceStreamFactory(),
+    bool Function(String projectRoot) projectRootExists = _projectRootExists,
     Duration sessionEventsHeartbeatInterval = const Duration(seconds: 15),
   }) async {
     inspectorClient = RecordingFlutterInspectorClient();
@@ -31,6 +32,7 @@ class BridgeServerFixture {
     await _startServer(
       flutterDeviceChecker: flutterDeviceChecker,
       deviceStreamFactory: deviceStreamFactory,
+      projectRootExists: projectRootExists,
       sessionEventsHeartbeatInterval: sessionEventsHeartbeatInterval,
     );
   }
@@ -42,6 +44,7 @@ class BridgeServerFixture {
     await _startServer(
       flutterDeviceChecker: flutterDeviceChecker,
       deviceStreamFactory: const ShellDeviceStreamFactory(),
+      projectRootExists: _projectRootExists,
       sessionEventsHeartbeatInterval: const Duration(seconds: 15),
     );
   }
@@ -55,6 +58,7 @@ class BridgeServerFixture {
         {'19271FDF6007TY', 'device-1', 'device-2'},
       ),
       deviceStreamFactory: deviceStreamFactory,
+      projectRootExists: _projectRootExists,
       sessionEventsHeartbeatInterval: const Duration(seconds: 15),
     );
   }
@@ -66,6 +70,7 @@ class BridgeServerFixture {
   Future<void> _startServer({
     required FlutterDeviceChecker flutterDeviceChecker,
     required DeviceStreamFactory deviceStreamFactory,
+    required bool Function(String projectRoot) projectRootExists,
     required Duration sessionEventsHeartbeatInterval,
   }) async {
     server = AskUiBridgeServer(
@@ -74,6 +79,7 @@ class BridgeServerFixture {
       appController: appController,
       flutterDeviceChecker: flutterDeviceChecker,
       deviceStreamFactory: deviceStreamFactory,
+      projectRootExists: projectRootExists,
       sessionEventsHeartbeatInterval: sessionEventsHeartbeatInterval,
       logger: BridgeLogger(write: logs.add),
     );
@@ -84,6 +90,8 @@ class BridgeServerFixture {
     baseUri = Uri.parse('http://${InternetAddress.loopbackIPv4.host}:$port');
   }
 }
+
+bool _projectRootExists(String projectRoot) => true;
 
 class FakeDeviceReady {
   const FakeDeviceReady({
