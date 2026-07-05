@@ -29,6 +29,10 @@ test('normalizes configured bridge origins', () => {
 
 test('builds the session-scoped device WebSocket URL', () => {
   assert.equal(
+    getDeviceWebSocketUrl('session-1'),
+    'ws://127.0.0.1:8787/api/sessions/session-1/device',
+  );
+  assert.equal(
     getDeviceWebSocketUrl(
       'session/with space',
       'http://127.0.0.1:9000/',

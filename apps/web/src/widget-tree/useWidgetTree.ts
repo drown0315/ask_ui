@@ -2,6 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { getWidgetTree } from '../services/askUiBridgeClient';
 import type { WidgetTreeLoadState } from '../types/bridgeSession';
 
+export function getWidgetTreeErrorMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : 'Failed to fetch Flutter Widget Tree';
+}
+
 /**
  * Load and refresh the Flutter Widget Tree for the ready bridge session.
  *
@@ -31,11 +37,23 @@ export function useWidgetTree(sessionId: string | null): {
       return;
     }
 
-    const { root } = await getWidgetTree(sessionId);
     setWidgetTreeState({
-      status: 'loaded',
-      root,
+      status: 'loading',
     });
+
+    try {
+      const { root } = await getWidgetTree(sessionId);
+      setWidgetTreeState({
+        status: 'loaded',
+        root,
+      });
+    } catch (error: unknown) {
+      setWidgetTreeState({
+        status: 'error',
+        message: getWidgetTreeErrorMessage(error),
+      });
+      throw error;
+    }
   }, [sessionId]);
 
   useEffect(() => {
@@ -69,10 +87,7 @@ export function useWidgetTree(sessionId: string | null): {
 
         setWidgetTreeState({
           status: 'error',
-          message:
-            error instanceof Error
-              ? error.message
-              : 'Failed to fetch Flutter Widget Tree',
+          message: getWidgetTreeErrorMessage(error),
         });
       },
     );

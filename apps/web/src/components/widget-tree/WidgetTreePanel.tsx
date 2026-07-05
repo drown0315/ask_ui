@@ -368,7 +368,7 @@ export function WidgetTreePanel({
   widgetTreeState,
 }: {
   bridgeSessionState: BridgeSessionState;
-  onRefresh: () => void;
+  onRefresh: () => Promise<void>;
   widgetTreeState: WidgetTreeLoadState;
 }) {
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
@@ -474,6 +474,10 @@ export function WidgetTreePanel({
     );
   }
 
+  function handleRefresh() {
+    void onRefresh().catch(() => undefined);
+  }
+
   return (
     <aside className="workbench-panel widget-tree-panel">
       <div className="widget-tree-header">
@@ -485,7 +489,7 @@ export function WidgetTreePanel({
           aria-label="Refresh widget tree"
           className="widget-tree-icon-button"
           disabled={!canRefresh}
-          onClick={onRefresh}
+          onClick={handleRefresh}
           title="Refresh widget tree"
           type="button"
         >

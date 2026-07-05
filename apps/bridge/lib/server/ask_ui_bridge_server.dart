@@ -943,9 +943,6 @@ class _WebSocketDeviceStreamSink implements DeviceStreamSink {
   @override
   void sendVideoChunk(List<int> bytes) {
     socket.add(bytes);
-    logger.info(
-      'device websocket session=$sessionId video_chunk bytes=${bytes.length}',
-    );
   }
 
   @override

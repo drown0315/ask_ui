@@ -172,7 +172,9 @@ export async function parseBridgeJsonResponse<T>(
   }
 }
 
-const bridgeOrigin = resolveBridgeOrigin(import.meta.env?.VITE_ASK_UI_BRIDGE_ORIGIN);
+export const bridgeOrigin = resolveBridgeOrigin(
+  import.meta.env?.VITE_ASK_UI_BRIDGE_ORIGIN,
+);
 
 /**
  * Create or reuse one bridge session for a running Flutter app target.

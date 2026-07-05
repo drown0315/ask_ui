@@ -228,10 +228,10 @@ void main() {
       expect(videoChunk.take(4).toList(), [0, 0, 0, 1]);
       expect(
         fixture.logs,
-        contains(
+        isNot(contains(
           '[ask_ui_bridge] device websocket session=$sessionId video_chunk '
           'bytes=${videoChunk.length}',
-        ),
+        )),
       );
     });
 

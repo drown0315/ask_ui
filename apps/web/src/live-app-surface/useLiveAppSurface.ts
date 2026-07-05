@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DeviceControlMessage } from './deviceControlProtocol';
-import { getDeviceWebSocketUrl } from '../services/askUiBridgeClient';
+import {
+  bridgeOrigin,
+  getDeviceWebSocketUrl,
+} from '../services/askUiBridgeClient';
 import {
   getInitialLiveAppSurfaceState,
   reduceLiveAppSurfaceFirstFrameRendered,
@@ -155,7 +158,7 @@ export function useLiveAppSurface(sessionId: string | null): {
     const readyVideoPipeline = requireReadyDeviceVideoPipeline(videoPipeline);
 
     const socket = new WebSocket(
-      getDeviceWebSocketUrl(sessionId, undefined, deviceDebugOptions),
+      getDeviceWebSocketUrl(sessionId, bridgeOrigin, deviceDebugOptions),
     );
     socket.binaryType = 'arraybuffer';
     socketRef.current = socket;
