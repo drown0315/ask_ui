@@ -713,6 +713,12 @@ body {
   white-space: nowrap;
 }
 
+.device-view-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .surface-controls {
   display: grid;
   grid-template-columns: repeat(3, minmax(76px, 1fr));

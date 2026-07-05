@@ -3,9 +3,15 @@ import type { DeviceControlMessage } from './deviceControlProtocol';
 import { getDeviceWebSocketUrl } from '../services/askUiBridgeClient';
 import {
   getInitialLiveAppSurfaceState,
+  reduceLiveAppSurfaceFirstFrameRendered,
   reduceLiveAppSurfaceMessage,
   type LiveAppSurfaceState,
 } from './liveAppSurfaceState';
+import {
+  createDeviceVideoPipeline,
+  type DeviceVideoPipeline,
+  type WebCodecsLike,
+} from './deviceVideoPipeline';
 
 /**
  * Open and manage the Live App Surface Device WebSocket for a bridge session.
@@ -52,9 +58,31 @@ export function useLiveAppSurface(sessionId: string | null): {
       return;
     }
 
+    const videoPipeline = createDeviceVideoPipeline({
+      webCodecs: getBrowserWebCodecs(),
+      onFrame: (videoFrame) => {
+        setSurfaceState((state) =>
+          reduceLiveAppSurfaceFirstFrameRendered(state, videoFrame),
+        );
+      },
+      onFirstFrameRendered: () => {},
+    });
+    if (videoPipeline.status.type === 'unsupported') {
+      setSurfaceState({
+        status: 'failed',
+        error: 'webcodecs_unavailable',
+        message: videoPipeline.status.message,
+      });
+      return () => videoPipeline.close();
+    }
+    const readyVideoPipeline = requireReadyDeviceVideoPipeline(videoPipeline);
+
     let intentionalClose = false;
     let didReceiveFailure = false;
-    const socket = new WebSocket(getDeviceWebSocketUrl(sessionId));
+    const socket = new WebSocket(
+      getDeviceWebSocketUrl(sessionId, undefined, getDeviceDebugOptions()),
+    );
+    socket.binaryType = 'arraybuffer';
     socketRef.current = socket;
 
     setSurfaceState({
@@ -62,6 +90,18 @@ export function useLiveAppSurface(sessionId: string | null): {
     });
 
     socket.addEventListener('message', (event) => {
+      if (event.data instanceof ArrayBuffer) {
+        handleDeviceVideoChunk(readyVideoPipeline, new Uint8Array(event.data));
+        return;
+      }
+
+      if (event.data instanceof Blob) {
+        void event.data.arrayBuffer().then((buffer) => {
+          handleDeviceVideoChunk(readyVideoPipeline, new Uint8Array(buffer));
+        });
+        return;
+      }
+
       const rawMessage =
         typeof event.data === 'string' ? event.data : String(event.data);
       didReceiveFailure = rawMessage.includes('"type":"error"');
@@ -96,6 +136,7 @@ export function useLiveAppSurface(sessionId: string | null): {
       if (socketRef.current === socket) {
         socketRef.current = null;
       }
+      readyVideoPipeline.close();
       socket.close();
     };
   }, [retryToken, sessionId]);
@@ -107,4 +148,53 @@ export function useLiveAppSurface(sessionId: string | null): {
     },
     sendDeviceControlMessage,
   };
+}
+
+function getBrowserWebCodecs(): WebCodecsLike {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  return {
+    EncodedVideoChunk: window.EncodedVideoChunk,
+    VideoDecoder: window.VideoDecoder,
+  } as WebCodecsLike;
+}
+
+function getDeviceDebugOptions(): { debugVideo?: 'fixture' } {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  const debugVideo = new URLSearchParams(window.location.search).get(
+    'debugVideo',
+  );
+  if (debugVideo === 'fixture') {
+    return {
+      debugVideo,
+    };
+  }
+
+  return {};
+}
+
+function handleDeviceVideoChunk(
+  videoPipeline: Extract<DeviceVideoPipeline, { status: { type: 'ready' } }>,
+  chunk: Uint8Array,
+) {
+  try {
+    videoPipeline.push(chunk);
+  } catch (error) {
+    console.error('Device video decode failed', error);
+  }
+}
+
+function requireReadyDeviceVideoPipeline(
+  pipeline: DeviceVideoPipeline,
+): Extract<DeviceVideoPipeline, { status: { type: 'ready' } }> {
+  if (pipeline.status.type !== 'ready') {
+    throw new Error('Device video pipeline is not ready.');
+  }
+
+  return pipeline as Extract<DeviceVideoPipeline, { status: { type: 'ready' } }>;
 }

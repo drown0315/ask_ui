@@ -26,7 +26,8 @@ export function LiveAppSurface({
         isSelectWidgetActive ? 'live-app-surface-selecting' : ''
       }`}
     >
-      {surfaceState.status === 'waitingForVideo' ? (
+      {surfaceState.status === 'waitingForVideo' ||
+      surfaceState.status === 'renderingVideo' ? (
         <DeviceShell
           onDeviceControlMessage={onDeviceControlMessage}
           surfaceState={surfaceState}
@@ -70,6 +71,14 @@ function getLiveAppSurfaceContent(
   if (surfaceState.status === 'waitingForVideo') {
     return {
       label: 'Waiting for video',
+      detail: surfaceState.metadata.deviceId,
+      title: surfaceState.metadata.deviceId,
+    };
+  }
+
+  if (surfaceState.status === 'renderingVideo') {
+    return {
+      label: 'Device video',
       detail: surfaceState.metadata.deviceId,
       title: surfaceState.metadata.deviceId,
     };

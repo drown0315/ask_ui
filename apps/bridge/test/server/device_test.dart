@@ -159,6 +159,38 @@ void main() {
       );
     });
 
+    test('sends fixture H264 chunks as binary WebSocket messages', () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+      final sessionId = await createSession(client, fixture.baseUri);
+      final deviceUri = fixture.baseUri.replace(
+        scheme: 'ws',
+        path: '/api/sessions/$sessionId/device',
+        queryParameters: {'debugVideo': 'fixture'},
+      );
+
+      final socket = await WebSocket.connect(deviceUri.toString());
+      addTearDown(socket.close);
+      final messages = socket.asBroadcastStream();
+
+      final readyMessage = jsonDecode(await messages.first.timeout(
+        const Duration(seconds: 2),
+      )) as Map<String, Object?>;
+      final videoChunk = await messages.firstWhere((message) {
+        return message is List<int>;
+      }).timeout(const Duration(seconds: 2)) as List<int>;
+
+      expect(readyMessage, containsPair('type', 'ready'));
+      expect(videoChunk.take(4).toList(), [0, 0, 0, 1]);
+      expect(
+        fixture.logs,
+        contains(
+          '[ask_ui_bridge] device websocket session=$sessionId fixture_video '
+          'bytes=${videoChunk.length}',
+        ),
+      );
+    });
+
     test('accepts a legal touch control message without acking or closing',
         () async {
       final client = HttpClient();

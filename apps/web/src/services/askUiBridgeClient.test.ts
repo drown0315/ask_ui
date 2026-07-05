@@ -41,6 +41,15 @@ test('builds the session-scoped device WebSocket URL', () => {
   );
 });
 
+test('can request fixture video on the device WebSocket URL', () => {
+  assert.equal(
+    getDeviceWebSocketUrl('session-1', 'http://127.0.0.1:9000/', {
+      debugVideo: 'fixture',
+    }),
+    'ws://127.0.0.1:9000/api/sessions/session-1/device?debugVideo=fixture',
+  );
+});
+
 test('reports an empty bridge response without surfacing JSON parse internals', async () => {
   const response = new Response('', {
     status: 404,

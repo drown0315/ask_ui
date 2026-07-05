@@ -15,7 +15,10 @@ import {
 
 type DeviceShellProps = {
   onDeviceControlMessage: (message: DeviceControlMessage) => void;
-  surfaceState: Extract<LiveAppSurfaceState, { status: 'waitingForVideo' }>;
+  surfaceState: Extract<
+    LiveAppSurfaceState,
+    { status: 'waitingForVideo' | 'renderingVideo' }
+  >;
 };
 
 /**
@@ -29,6 +32,7 @@ export function DeviceShell({
   surfaceState,
 }: DeviceShellProps) {
   const areaRef = useRef<HTMLDivElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const activePointerRef = useRef<{
     pointerId: number;
     screenWidth: number;
@@ -97,6 +101,29 @@ export function DeviceShell({
     metadata.screenHeight,
     metadata.screenWidth,
   ]);
+
+  useEffect(() => {
+    if (surfaceState.status !== 'renderingVideo') {
+      return;
+    }
+
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext('2d');
+    if (!canvas || !context) {
+      return;
+    }
+
+    canvas.width = metadata.screenWidth;
+    canvas.height = metadata.screenHeight;
+    context.drawImage(surfaceState.videoFrame as CanvasImageSource, 0, 0);
+
+    return () => {
+      const maybeClosableFrame = surfaceState.videoFrame as {
+        close?: () => void;
+      };
+      maybeClosableFrame.close?.();
+    };
+  }, [metadata.screenHeight, metadata.screenWidth, surfaceState]);
 
   const sendPointerMessage = (
     action: 'down' | 'move' | 'up' | 'cancel',
@@ -185,8 +212,18 @@ export function DeviceShell({
             }}
             title={metadata.deviceId}
           >
-            <div className="device-view-status">Waiting for video</div>
-            <div className="device-view-device-id">{metadata.deviceId}</div>
+            {surfaceState.status === 'renderingVideo' ? (
+              <canvas
+                aria-label="Device video"
+                className="device-view-canvas"
+                ref={canvasRef}
+              />
+            ) : (
+              <>
+                <div className="device-view-status">Waiting for video</div>
+                <div className="device-view-device-id">{metadata.deviceId}</div>
+              </>
+            )}
           </div>
         ) : null}
       </div>

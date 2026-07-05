@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   getInitialLiveAppSurfaceState,
+  reduceLiveAppSurfaceFirstFrameRendered,
   reduceLiveAppSurfaceMessage,
 } from './liveAppSurfaceState.ts';
 
@@ -81,5 +82,36 @@ test('applies complete metadata updates without changing waiting state', () => {
       videoCodec: 'h264',
       controlReady: true,
     },
+  });
+});
+
+test('moves from Waiting for video to rendering after the first video frame is rendered', () => {
+  const videoFrame = { close() {} };
+  const state = reduceLiveAppSurfaceFirstFrameRendered(
+    {
+      status: 'waitingForVideo',
+      metadata: {
+        deviceId: '19271FDF6007TY',
+        screenWidth: 1080,
+        screenHeight: 2400,
+        maxFps: 60,
+        videoCodec: 'h264',
+        controlReady: true,
+      },
+    },
+    videoFrame,
+  );
+
+  assert.deepEqual(state, {
+    status: 'renderingVideo',
+    metadata: {
+      deviceId: '19271FDF6007TY',
+      screenWidth: 1080,
+      screenHeight: 2400,
+      maxFps: 60,
+      videoCodec: 'h264',
+      controlReady: true,
+    },
+    videoFrame,
   });
 });
