@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { getWidgetTree } from '../services/askUiBridgeClient';
+import { getWidgetTree } from '../services/askUiBridgeClient.ts';
 import type { WidgetTreeLoadState } from '../types/bridgeSession';
 
 export function getWidgetTreeErrorMessage(error: unknown): string {

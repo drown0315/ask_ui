@@ -3,18 +3,18 @@ import type { DeviceControlMessage } from './deviceControlProtocol';
 import {
   bridgeOrigin,
   getDeviceWebSocketUrl,
-} from '../services/askUiBridgeClient';
+} from '../services/askUiBridgeClient.ts';
 import {
   getInitialLiveAppSurfaceState,
   reduceLiveAppSurfaceFirstFrameRendered,
   reduceLiveAppSurfaceMessage,
   type LiveAppSurfaceState,
-} from './liveAppSurfaceState';
+} from './liveAppSurfaceState.ts';
 import {
   createDeviceVideoPipeline,
   type DeviceVideoPipeline,
   type WebCodecsLike,
-} from './deviceVideoPipeline';
+} from './deviceVideoPipeline.ts';
 import type { DeviceVideoFrameRenderer } from './deviceVideoFrameRenderer';
 
 type DeviceVideoFrame = CanvasImageSource & { close?: () => void };
