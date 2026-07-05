@@ -382,6 +382,35 @@ void main() {
     expect(runner.processes.single.killed, isTrue);
   });
 
+  test('handles scrcpy process start failures from stderr', () async {
+    final runner = FakeScrcpyCommandRunner(failStart: true);
+    final sink = RecordingDeviceStreamSink();
+    final session = BridgeSession(
+      id: 'session-1',
+      vmServiceUri: 'ws://127.0.0.1:12345/ws',
+      projectRoot: '/Users/example/app',
+      deviceId: 'device-1',
+    );
+
+    await expectLater(
+      ScrcpyDeviceStreamFactory(
+        commandRunner: runner,
+        startupTimeout: const Duration(seconds: 1),
+        config: const ScrcpyDeviceStreamConfig(
+          adbExecutable: 'adb',
+          serverPath: '/opt/scrcpy-server',
+          scid: 'abc123',
+          maxSize: 1080,
+          maxFps: 60,
+          videoBitRate: 8000000,
+        ),
+      ).start(session: session, sink: sink),
+      throwsStateError,
+    );
+
+    expect(runner.processes.single.killed, isTrue);
+  });
+
   test('fails the device stream when an underlying socket closes', () async {
     final runner = FakeScrcpyCommandRunner();
     final sink = RecordingDeviceStreamSink();
@@ -480,11 +509,13 @@ class RecordingDeviceStreamSink implements DeviceStreamSink {
 class FakeScrcpyCommandRunner implements ScrcpyCommandRunner {
   FakeScrcpyCommandRunner({
     this.failPush = false,
+    this.failStart = false,
     this.connectVideoSocket = true,
     this.connectControlSocket = true,
   });
 
   final bool failPush;
+  final bool failStart;
   final bool connectVideoSocket;
   final bool connectControlSocket;
   final commands = <List<String>>[];
@@ -516,9 +547,13 @@ class FakeScrcpyCommandRunner implements ScrcpyCommandRunner {
   @override
   ScrcpyServerProcess start(String executable, List<String> args) {
     startedCommands.add([executable, ...args]);
-    _connectScrcpySockets();
     final process = FakeScrcpyServerProcess();
     processes.add(process);
+    if (failStart) {
+      process.failStart(StateError('adb start failed'));
+      return process;
+    }
+    _connectScrcpySockets();
     return process;
   }
 
@@ -569,6 +604,17 @@ class FakeScrcpyServerProcess implements ScrcpyServerProcess {
 
   @override
   Future<int> get exitCode => _exitCode.future;
+
+  void failStart(Object error) {
+    scheduleMicrotask(() {
+      if (!_stderr.isClosed) {
+        _stderr.addError(error);
+      }
+      if (!_exitCode.isCompleted) {
+        _exitCode.completeError(error);
+      }
+    });
+  }
 
   void completeExit(int exitCode) {
     if (!_exitCode.isCompleted) {

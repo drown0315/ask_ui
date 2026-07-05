@@ -275,6 +275,8 @@ class ScrcpyDeviceStream implements DeviceStream {
       if (message.isNotEmpty) {
         sink.log('scrcpy stderr=$message');
       }
+    }, onError: (Object error) {
+      sink.log('scrcpy stderr error=$error');
     });
 
     _videoSocket = await _waitForStartupSocket(videoConnected, 'video');
