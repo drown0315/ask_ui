@@ -1,5 +1,7 @@
 import { H264AnnexBParser } from './h264AnnexB.ts';
 
+const maxQueuedDeltaFrames = 1;
+
 type EncodedVideoChunkLike = {
   type: string;
   timestamp: number;
@@ -67,7 +69,7 @@ export type DeviceVideoPipeline =
  * This method:
  * 1. checks whether the browser exposes the required WebCodecs constructors
  * 2. creates an Annex B parser for raw WebSocket binary chunks
- * 3. configures a low-latency H.264 decoder for the fixture stream
+ * 3. configures a low-latency H.264 decoder after the first SPS is parsed
  * 4. returns a `push` method that decodes complete access units as they arrive
  *
  * Args:
@@ -78,6 +80,9 @@ export type DeviceVideoPipeline =
  *   Device View canvas.
  * - `onFirstFrameRendered`: Called once after the first decoded frame reaches
  *   the renderer. The Live App Surface uses this to leave `Waiting for video`.
+ * - `onError`: Called when parsing or decoding fails. The pipeline ignores
+ *   later chunks after a failure because WebCodecs cannot decode on a failed
+ *   codec.
  *
  * Returns:
  * A ready pipeline when WebCodecs exists, otherwise an unsupported-browser
@@ -90,10 +95,12 @@ export type DeviceVideoPipeline =
  */
 export function createDeviceVideoPipeline({
   webCodecs,
+  onError,
   onFrame,
   onFirstFrameRendered,
 }: {
   webCodecs: WebCodecsLike;
+  onError?: (error: Error) => void;
   onFrame: (frame: unknown) => void;
   onFirstFrameRendered: () => void;
 }): DeviceVideoPipeline {
@@ -114,8 +121,27 @@ export function createDeviceVideoPipeline({
   const parser = new H264AnnexBParser();
   let timestamp = 0;
   let didRenderFirstFrame = false;
+  let configuredCodec: string | null = null;
+  let state: 'ready' | 'failed' | 'closed' = 'ready';
+
+  const fail = (error: Error) => {
+    if (state !== 'ready') {
+      return;
+    }
+
+    state = 'failed';
+    console.error('Device video decoder failed', error);
+    onError?.(error);
+  };
+
   const decoder = new VideoDecoderConstructor({
     output(frame: unknown) {
+      if (state !== 'ready') {
+        const maybeClosableFrame = frame as { close?: () => void };
+        maybeClosableFrame.close?.();
+        return;
+      }
+
       onFrame(frame);
       if (!didRenderFirstFrame) {
         didRenderFirstFrame = true;
@@ -123,12 +149,8 @@ export function createDeviceVideoPipeline({
       }
     },
     error(error: Error) {
-      console.error('Device video decoder failed', error);
+      fail(error);
     },
-  });
-  decoder.configure({
-    codec: 'avc1.42C00A',
-    optimizeForLatency: true,
   });
 
   return {
@@ -136,15 +158,47 @@ export function createDeviceVideoPipeline({
       type: 'ready',
     },
     close() {
+      if (state === 'closed') {
+        return;
+      }
+
+      state = 'closed';
       decoder.close();
     },
     push(chunk: Uint8Array<ArrayBufferLike>) {
-      for (const accessUnit of parser.push(chunk)) {
+      let accessUnits;
+      try {
+        accessUnits = parser.push(chunk);
+      } catch (error) {
+        fail(error instanceof Error ? error : new Error(String(error)));
+        return;
+      }
+
+      for (const accessUnit of accessUnits) {
+        if (state !== 'ready') {
+          return;
+        }
+
+        if (accessUnit.codec && accessUnit.codec !== configuredCodec) {
+          decoder.configure({
+            codec: accessUnit.codec,
+            optimizeForLatency: true,
+          });
+          configuredCodec = accessUnit.codec;
+        }
+
+        if (!configuredCodec) {
+          continue;
+        }
+
         const chunkType = accessUnit.nalTypes.includes(5) ? 'key' : 'delta';
         // When WebCodecs is already backed up, old delta frames increase
         // interaction latency. Keep key frames because later decoding may need
         // a fresh reference point; drop only delta chunks in this first version.
-        if (chunkType === 'delta' && decoder.decodeQueueSize > 2) {
+        if (
+          chunkType === 'delta' &&
+          decoder.decodeQueueSize > maxQueuedDeltaFrames
+        ) {
           continue;
         }
 
@@ -154,7 +208,12 @@ export function createDeviceVideoPipeline({
           data: accessUnit.bytes,
         });
         timestamp += 1;
-        decoder.decode(encodedChunk);
+        try {
+          decoder.decode(encodedChunk);
+        } catch (error) {
+          fail(error instanceof Error ? error : new Error(String(error)));
+          return;
+        }
       }
     },
   };

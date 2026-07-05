@@ -58,8 +58,20 @@ export function useLiveAppSurface(sessionId: string | null): {
       return;
     }
 
+    let intentionalClose = false;
+    let didReceiveFailure = false;
+    let disposed = false;
     const videoPipeline = createDeviceVideoPipeline({
       webCodecs: getBrowserWebCodecs(),
+      onError: (error) => {
+        didReceiveFailure = true;
+        console.error('Device video decode failed', error);
+        setSurfaceState({
+          status: 'failed',
+          error: 'video_decode_failed',
+          message: 'Device video failed to decode.',
+        });
+      },
       onFrame: (videoFrame) => {
         setSurfaceState((state) =>
           reduceLiveAppSurfaceFirstFrameRendered(state, videoFrame),
@@ -77,8 +89,6 @@ export function useLiveAppSurface(sessionId: string | null): {
     }
     const readyVideoPipeline = requireReadyDeviceVideoPipeline(videoPipeline);
 
-    let intentionalClose = false;
-    let didReceiveFailure = false;
     const socket = new WebSocket(
       getDeviceWebSocketUrl(sessionId, undefined, getDeviceDebugOptions()),
     );
@@ -90,14 +100,22 @@ export function useLiveAppSurface(sessionId: string | null): {
     });
 
     socket.addEventListener('message', (event) => {
+      if (disposed) {
+        return;
+      }
+
       if (event.data instanceof ArrayBuffer) {
-        handleDeviceVideoChunk(readyVideoPipeline, new Uint8Array(event.data));
+        readyVideoPipeline.push(new Uint8Array(event.data));
         return;
       }
 
       if (event.data instanceof Blob) {
         void event.data.arrayBuffer().then((buffer) => {
-          handleDeviceVideoChunk(readyVideoPipeline, new Uint8Array(buffer));
+          if (disposed) {
+            return;
+          }
+
+          readyVideoPipeline.push(new Uint8Array(buffer));
         });
         return;
       }
@@ -133,6 +151,7 @@ export function useLiveAppSurface(sessionId: string | null): {
 
     return () => {
       intentionalClose = true;
+      disposed = true;
       if (socketRef.current === socket) {
         socketRef.current = null;
       }
@@ -176,17 +195,6 @@ function getDeviceDebugOptions(): { debugVideo?: 'fixture' } {
   }
 
   return {};
-}
-
-function handleDeviceVideoChunk(
-  videoPipeline: Extract<DeviceVideoPipeline, { status: { type: 'ready' } }>,
-  chunk: Uint8Array,
-) {
-  try {
-    videoPipeline.push(chunk);
-  } catch (error) {
-    console.error('Device video decode failed', error);
-  }
 }
 
 function requireReadyDeviceVideoPipeline(

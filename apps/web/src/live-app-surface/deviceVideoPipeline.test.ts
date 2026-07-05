@@ -18,6 +18,7 @@ test('reports WebCodecs unavailable when required browser APIs are missing', () 
 
 test('decodes Annex B access units and reports the first rendered frame', () => {
   const decodedChunks: Array<{ type: string; timestamp: number; bytes: number[] }> = [];
+  const configuredCodecs: string[] = [];
   let firstFrameCount = 0;
   let renderedFrame: unknown = null;
   const frame = { close() {} };
@@ -47,7 +48,9 @@ test('decodes Annex B access units and reports the first rendered frame', () => 
           this.output = init.output;
         }
 
-        configure() {}
+        configure(config: { codec: string }) {
+          configuredCodecs.push(config.codec);
+        }
 
         decode(chunk: { type: string; timestamp: number; data: Uint8Array }) {
           decodedChunks.push({
@@ -73,10 +76,13 @@ test('decodes Annex B access units and reports the first rendered frame', () => 
   pipeline.push(
     new Uint8Array([
       0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x1f, 0x00, 0x00, 0x01, 0x68,
-      0xce, 0x06, 0xe2, 0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x84, 0x21,
+      0xce, 0x06, 0xe2, 0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x84, 0x21, 0x00,
+      0x00, 0x00, 0x01, 0x61, 0x88, 0x84, 0x21, 0x00, 0x00, 0x01, 0x09,
+      0xf0,
     ]),
   );
 
+  assert.deepEqual(configuredCodecs, ['avc1.42001F']);
   assert.deepEqual(decodedChunks, [
     {
       type: 'key',
@@ -90,6 +96,7 @@ test('decodes Annex B access units and reports the first rendered frame', () => 
 
 test('drops delta access units when the decode queue is pressured', () => {
   let decodeCount = 0;
+  let decodeQueueSize = 0;
   const pipeline = createDeviceVideoPipeline({
     webCodecs: {
       EncodedVideoChunk: class FakeEncodedVideoChunk {
@@ -108,7 +115,9 @@ test('drops delta access units when the decode queue is pressured', () => {
         }
       },
       VideoDecoder: class FakeVideoDecoder {
-        decodeQueueSize = 3;
+        get decodeQueueSize() {
+          return decodeQueueSize;
+        }
 
         configure() {}
 
@@ -125,9 +134,172 @@ test('drops delta access units when the decode queue is pressured', () => {
 
   pipeline.push(
     new Uint8Array([
-      0x00, 0x00, 0x00, 0x01, 0x61, 0x88, 0x84, 0x21,
+      0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x1f, 0x00, 0x00, 0x01,
+      0x68, 0xce, 0x06, 0xe2, 0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x84,
+      0x21, 0x00, 0x00, 0x01, 0x61, 0x88, 0x84, 0x21, 0x00, 0x00, 0x01,
+      0x09, 0xf0,
+    ]),
+  );
+  assert.equal(decodeCount, 1);
+
+  decodeQueueSize = 2;
+  pipeline.push(
+    new Uint8Array([
+      0x00, 0x00, 0x01, 0x61, 0x88, 0x84, 0x21, 0x00, 0x00, 0x01, 0x09,
+      0xf0,
+    ]),
+  );
+
+  assert.equal(decodeCount, 1);
+});
+
+test('reports decoder failures and ignores later chunks', () => {
+  let decodeCount = 0;
+  let reportedError: Error | null = null;
+  let failDecoder: ((error: Error) => void) | null = null;
+  const restoreConsoleError = muteConsoleError();
+
+  try {
+    const pipeline = createDeviceVideoPipeline({
+      webCodecs: {
+        EncodedVideoChunk: class FakeEncodedVideoChunk {
+          init: unknown;
+
+          constructor(init: unknown) {
+            this.init = init;
+          }
+        },
+        VideoDecoder: class FakeVideoDecoder {
+          decodeQueueSize = 0;
+
+          constructor(init: { error: (error: Error) => void }) {
+            failDecoder = init.error;
+          }
+
+          configure() {}
+
+          decode() {
+            decodeCount += 1;
+          }
+
+          close() {}
+        },
+      },
+      onError: (error) => {
+        reportedError = error;
+      },
+      onFrame: () => {},
+      onFirstFrameRendered: () => {},
+    });
+
+    assert.equal(pipeline.status.type, 'ready');
+    failDecoder?.(new Error('decode failed'));
+    pipeline.push(
+      new Uint8Array([
+        0x00, 0x00, 0x01, 0x61, 0x88, 0x84, 0x21, 0x00, 0x00, 0x01, 0x61,
+        0x88, 0x84, 0x21, 0x00, 0x00, 0x01, 0x09, 0xf0,
+      ]),
+    );
+
+    assert.equal(reportedError?.message, 'decode failed');
+    assert.equal(decodeCount, 0);
+  } finally {
+    restoreConsoleError();
+  }
+});
+
+test('reports parser failures and ignores later chunks', () => {
+  let decodeCount = 0;
+  let reportedError: Error | null = null;
+  const restoreConsoleError = muteConsoleError();
+
+  try {
+    const pipeline = createDeviceVideoPipeline({
+      webCodecs: {
+        EncodedVideoChunk: class FakeEncodedVideoChunk {
+          init: unknown;
+
+          constructor(init: unknown) {
+            this.init = init;
+          }
+        },
+        VideoDecoder: class FakeVideoDecoder {
+          decodeQueueSize = 0;
+
+          configure() {}
+
+          decode() {
+            decodeCount += 1;
+          }
+
+          close() {}
+        },
+      },
+      onError: (error) => {
+        reportedError = error;
+      },
+      onFrame: () => {},
+      onFirstFrameRendered: () => {},
+    });
+
+    pipeline.push(new Uint8Array([0x67, 0x42, 0x00, 0x1f]));
+    pipeline.push(
+      new Uint8Array([
+        0x00, 0x00, 0x01, 0x61, 0x88, 0x84, 0x21, 0x00, 0x00, 0x01, 0x61,
+        0x88, 0x84, 0x21, 0x00, 0x00, 0x01, 0x09, 0xf0,
+      ]),
+    );
+
+    assert.equal(reportedError?.name, 'H264AnnexBParseError');
+    assert.equal(decodeCount, 0);
+  } finally {
+    restoreConsoleError();
+  }
+});
+
+test('ignores chunks after the pipeline is closed', () => {
+  let decodeCount = 0;
+  const pipeline = createDeviceVideoPipeline({
+    webCodecs: {
+      EncodedVideoChunk: class FakeEncodedVideoChunk {
+        init: unknown;
+
+        constructor(init: unknown) {
+          this.init = init;
+        }
+      },
+      VideoDecoder: class FakeVideoDecoder {
+        decodeQueueSize = 0;
+
+        configure() {}
+
+        decode() {
+          decodeCount += 1;
+        }
+
+        close() {}
+      },
+    },
+    onFrame: () => {},
+    onFirstFrameRendered: () => {},
+  });
+
+  pipeline.close();
+  pipeline.push(
+    new Uint8Array([
+      0x00, 0x00, 0x01, 0x61, 0x88, 0x84, 0x21, 0x00, 0x00, 0x01, 0x61, 0x88,
+      0x84, 0x21, 0x00, 0x00, 0x01, 0x09, 0xf0,
     ]),
   );
 
   assert.equal(decodeCount, 0);
 });
+
+function muteConsoleError(): () => void {
+  const originalConsoleError = console.error;
+  console.error = () => {};
+
+  return () => {
+    console.error = originalConsoleError;
+  };
+}

@@ -12,6 +12,7 @@ import {
   mapPointToDeviceCoordinates,
   type DeviceViewFit,
 } from '../../live-app-surface/deviceViewGeometry';
+import { drawDeviceVideoFrame } from '../../live-app-surface/deviceVideoFrameRenderer';
 
 type DeviceShellProps = {
   onDeviceControlMessage: (message: DeviceControlMessage) => void;
@@ -108,27 +109,18 @@ export function DeviceShell({
     }
 
     const canvas = canvasRef.current;
-    const context = canvas?.getContext('2d');
-    if (!canvas || !context) {
+    if (!canvas) {
       return;
     }
 
-    canvas.width = metadata.screenWidth;
-    canvas.height = metadata.screenHeight;
-    context.drawImage(
-      surfaceState.videoFrame as CanvasImageSource,
-      0,
-      0,
-      metadata.screenWidth,
-      metadata.screenHeight,
-    );
-
-    return () => {
-      const maybeClosableFrame = surfaceState.videoFrame as {
+    drawDeviceVideoFrame({
+      canvas,
+      screenHeight: metadata.screenHeight,
+      screenWidth: metadata.screenWidth,
+      videoFrame: surfaceState.videoFrame as CanvasImageSource & {
         close?: () => void;
-      };
-      maybeClosableFrame.close?.();
-    };
+      },
+    });
   }, [metadata.screenHeight, metadata.screenWidth, surfaceState]);
 
   const sendPointerMessage = (
