@@ -237,25 +237,31 @@ export function DeviceShell({
       </div>
       <div className="surface-controls">
         <button
+          aria-label="Back"
           disabled={!metadata.controlReady}
           onClick={() => sendSystemKey('back')}
+          title="Back"
           type="button"
         >
-          Back
+          <span aria-hidden="true" className="surface-control-icon surface-control-icon-back" />
         </button>
         <button
+          aria-label="Home"
           disabled={!metadata.controlReady}
           onClick={() => sendSystemKey('home')}
+          title="Home"
           type="button"
         >
-          Home
+          <span aria-hidden="true" className="surface-control-icon surface-control-icon-home" />
         </button>
         <button
+          aria-label="Recents"
           disabled={!metadata.controlReady}
           onClick={() => sendSystemKey('recents')}
+          title="Recents"
           type="button"
         >
-          Recents
+          <span aria-hidden="true" className="surface-control-icon surface-control-icon-recents" />
         </button>
       </div>
     </div>
