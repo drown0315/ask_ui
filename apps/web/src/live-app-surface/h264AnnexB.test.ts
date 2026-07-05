@@ -44,6 +44,25 @@ test('keeps NAL units intact when start codes and payloads are split across chun
   assert.deepEqual(accessUnits[0].nalTypes, [7, 8, 5]);
 });
 
+test('preserves consecutive four-byte Annex B start codes exactly', () => {
+  const parser = new H264AnnexBParser();
+  const firstAccessUnitBytes = [
+    0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x1f, 0x00, 0x00, 0x00, 0x01,
+    0x68, 0xce, 0x06, 0xe2, 0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x84, 0x21,
+  ];
+
+  const accessUnits = parser.push(
+    new Uint8Array([
+      ...firstAccessUnitBytes,
+      0x00, 0x00, 0x00, 0x01, 0x61, 0x88, 0x84, 0x21,
+      0x00, 0x00, 0x00, 0x01, 0x09, 0xf0,
+    ]),
+  );
+
+  assert.equal(accessUnits.length, 1);
+  assert.deepEqual(Array.from(accessUnits[0].bytes), firstAccessUnitBytes);
+});
+
 test('does not emit an access unit until the last NAL is complete', () => {
   const parser = new H264AnnexBParser();
 

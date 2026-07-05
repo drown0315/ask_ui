@@ -240,16 +240,6 @@ function findStartCodes(
 
   for (let index = 0; index <= bytes.length - 3; index += 1) {
     if (
-      bytes[index] === 0x00 &&
-      bytes[index + 1] === 0x00 &&
-      bytes[index + 2] === 0x01
-    ) {
-      starts.push({ index, length: 3 });
-      index += 2;
-      continue;
-    }
-
-    if (
       index <= bytes.length - 4 &&
       bytes[index] === 0x00 &&
       bytes[index + 1] === 0x00 &&
@@ -258,6 +248,16 @@ function findStartCodes(
     ) {
       starts.push({ index, length: 4 });
       index += 3;
+      continue;
+    }
+
+    if (
+      bytes[index] === 0x00 &&
+      bytes[index + 1] === 0x00 &&
+      bytes[index + 2] === 0x01
+    ) {
+      starts.push({ index, length: 3 });
+      index += 2;
     }
   }
 
