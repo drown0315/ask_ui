@@ -188,6 +188,7 @@ class RecordingFlutterInspectorClient implements FlutterInspectorClient {
   final requestedSessionIds = <String>[];
   final selectWidgetModeRequests = <RecordedSelectWidgetModeRequest>[];
   final selectWidgetModeStatusSessionIds = <String>[];
+  final selectedWidgets = <RecordedWidgetSelectionRequest>[];
   final _selectWidgetModeControllers =
       <String, StreamController<SelectWidgetModeStatus>>{};
   Exception? failure;
@@ -243,6 +244,21 @@ class RecordingFlutterInspectorClient implements FlutterInspectorClient {
   ) async {
     selectWidgetModeStatusSessionIds.add(session.id);
     return SelectWidgetModeStatus(enabled: selectWidgetModeStatus);
+  }
+
+  @override
+  Future<WidgetSelectionResult> selectWidgetById(
+    BridgeSession session, {
+    required String widgetId,
+  }) async {
+    selectedWidgets.add(RecordedWidgetSelectionRequest(
+      sessionId: session.id,
+      widgetId: widgetId,
+    ));
+    return WidgetSelectionResult(
+      widgetId: widgetId,
+      message: 'Widget selected.',
+    );
   }
 
   @override
@@ -321,4 +337,24 @@ class RecordedSelectWidgetModeRequest {
 
   @override
   int get hashCode => Object.hash(sessionId, enabled);
+}
+
+class RecordedWidgetSelectionRequest {
+  const RecordedWidgetSelectionRequest({
+    required this.sessionId,
+    required this.widgetId,
+  });
+
+  final String sessionId;
+  final String widgetId;
+
+  @override
+  bool operator ==(Object other) {
+    return other is RecordedWidgetSelectionRequest &&
+        other.sessionId == sessionId &&
+        other.widgetId == widgetId;
+  }
+
+  @override
+  int get hashCode => Object.hash(sessionId, widgetId);
 }

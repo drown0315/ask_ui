@@ -92,6 +92,49 @@ void main() {
     expect(config.maxSize, 0);
   });
 
+  test('generates a fresh scrcpy socket id for each factory start', () async {
+    final runner = FakeScrcpyCommandRunner();
+    final sink = RecordingDeviceStreamSink();
+    final session = BridgeSession(
+      id: 'session-1',
+      vmServiceUri: 'ws://127.0.0.1:12345/ws',
+      projectRoot: '/Users/example/app',
+      deviceId: 'device-1',
+    );
+    var nextScid = 1;
+    final factory = ScrcpyDeviceStreamFactory(
+      commandRunner: runner,
+      configFactory: () => ScrcpyDeviceStreamConfig(
+        adbExecutable: 'adb',
+        serverPath: '/opt/scrcpy-server',
+        scid: 'abc12${nextScid++}',
+        maxSize: 1080,
+        maxFps: 60,
+        videoBitRate: 8000000,
+      ),
+    );
+
+    final firstStream = await factory.start(session: session, sink: sink);
+    await firstStream.close();
+    final secondStream = await factory.start(session: session, sink: sink);
+    await secondStream.close();
+
+    expect(
+      runner.commands.where((command) {
+        return command.contains('reverse') &&
+            command.contains('localabstract:scrcpy_abc121');
+      }),
+      isNotEmpty,
+    );
+    expect(
+      runner.commands.where((command) {
+        return command.contains('reverse') &&
+            command.contains('localabstract:scrcpy_abc122');
+      }),
+      isNotEmpty,
+    );
+  });
+
   test('writes touch and system key controls to the scrcpy control socket',
       () async {
     final runner = FakeScrcpyCommandRunner();
@@ -270,6 +313,75 @@ void main() {
     );
   });
 
+  test('fails startup when scrcpy sockets are not connected before timeout',
+      () async {
+    final runner = FakeScrcpyCommandRunner(connectControlSocket: false);
+    final sink = RecordingDeviceStreamSink();
+    final session = BridgeSession(
+      id: 'session-1',
+      vmServiceUri: 'ws://127.0.0.1:12345/ws',
+      projectRoot: '/Users/example/app',
+      deviceId: 'device-1',
+    );
+
+    await expectLater(
+      ScrcpyDeviceStreamFactory(
+        commandRunner: runner,
+        startupTimeout: const Duration(milliseconds: 10),
+        config: const ScrcpyDeviceStreamConfig(
+          adbExecutable: 'adb',
+          serverPath: '/opt/scrcpy-server',
+          scid: 'abc123',
+          maxSize: 1080,
+          maxFps: 60,
+          videoBitRate: 8000000,
+        ),
+      ).start(session: session, sink: sink),
+      throwsStateError,
+    );
+
+    expect(runner.processes.single.killed, isTrue);
+    expect(
+      runner.commands.where((command) {
+        return command.contains('reverse') &&
+            command.contains('--remove') &&
+            command.contains('localabstract:scrcpy_abc123');
+      }),
+      hasLength(2),
+    );
+  });
+
+  test('fails startup when scrcpy exits before sockets connect', () async {
+    final runner = FakeScrcpyCommandRunner(connectVideoSocket: false);
+    final sink = RecordingDeviceStreamSink();
+    final session = BridgeSession(
+      id: 'session-1',
+      vmServiceUri: 'ws://127.0.0.1:12345/ws',
+      projectRoot: '/Users/example/app',
+      deviceId: 'device-1',
+    );
+
+    final startFuture = ScrcpyDeviceStreamFactory(
+      commandRunner: runner,
+      startupTimeout: const Duration(seconds: 1),
+      config: const ScrcpyDeviceStreamConfig(
+        adbExecutable: 'adb',
+        serverPath: '/opt/scrcpy-server',
+        scid: 'abc123',
+        maxSize: 1080,
+        maxFps: 60,
+        videoBitRate: 8000000,
+      ),
+    ).start(session: session, sink: sink);
+    while (runner.processes.isEmpty) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    runner.processes.single.completeExit(1);
+
+    await expectLater(startFuture, throwsStateError);
+    expect(runner.processes.single.killed, isTrue);
+  });
+
   test('fails the device stream when an underlying socket closes', () async {
     final runner = FakeScrcpyCommandRunner();
     final sink = RecordingDeviceStreamSink();
@@ -366,9 +478,15 @@ class RecordingDeviceStreamSink implements DeviceStreamSink {
 }
 
 class FakeScrcpyCommandRunner implements ScrcpyCommandRunner {
-  FakeScrcpyCommandRunner({this.failPush = false});
+  FakeScrcpyCommandRunner({
+    this.failPush = false,
+    this.connectVideoSocket = true,
+    this.connectControlSocket = true,
+  });
 
   final bool failPush;
+  final bool connectVideoSocket;
+  final bool connectControlSocket;
   final commands = <List<String>>[];
   final startedCommands = <List<String>>[];
   final processes = <FakeScrcpyServerProcess>[];
@@ -411,35 +529,52 @@ class FakeScrcpyCommandRunner implements ScrcpyCommandRunner {
     final portArg = reverseCommand.last;
     final port = int.parse(portArg.substring('tcp:'.length));
     scheduleMicrotask(() async {
-      final video = await Socket.connect(InternetAddress.loopbackIPv4, port);
-      final control = await Socket.connect(InternetAddress.loopbackIPv4, port);
-      videoSocket = video;
-      controlSocket = control;
-      _socketsReady.complete();
-      final controlChunks = <int>[];
-      control.listen((chunk) {
-        controlChunks.addAll(chunk);
-        if (controlChunks.length >= 60 && !_controlBytes.isClosed) {
-          _controlBytes.add(List<int>.from(controlChunks));
-        }
-      });
-      video.add([0, 0, 0, 1, 0x65]);
-      await video.flush();
-      addTearDown(video.destroy);
-      addTearDown(control.destroy);
+      Socket? video;
+      Socket? control;
+      if (connectVideoSocket) {
+        video = await Socket.connect(InternetAddress.loopbackIPv4, port);
+        videoSocket = video;
+        video.add([0, 0, 0, 1, 0x65]);
+        await video.flush();
+        addTearDown(video.destroy);
+      }
+      if (connectControlSocket) {
+        control = await Socket.connect(InternetAddress.loopbackIPv4, port);
+        controlSocket = control;
+        final controlChunks = <int>[];
+        control.listen((chunk) {
+          controlChunks.addAll(chunk);
+          if (controlChunks.length >= 60 && !_controlBytes.isClosed) {
+            _controlBytes.add(List<int>.from(controlChunks));
+          }
+        });
+        addTearDown(control.destroy);
+      }
+      if ((connectVideoSocket && video != null) &&
+          (connectControlSocket && control != null) &&
+          !_socketsReady.isCompleted) {
+        _socketsReady.complete();
+      }
     });
   }
 }
 
 class FakeScrcpyServerProcess implements ScrcpyServerProcess {
   final _stderr = StreamController<List<int>>();
+  final _exitCode = Completer<int>();
   bool killed = false;
 
   @override
   Stream<List<int>> get stderr => _stderr.stream;
 
   @override
-  Future<int> get exitCode => Completer<int>().future;
+  Future<int> get exitCode => _exitCode.future;
+
+  void completeExit(int exitCode) {
+    if (!_exitCode.isCompleted) {
+      _exitCode.complete(exitCode);
+    }
+  }
 
   @override
   bool kill([ProcessSignal signal = ProcessSignal.sigterm]) {

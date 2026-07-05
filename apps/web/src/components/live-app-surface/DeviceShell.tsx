@@ -150,24 +150,38 @@ export function DeviceShell({
       lastMoveSentAtRef.current = now;
     }
 
+    const pointerId = event.pointerId;
     const rect = event.currentTarget.getBoundingClientRect();
-    const point = mapPointToDeviceCoordinates({
+    let point = mapPointToDeviceCoordinates({
       fit,
       x: event.clientX - rect.left,
       y: event.clientY - rect.top,
     });
+    let screenWidth = metadata.screenWidth;
+    let screenHeight = metadata.screenHeight;
     if (!point) {
-      return;
+      const activePointer = activePointerRef.current;
+      if (
+        (action !== 'up' && action !== 'cancel') ||
+        activePointer?.pointerId !== pointerId
+      ) {
+        return;
+      }
+      point = {
+        x: activePointer.x,
+        y: activePointer.y,
+      };
+      screenWidth = activePointer.screenWidth;
+      screenHeight = activePointer.screenHeight;
     }
 
-    const pointerId = event.pointerId;
     const message = buildTouchMessage({
       action,
       pointerId,
       x: point.x,
       y: point.y,
-      screenWidth: metadata.screenWidth,
-      screenHeight: metadata.screenHeight,
+      screenWidth,
+      screenHeight,
     });
 
     onDeviceControlMessage(message);
@@ -177,12 +191,14 @@ export function DeviceShell({
         pointerId,
         x: point.x,
         y: point.y,
-        screenWidth: metadata.screenWidth,
-        screenHeight: metadata.screenHeight,
+        screenWidth,
+        screenHeight,
       };
       event.currentTarget.setPointerCapture(pointerId);
     } else if (action === 'up' || action === 'cancel') {
-      activePointerRef.current = null;
+      if (activePointerRef.current?.pointerId === pointerId) {
+        activePointerRef.current = null;
+      }
       if (event.currentTarget.hasPointerCapture(pointerId)) {
         event.currentTarget.releasePointerCapture(pointerId);
       }
@@ -191,8 +207,8 @@ export function DeviceShell({
         pointerId,
         x: point.x,
         y: point.y,
-        screenWidth: metadata.screenWidth,
-        screenHeight: metadata.screenHeight,
+        screenWidth,
+        screenHeight,
       };
     }
   };

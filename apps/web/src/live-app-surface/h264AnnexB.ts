@@ -36,6 +36,7 @@ export class H264AnnexBParser {
 
     const { nalUnits, remainingBytes } = splitCompleteAnnexBNalUnits(
       this.bufferedBytes,
+      { flush: false },
     );
     this.bufferedBytes = remainingBytes;
 
@@ -56,6 +57,25 @@ export class H264AnnexBParser {
       return [];
     }
 
+    return this.pushNalUnits(nalUnits);
+  }
+
+  flush(): H264AccessUnit[] {
+    const { nalUnits, remainingBytes } = splitCompleteAnnexBNalUnits(
+      this.bufferedBytes,
+      { flush: true },
+    );
+    this.bufferedBytes = remainingBytes;
+    const accessUnits = this.pushNalUnits(nalUnits);
+
+    if (this.accessUnitHasVcl) {
+      accessUnits.push(this.emitAccessUnit());
+    }
+
+    return accessUnits;
+  }
+
+  private pushNalUnits(nalUnits: H264NalUnit[]): H264AccessUnit[] {
     const accessUnits: H264AccessUnit[] = [];
     for (const nalUnit of nalUnits) {
       if (nalUnit.type === 7 || nalUnit.type === 8) {
@@ -157,6 +177,7 @@ function concatenateBytes(
 
 function splitCompleteAnnexBNalUnits(
   bytes: Uint8Array<ArrayBufferLike>,
+  { flush }: { flush: boolean },
 ): {
   nalUnits: H264NalUnit[];
   remainingBytes: Uint8Array<ArrayBufferLike>;
@@ -165,15 +186,34 @@ function splitCompleteAnnexBNalUnits(
   const nalUnits: H264NalUnit[] = [];
 
   if (startCodes.length < 2) {
+    if (flush && startCodes.length === 1) {
+      const start = startCodes[0];
+      const nalStart = start.index + start.length;
+      if (nalStart < bytes.length) {
+        const payload = bytes.slice(nalStart);
+        nalUnits.push({
+          bytes: bytes.slice(start.index),
+          payload,
+          type: payload[0] & 0x1f,
+        });
+      }
+      return {
+        nalUnits,
+        remainingBytes: new Uint8Array(),
+      };
+    }
+
     return {
       nalUnits,
-      remainingBytes: startCodes.length === 1 ? bytes.slice(startCodes[0].index) : bytes,
+      remainingBytes:
+        startCodes.length === 1 ? bytes.slice(startCodes[0].index) : bytes,
     };
   }
 
-  for (let index = 0; index < startCodes.length - 1; index += 1) {
+  const nalUnitCount = flush ? startCodes.length : startCodes.length - 1;
+  for (let index = 0; index < nalUnitCount; index += 1) {
     const start = startCodes[index];
-    const nextStart = startCodes[index + 1].index;
+    const nextStart = startCodes[index + 1]?.index ?? bytes.length;
     const nalStart = start.index + start.length;
     if (nalStart < nextStart) {
       const payload = bytes.slice(nalStart, nextStart);
@@ -187,7 +227,9 @@ function splitCompleteAnnexBNalUnits(
 
   return {
     nalUnits,
-    remainingBytes: bytes.slice(startCodes[startCodes.length - 1].index),
+    remainingBytes: flush
+      ? new Uint8Array()
+      : bytes.slice(startCodes[startCodes.length - 1].index),
   };
 }
 

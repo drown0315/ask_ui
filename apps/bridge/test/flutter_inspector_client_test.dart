@@ -142,6 +142,7 @@ void main() {
           id: 'session-1',
           vmServiceUri: 'ws://127.0.0.1:12345/ws',
           projectRoot: '/Users/example/app',
+          deviceId: 'android-1',
         ),
         widgetId: 'inspector-2',
       );

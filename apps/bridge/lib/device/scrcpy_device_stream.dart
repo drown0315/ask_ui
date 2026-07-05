@@ -138,11 +138,16 @@ class ScrcpyDeviceStreamFactory implements DeviceStreamFactory {
   ScrcpyDeviceStreamFactory({
     ScrcpyCommandRunner commandRunner = const ProcessScrcpyCommandRunner(),
     ScrcpyDeviceStreamConfig? config,
+    ScrcpyDeviceStreamConfig Function()? configFactory,
+    Duration startupTimeout = const Duration(seconds: 10),
   })  : _commandRunner = commandRunner,
-        _config = config ?? ScrcpyDeviceStreamConfig.fromEnvironment();
+        _createConfig = configFactory ??
+            (() => config ?? ScrcpyDeviceStreamConfig.fromEnvironment()),
+        _startupTimeout = startupTimeout;
 
   final ScrcpyCommandRunner _commandRunner;
-  final ScrcpyDeviceStreamConfig _config;
+  final ScrcpyDeviceStreamConfig Function() _createConfig;
+  final Duration _startupTimeout;
 
   @override
   Future<DeviceStream> start({
@@ -153,7 +158,8 @@ class ScrcpyDeviceStreamFactory implements DeviceStreamFactory {
       session: session,
       sink: sink,
       commandRunner: _commandRunner,
-      config: _config,
+      config: _createConfig(),
+      startupTimeout: _startupTimeout,
     );
     try {
       await stream.start();
@@ -183,13 +189,16 @@ class ScrcpyDeviceStream implements DeviceStream {
     required this.sink,
     required ScrcpyCommandRunner commandRunner,
     required ScrcpyDeviceStreamConfig config,
+    required Duration startupTimeout,
   })  : _commandRunner = commandRunner,
-        _config = config;
+        _config = config,
+        _startupTimeout = startupTimeout;
 
   final BridgeSession session;
   final DeviceStreamSink sink;
   final ScrcpyCommandRunner _commandRunner;
   final ScrcpyDeviceStreamConfig _config;
+  final Duration _startupTimeout;
   final _deviceServerPath = '/data/local/tmp/scrcpy-server.jar';
   ServerSocket? _captureServer;
   Socket? _videoSocket;
@@ -268,8 +277,8 @@ class ScrcpyDeviceStream implements DeviceStream {
       }
     });
 
-    _videoSocket = await videoConnected.future;
-    _controlSocket = await controlConnected.future;
+    _videoSocket = await _waitForStartupSocket(videoConnected, 'video');
+    _controlSocket = await _waitForStartupSocket(controlConnected, 'control');
     _videoSubscription = _videoSocket!.listen(
       sink.sendVideoChunk,
       onDone: _failRuntime,
@@ -386,6 +395,31 @@ class ScrcpyDeviceStream implements DeviceStream {
       width: int.parse(match.group(1)!),
       height: int.parse(match.group(2)!),
     );
+  }
+
+  Future<Socket> _waitForStartupSocket(
+    Completer<Socket> socketCompleter,
+    String socketName,
+  ) {
+    final serverProcess = _serverProcess;
+    if (serverProcess == null) {
+      throw StateError('scrcpy server process was not started.');
+    }
+
+    return Future.any([
+      socketCompleter.future,
+      serverProcess.exitCode.then<Socket>((exitCode) {
+        throw StateError(
+          'scrcpy exited before $socketName socket connected '
+          'exitCode=$exitCode.',
+        );
+      }),
+      Future<Socket>.delayed(_startupTimeout, () {
+        throw StateError(
+          'Timed out waiting for scrcpy $socketName socket.',
+        );
+      }),
+    ]);
   }
 
   /// Remove the current ADB reverse tunnel if it exists.
