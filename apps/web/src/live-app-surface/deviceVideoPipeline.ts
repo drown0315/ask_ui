@@ -53,6 +53,7 @@ export type DeviceVideoPipeline =
         message: string;
       };
       close: () => void;
+      flush: () => void;
       push: (chunk: Uint8Array<ArrayBufferLike>) => void;
     }
   | {
@@ -60,6 +61,7 @@ export type DeviceVideoPipeline =
         type: 'ready';
       };
       close: () => void;
+      flush: () => void;
       push: (chunk: Uint8Array<ArrayBufferLike>) => void;
     };
 
@@ -114,6 +116,7 @@ export function createDeviceVideoPipeline({
         message: 'WebCodecs is not available in this browser.',
       },
       close() {},
+      flush() {},
       push() {},
     };
   }
@@ -153,6 +156,47 @@ export function createDeviceVideoPipeline({
     },
   });
 
+  const decodeAccessUnits = (accessUnits: ReturnType<H264AnnexBParser['push']>) => {
+    for (const accessUnit of accessUnits) {
+      if (state !== 'ready') {
+        return;
+      }
+
+      if (accessUnit.codec && accessUnit.codec !== configuredCodec) {
+        decoder.configure({
+          codec: accessUnit.codec,
+          optimizeForLatency: true,
+        });
+        configuredCodec = accessUnit.codec;
+      }
+
+      if (!configuredCodec) {
+        continue;
+      }
+
+      const chunkType = accessUnit.nalTypes.includes(5) ? 'key' : 'delta';
+      if (
+        chunkType === 'delta' &&
+        decoder.decodeQueueSize > maxQueuedDeltaFrames
+      ) {
+        continue;
+      }
+
+      const encodedChunk = new EncodedVideoChunkConstructor({
+        type: chunkType,
+        timestamp,
+        data: accessUnit.bytes,
+      });
+      timestamp += 1;
+      try {
+        decoder.decode(encodedChunk);
+      } catch (error) {
+        fail(error instanceof Error ? error : new Error(String(error)));
+        return;
+      }
+    }
+  };
+
   return {
     status: {
       type: 'ready',
@@ -165,6 +209,17 @@ export function createDeviceVideoPipeline({
       state = 'closed';
       decoder.close();
     },
+    flush() {
+      if (state !== 'ready') {
+        return;
+      }
+
+      try {
+        decodeAccessUnits(parser.flush());
+      } catch (error) {
+        fail(error instanceof Error ? error : new Error(String(error)));
+      }
+    },
     push(chunk: Uint8Array<ArrayBufferLike>) {
       let accessUnits;
       try {
@@ -174,47 +229,7 @@ export function createDeviceVideoPipeline({
         return;
       }
 
-      for (const accessUnit of accessUnits) {
-        if (state !== 'ready') {
-          return;
-        }
-
-        if (accessUnit.codec && accessUnit.codec !== configuredCodec) {
-          decoder.configure({
-            codec: accessUnit.codec,
-            optimizeForLatency: true,
-          });
-          configuredCodec = accessUnit.codec;
-        }
-
-        if (!configuredCodec) {
-          continue;
-        }
-
-        const chunkType = accessUnit.nalTypes.includes(5) ? 'key' : 'delta';
-        // When WebCodecs is already backed up, old delta frames increase
-        // interaction latency. Keep key frames because later decoding may need
-        // a fresh reference point; drop only delta chunks in this first version.
-        if (
-          chunkType === 'delta' &&
-          decoder.decodeQueueSize > maxQueuedDeltaFrames
-        ) {
-          continue;
-        }
-
-        const encodedChunk = new EncodedVideoChunkConstructor({
-          type: chunkType,
-          timestamp,
-          data: accessUnit.bytes,
-        });
-        timestamp += 1;
-        try {
-          decoder.decode(encodedChunk);
-        } catch (error) {
-          fail(error instanceof Error ? error : new Error(String(error)));
-          return;
-        }
-      }
+      decodeAccessUnits(accessUnits);
     },
   };
 }

@@ -94,6 +94,61 @@ test('decodes Annex B access units and reports the first rendered frame', () => 
   assert.equal(renderedFrame, frame);
 });
 
+test('flushes a complete single-frame Annex B chunk without a following delimiter', () => {
+  const decodedChunks: Array<{ type: string; timestamp: number }> = [];
+  const configuredCodecs: string[] = [];
+
+  const pipeline = createDeviceVideoPipeline({
+    webCodecs: {
+      EncodedVideoChunk: class FakeEncodedVideoChunk {
+        type: string;
+        timestamp: number;
+        data: Uint8Array;
+
+        constructor(init: {
+          type: string;
+          timestamp: number;
+          data: Uint8Array;
+        }) {
+          this.type = init.type;
+          this.timestamp = init.timestamp;
+          this.data = init.data;
+        }
+      },
+      VideoDecoder: class FakeVideoDecoder {
+        decodeQueueSize = 0;
+
+        configure(config: { codec: string }) {
+          configuredCodecs.push(config.codec);
+        }
+
+        decode(chunk: { type: string; timestamp: number }) {
+          decodedChunks.push({
+            type: chunk.type,
+            timestamp: chunk.timestamp,
+          });
+        }
+
+        close() {}
+      },
+    },
+    onFrame: () => {},
+    onFirstFrameRendered: () => {},
+  });
+
+  pipeline.push(
+    new Uint8Array([
+      0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x1f, 0x00, 0x00, 0x01,
+      0x68, 0xce, 0x06, 0xe2, 0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x84,
+      0x21,
+    ]),
+  );
+  pipeline.flush();
+
+  assert.deepEqual(configuredCodecs, ['avc1.42001F']);
+  assert.deepEqual(decodedChunks, [{ type: 'key', timestamp: 0 }]);
+});
+
 test('drops delta access units when the decode queue is pressured', () => {
   let decodeCount = 0;
   let decodeQueueSize = 0;

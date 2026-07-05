@@ -70,6 +70,7 @@ export function useLiveAppSurface(sessionId: string | null): {
     let intentionalClose = false;
     let didReceiveFailure = false;
     let disposed = false;
+    const deviceDebugOptions = getDeviceDebugOptions();
     const videoPipeline = createDeviceVideoPipeline({
       webCodecs: getBrowserWebCodecs(),
       onError: (error) => {
@@ -109,7 +110,7 @@ export function useLiveAppSurface(sessionId: string | null): {
     const readyVideoPipeline = requireReadyDeviceVideoPipeline(videoPipeline);
 
     const socket = new WebSocket(
-      getDeviceWebSocketUrl(sessionId, undefined, getDeviceDebugOptions()),
+      getDeviceWebSocketUrl(sessionId, undefined, deviceDebugOptions),
     );
     socket.binaryType = 'arraybuffer';
     socketRef.current = socket;
@@ -125,6 +126,9 @@ export function useLiveAppSurface(sessionId: string | null): {
 
       if (event.data instanceof ArrayBuffer) {
         readyVideoPipeline.push(new Uint8Array(event.data));
+        if (deviceDebugOptions.debugVideo === 'fixture') {
+          readyVideoPipeline.flush();
+        }
         return;
       }
 
@@ -135,6 +139,9 @@ export function useLiveAppSurface(sessionId: string | null): {
           }
 
           readyVideoPipeline.push(new Uint8Array(buffer));
+          if (deviceDebugOptions.debugVideo === 'fixture') {
+            readyVideoPipeline.flush();
+          }
         });
         return;
       }
@@ -157,6 +164,7 @@ export function useLiveAppSurface(sessionId: string | null): {
     });
 
     socket.addEventListener('close', () => {
+      readyVideoPipeline.flush();
       if (intentionalClose || didReceiveFailure) {
         return;
       }
