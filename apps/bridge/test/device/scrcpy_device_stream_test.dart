@@ -92,6 +92,21 @@ void main() {
     expect(config.maxSize, 0);
   });
 
+  test('uses the vendored scrcpy server artifact by default', () {
+    final config = ScrcpyDeviceStreamConfig.fromEnvironment(
+      environment: const {
+        'SCRCPY_SERVER': '/tmp/ignored-scrcpy-server',
+      },
+      scidFactory: () => 'abc123',
+    );
+
+    expect(
+      config.serverPath,
+      endsWith('apps/bridge/vendor/scrcpy/4.0/scrcpy-server-v4.0'),
+    );
+    expect(config.serverPath, isNot('/tmp/ignored-scrcpy-server'));
+  });
+
   test('generates a fresh scrcpy socket id for each factory start', () async {
     final runner = FakeScrcpyCommandRunner();
     final sink = RecordingDeviceStreamSink();

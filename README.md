@@ -23,11 +23,12 @@ Workbench sessions require `vmServiceUri`, `projectRoot`, and `deviceId` query
 parameters. `deviceId` must be the Android device or emulator serial used by
 Flutter, ADB, and scrcpy.
 
-The bridge defaults to `adb` from `PATH` and the calibrated Homebrew scrcpy 4.0
-server path. Override those when needed:
+The bridge defaults to `adb` from `PATH` and the project-controlled official
+scrcpy 4.0 server artifact at
+`apps/bridge/vendor/scrcpy/4.0/scrcpy-server-v4.0`.
 
 ```sh
-ADB=/path/to/adb SCRCPY_SERVER=/path/to/scrcpy-server dart run bin/ask_ui_bridge.dart
+ADB=/path/to/adb dart run bin/ask_ui_bridge.dart
 ```
 
 ## Web App

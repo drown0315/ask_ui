@@ -106,7 +106,7 @@ The first implementation proceeded through a Device WebSocket shell before conne
 - Device startup failures use `device_start_failed`.
 - Device runtime failures use `device_failed`.
 - Device WebSocket close or startup cancellation triggers immediate scrcpy server, socket, ADB reverse/forward, parser, buffer, and Device state cleanup.
-- The bridge uses an official scrcpy server binary supplied by `SCRCPY_SERVER` or the calibrated local default path, not a desktop scrcpy CLI window.
+- The bridge uses the project-controlled official scrcpy server artifact at `apps/bridge/vendor/scrcpy/4.0/scrcpy-server-v4.0`, not a desktop scrcpy CLI window.
 - Scrcpy server version is logged by bridge but not included in Surface ready metadata.
 - WebCodecs is the only first-version decode path; no MSE/fMP4 fallback is included.
 - Web owns Annex B parsing and access-unit assembly in a media module rather than inside a React component.

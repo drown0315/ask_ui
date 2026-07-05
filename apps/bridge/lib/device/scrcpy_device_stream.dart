@@ -32,8 +32,7 @@ class ScrcpyDeviceStreamConfig {
   ///
   /// This method:
   /// 1. uses `ADB` when provided, otherwise `adb`
-  /// 2. uses `SCRCPY_SERVER` when provided, otherwise the calibrated Homebrew
-  ///    scrcpy 4.0 server path
+  /// 2. uses the vendored official scrcpy 4.0 server artifact
   /// 3. parses optional video tuning values and falls back to MVP defaults
   /// 4. generates a random scrcpy socket id for the session
   ///
@@ -41,8 +40,8 @@ class ScrcpyDeviceStreamConfig {
   /// A complete config that can start one scrcpy stream.
   ///
   /// Example:
-  /// `SCRCPY_SERVER=/tmp/scrcpy-server MAX_FPS=30` returns a config that
-  /// pushes `/tmp/scrcpy-server` and starts scrcpy with `max_fps=30`.
+  /// `MAX_FPS=30` returns a config that pushes the vendored scrcpy server and
+  /// starts scrcpy with `max_fps=30`.
   factory ScrcpyDeviceStreamConfig.fromEnvironment({
     Map<String, String>? environment,
     String Function()? scidFactory,
@@ -50,8 +49,7 @@ class ScrcpyDeviceStreamConfig {
     final effectiveEnvironment = environment ?? Platform.environment;
     return ScrcpyDeviceStreamConfig(
       adbExecutable: effectiveEnvironment['ADB'] ?? 'adb',
-      serverPath: effectiveEnvironment['SCRCPY_SERVER'] ??
-          '/opt/homebrew/Cellar/scrcpy/4.0/share/scrcpy/scrcpy-server',
+      serverPath: defaultScrcpyServerPath(),
       scid: scidFactory?.call() ?? createScrcpyScid(),
       maxSize: int.tryParse(effectiveEnvironment['MAX_SIZE'] ?? '') ?? 0,
       maxFps: int.tryParse(effectiveEnvironment['MAX_FPS'] ?? '') ?? 60,
@@ -66,6 +64,25 @@ class ScrcpyDeviceStreamConfig {
   final int maxSize;
   final int maxFps;
   final int videoBitRate;
+}
+
+const _vendoredScrcpyServerPath = 'vendor/scrcpy/4.0/scrcpy-server-v4.0';
+
+/// Return the project-controlled official scrcpy server artifact path.
+///
+/// The bridge is commonly launched either from `apps/bridge` during local
+/// development or from the repository root by automation. Prefer the bridge
+/// package-local path when present and fall back to the repo-root path.
+String defaultScrcpyServerPath({Directory? currentDirectory}) {
+  final cwd = currentDirectory ?? Directory.current;
+  final bridgeLocalArtifact = File('${cwd.path}/$_vendoredScrcpyServerPath');
+  if (bridgeLocalArtifact.existsSync()) {
+    return bridgeLocalArtifact.absolute.path;
+  }
+
+  return File('${cwd.path}/apps/bridge/$_vendoredScrcpyServerPath')
+      .absolute
+      .path;
 }
 
 /// Result from a completed local command.
