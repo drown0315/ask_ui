@@ -2,9 +2,9 @@
 
 ## Problem Statement
 
-Ask UI currently has a workbench shell and bridge-backed Flutter Inspector session, but the center surface is not yet a real interactive Target Device. A developer needs to see the Android device or emulator that is running the inspected Flutter app, interact with it directly, and use that live context while selecting widgets and writing notes for an agent.
+Ask UI has a workbench shell and bridge-backed Flutter Inspector session, and the center surface is becoming a real interactive Target Device. A developer needs to see the Android device or emulator that is running the inspected Flutter app, interact with it directly, and use that live context while selecting widgets and writing notes for an agent.
 
-Without a real Live App Surface, Ask UI cannot close the loop between observing a UI issue, selecting the exact widget target, and handing useful visual/device context to the coding agent.
+Without a reliable Live App Surface, Ask UI cannot close the loop between observing a UI issue, selecting the exact widget target, and handing useful visual/device context to the coding agent.
 
 ## Solution
 
@@ -12,7 +12,7 @@ Build the Live App Surface as a bridge-owned Android device stream under the exi
 
 The bridge owns Flutter device availability checks, Target Device binding consistency, scrcpy server lifecycle, ADB reverse/forward state, video/control sockets, and cleanup. The web app owns layout, Device View scaling, pointer coordinate mapping, WebCodecs decoding, user-visible state, and retry controls.
 
-The first implementation should proceed through a Device WebSocket shell before connecting the real scrcpy/WebCodecs path. This fixes the protocol, UI states, metadata handling, and coordinate mapping before introducing the full video/control lifecycle.
+The first implementation proceeded through a Device WebSocket shell before connecting the real scrcpy/WebCodecs path. That sequence fixed the protocol, UI states, metadata handling, and coordinate mapping before introducing the full video/control lifecycle.
 
 ## User Stories
 
@@ -106,12 +106,12 @@ The first implementation should proceed through a Device WebSocket shell before 
 - Device startup failures use `device_start_failed`.
 - Device runtime failures use `device_failed`.
 - Device WebSocket close or startup cancellation triggers immediate scrcpy server, socket, ADB reverse/forward, parser, buffer, and Device state cleanup.
-- The bridge uses a project-controlled official scrcpy server jar, not a desktop scrcpy CLI window.
+- The bridge uses an official scrcpy server binary supplied by `SCRCPY_SERVER` or the calibrated local default path, not a desktop scrcpy CLI window.
 - Scrcpy server version is logged by bridge but not included in Surface ready metadata.
 - WebCodecs is the only first-version decode path; no MSE/fMP4 fallback is included.
 - Web owns Annex B parsing and access-unit assembly in a media module rather than inside a React component.
 - Low-latency decoding prioritizes the latest frame and may drop delta access units when decode queue pressure grows.
-- Device implementation should start with a WebSocket shell that sends fake metadata and validates control messages, then connect the real scrcpy/WebCodecs stream.
+- Device implementation started with a WebSocket shell that sent fake metadata and validated control messages, then connected the real scrcpy/WebCodecs stream.
 
 ## Testing Decisions
 

@@ -30,10 +30,11 @@ type DeviceShellProps = {
 };
 
 /**
- * Renders the interactive Device View shell before real video frames arrive.
+ * Renders the interactive Device View and Android Surface Controls.
  *
- * Pointer events are mapped from the visible view back into bridge metadata
- * coordinates, and Back/Home/Recents are sent over the same Device WebSocket.
+ * The canvas shows WebCodecs-decoded frames when available. Pointer events are
+ * mapped from the visible view back into bridge metadata coordinates, and
+ * Back/Home/Recents are sent over the same Device WebSocket.
  */
 export function DeviceShell({
   onDeviceControlMessage,

@@ -15,18 +15,12 @@ Opening Ask UI with a valid Flutter session URL should show the running app's re
 Expected URL shape:
 
 ```text
-http://127.0.0.1:<ask-ui-port>/?vmServiceUri=<encoded-vm-service-ws-uri>&projectRoot=<encoded-local-path>
-```
-
-Future Android device work extends this URL with a required target device parameter:
-
-```text
 http://127.0.0.1:<ask-ui-port>/?vmServiceUri=<encoded-vm-service-ws-uri>&projectRoot=<encoded-local-path>&deviceId=<encoded-android-device-id>
 ```
 
 The user should see:
 
-- Missing-parameter state when `vmServiceUri` or `projectRoot` is absent.
+- Missing-parameter state when `vmServiceUri`, `projectRoot`, or `deviceId` is absent.
 - Connecting/loading state while the bridge creates the session and fetches the tree.
 - Error state when the VM Service session or tree fetch fails.
 - Real Flutter Widget Tree rows when the fetch succeeds.
@@ -37,8 +31,9 @@ The user should see:
 Implement:
 
 - A local Dart bridge/server under `apps/bridge`.
-- Bridge session creation from `vmServiceUri` and `projectRoot`.
+- Bridge session creation from `vmServiceUri`, `projectRoot`, and `deviceId`.
 - Flutter VM Service connection ownership in the bridge, not in the browser.
+- Target Device binding through the required Android `deviceId`.
 - Flutter Inspector pub root configuration during session creation.
 - Summary Widget Tree fetch through `ext.flutter.inspector.getRootWidgetTree`.
 - Normalized Widget Tree response for the web UI.
@@ -54,7 +49,7 @@ Minimal bridge API:
 
 ```text
 POST /api/sessions
-body: { "vmServiceUri": "...", "projectRoot": "..." }
+body: { "vmServiceUri": "...", "projectRoot": "...", "deviceId": "..." }
 response: { "sessionId": "..." }
 
 GET /api/sessions/:sessionId/widget-tree
@@ -165,9 +160,9 @@ The exact bridge file structure can change during implementation, but the bridge
 
 ## Acceptance Criteria
 
-- Ask UI requires both `vmServiceUri` and `projectRoot` for real Widget Tree mode.
-- Missing either parameter renders a clear incomplete-session state.
-- The web UI creates one bridge session using both parameters.
+- Ask UI requires `vmServiceUri`, `projectRoot`, and `deviceId` for real Widget Tree mode.
+- Missing any required parameter renders a clear incomplete-session state.
+- The web UI creates one bridge session using all required parameters.
 - The bridge owns the VM Service connection.
 - The bridge configures Flutter Inspector pub root directories using `projectRoot`.
 - The bridge fetches `getRootWidgetTree` with `isSummaryTree=true`.

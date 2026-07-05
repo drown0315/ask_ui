@@ -11,7 +11,7 @@ Use Vite + React + TypeScript for the Ask UI web workbench.
 The Ask UI page is a development-tool workbench, not a content site. The first version needs fast iteration on a static UI, and later versions will need:
 
 - WebSocket communication with a local bridge.
-- Target device preview rendering.
+- Target Device stream rendering through the bridge-owned Live App Surface.
 - DOM overlay positioning for selected widgets.
 - Selection note state management.
 - Agent handoff state.
@@ -135,19 +135,19 @@ For the first real Widget Tree integration, the intended scope was:
 
 - Read `vmServiceUri` from the page URL.
 - Read `projectRoot` from the page URL.
-- Current follow-up work should also read required `deviceId` from the page URL before considering the workbench session established.
+- Read required `deviceId` from the page URL before considering the workbench session established.
 - Create a local bridge session from those parameters.
 - Configure Flutter Inspector pub root directories during session creation.
 - Fetch the Flutter Inspector summary widget tree through that bridge session.
 - Render connection, loading, error, and tree states in the Widget Context Panel.
-- Treat missing `vmServiceUri` or missing `projectRoot` as an incomplete session state, and do not fetch the real tree.
-- Do not implement target-device streaming, selected widget bounds, comments, hot reload, hot restart, or agent handoff in this slice.
+- Treat missing `vmServiceUri`, missing `projectRoot`, or missing `deviceId` as an incomplete session state, and do not fetch the real tree.
+- Do not implement selected widget bounds, comments, or agent handoff in this slice.
 
 Minimal bridge API shape:
 
 ```text
 POST /api/sessions
-body: { "vmServiceUri": "...", "projectRoot": "..." }
+body: { "vmServiceUri": "...", "projectRoot": "...", "deviceId": "..." }
 response: { "sessionId": "..." }
 
 GET /api/sessions/:sessionId/widget-tree
