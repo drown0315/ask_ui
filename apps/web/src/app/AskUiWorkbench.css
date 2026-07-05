@@ -662,3 +662,79 @@ body {
     0 10px 28px rgba(53, 73, 94, 0.08);
   color: var(--vue-green-dark);
 }
+
+.device-shell {
+  display: grid;
+  width: min(100%, 620px);
+  height: min(100%, 760px);
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.device-view-area {
+  position: relative;
+  min-height: 260px;
+  overflow: hidden;
+  border: 1px solid rgba(53, 73, 94, 0.16);
+  border-radius: 8px;
+  background: #101418;
+  touch-action: none;
+}
+
+.device-view-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-content: center;
+  overflow: hidden;
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent),
+    #182028;
+  color: #edf7f2;
+  text-align: center;
+}
+
+.device-view-status {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.device-view-device-id {
+  max-width: min(220px, 80%);
+  margin-top: 6px;
+  overflow: hidden;
+  color: rgba(237, 247, 242, 0.68);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.surface-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(76px, 1fr));
+  gap: 8px;
+}
+
+.surface-controls button {
+  min-height: 36px;
+  border: 1px solid rgba(66, 184, 131, 0.28);
+  border-radius: 7px;
+  background: #ffffff;
+  color: var(--vue-green-dark);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.surface-controls button:not(:disabled) {
+  cursor: pointer;
+}
+
+.surface-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}

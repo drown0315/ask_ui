@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../app_controller/flutter_app_controller.dart';
+import '../device_control/device_control_protocol.dart';
 import '../inspector/flutter_inspector_client.dart';
 import '../logging/bridge_logger.dart';
 import '../sessions/flutter_device_checker.dart';
@@ -136,6 +137,7 @@ class AskUiBridgeServer {
   }
 
   Future<void> _createSession(HttpRequest request) async {
+    _logger.info('session create start');
     Map<String, Object?> body;
 
     try {
@@ -146,6 +148,7 @@ class AskUiBridgeServer {
       }
       body = decoded;
     } on FormatException {
+      _logger.info('session create failed error=invalid_json');
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badRequest,
@@ -161,6 +164,7 @@ class AskUiBridgeServer {
     if (vmServiceUri is! String ||
         projectRoot is! String ||
         deviceId is! String) {
+      _logger.info('session create failed error=missing_session_parameters');
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badRequest,
@@ -172,6 +176,7 @@ class AskUiBridgeServer {
     if (vmServiceUri.trim().isEmpty ||
         projectRoot.trim().isEmpty ||
         deviceId.trim().isEmpty) {
+      _logger.info('session create failed error=missing_session_parameters');
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badRequest,
@@ -204,6 +209,9 @@ class AskUiBridgeServer {
     }
 
     if (targetDeviceAvailability == FlutterDeviceAvailability.notFound) {
+      _logger.info(
+        'session create failed error=target_device_not_found deviceId=$deviceId',
+      );
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badRequest,
@@ -217,6 +225,9 @@ class AskUiBridgeServer {
     }
 
     if (targetDeviceAvailability == FlutterDeviceAvailability.unavailable) {
+      _logger.info(
+        'session create failed error=target_device_unavailable deviceId=$deviceId',
+      );
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badRequest,
@@ -239,13 +250,22 @@ class AskUiBridgeServer {
         request.response,
         body: {'sessionId': session.id},
       );
+      _logger.info(
+        'session create success session=${session.id} deviceId=${session.deviceId}',
+      );
     } on InvalidSessionRequest {
+      _logger.info('session create failed error=missing_session_parameters');
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badRequest,
         body: {'error': 'missing_session_parameters'},
       );
     } on DeviceMismatchForSession catch (error) {
+      _logger.info(
+        'session create failed error=device_mismatch_for_session '
+        'expectedDeviceId=${error.expectedDeviceId} '
+        'requestedDeviceId=${error.requestedDeviceId}',
+      );
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badRequest,
@@ -265,6 +285,7 @@ class AskUiBridgeServer {
     final session = _sessionStore.find(sessionId);
 
     if (session == null) {
+      _logger.info('device websocket session=$sessionId session_not_found');
       await _writeJson(
         request.response,
         statusCode: HttpStatus.notFound,
@@ -274,7 +295,9 @@ class AskUiBridgeServer {
     }
 
     final socket = await WebSocketTransformer.upgrade(request);
+    _logger.info('device websocket session=$sessionId open');
     if (_activeDeviceSessionIds.contains(sessionId)) {
+      _logger.info('device websocket session=$sessionId already_active');
       socket.add(jsonEncode({
         'type': 'error',
         'error': 'device_already_active',
@@ -286,12 +309,30 @@ class AskUiBridgeServer {
 
     _activeDeviceSessionIds.add(sessionId);
     socket.listen(
-      (_) {},
+      (message) {
+        if (message is! String) {
+          return;
+        }
+
+        final Map<String, Object?>? controlError =
+            DeviceControlProtocol.validateTextMessage(message);
+        if (controlError != null) {
+          _logger.info(
+            'device control session=$sessionId control_error '
+            'error=${controlError['error']}',
+          );
+          socket.add(jsonEncode(controlError));
+          return;
+        }
+        _logAcceptedDeviceControl(sessionId: sessionId, rawMessage: message);
+      },
       onDone: () {
         _activeDeviceSessionIds.remove(sessionId);
+        _logger.info('device websocket session=$sessionId close');
       },
-      onError: (_) {
+      onError: (error) {
         _activeDeviceSessionIds.remove(sessionId);
+        _logger.info('device websocket session=$sessionId error=$error');
       },
     );
     socket.add(jsonEncode({
@@ -302,6 +343,10 @@ class AskUiBridgeServer {
         screenHeight: 2400,
       ),
     }));
+    _logger.info(
+      'device websocket session=$sessionId ready '
+      'deviceId=${session.deviceId} screenWidth=1080 screenHeight=2400',
+    );
     if (request.uri.queryParameters['debugMetadata'] == 'rotation') {
       socket.add(jsonEncode({
         'type': 'metadata',
@@ -311,7 +356,42 @@ class AskUiBridgeServer {
           screenHeight: 1080,
         ),
       }));
+      _logger.info(
+        'device websocket session=$sessionId metadata '
+        'deviceId=${session.deviceId} screenWidth=2400 screenHeight=1080',
+      );
     }
+  }
+
+  void _logAcceptedDeviceControl({
+    required String sessionId,
+    required String rawMessage,
+  }) {
+    final decoded = jsonDecode(rawMessage);
+    if (decoded is! Map<String, Object?>) {
+      return;
+    }
+
+    if (decoded['type'] == DeviceControlProtocol.systemKeyType) {
+      _logger.info(
+        'device control session=$sessionId systemKey key=${decoded['key']}',
+      );
+      return;
+    }
+
+    if (decoded['type'] != DeviceControlProtocol.touchType) {
+      return;
+    }
+
+    final action = decoded['action'];
+    if (action == 'move') {
+      return;
+    }
+
+    _logger.info(
+      'device control session=$sessionId touch action=$action '
+      'pointerId=${decoded['pointerId']} x=${decoded['x']} y=${decoded['y']}',
+    );
   }
 
   Map<String, Object?> _buildDeviceMetadata({
@@ -334,7 +414,7 @@ class AskUiBridgeServer {
     final session = _sessionStore.find(sessionId);
 
     if (session == null) {
-      _logger.info('hot_reload request session=$sessionId session_not_found');
+      _logger.info('widget_tree request session=$sessionId session_not_found');
       await _writeJson(
         request.response,
         statusCode: HttpStatus.notFound,
@@ -343,13 +423,17 @@ class AskUiBridgeServer {
       return;
     }
 
+    _logger.info('widget_tree request session=$sessionId start');
     try {
       final root = await _inspectorClient.fetchRootWidgetTree(session);
       await _writeJson(
         request.response,
         body: {'root': root.toJson()},
       );
+      _logger.info('widget_tree request session=$sessionId success');
     } catch (error) {
+      _logger
+          .info('widget_tree request session=$sessionId failed error=$error');
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badGateway,
@@ -366,6 +450,7 @@ class AskUiBridgeServer {
     final session = _sessionStore.find(sessionId);
 
     if (session == null) {
+      _logger.info('hot_reload request session=$sessionId session_not_found');
       await _writeJson(
         request.response,
         statusCode: HttpStatus.notFound,
@@ -470,11 +555,15 @@ class AskUiBridgeServer {
       return;
     }
 
+    _logger.info('select_widget status session=$sessionId start');
     try {
       final status = await _inspectorClient.getSelectWidgetModeStatus(session);
       await _writeJson(
         request.response,
         body: status.toJson(),
+      );
+      _logger.info(
+        'select_widget status session=$sessionId success known=${status.enabled != null}',
       );
     } catch (error) {
       _logger

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { DeviceControlMessage } from './deviceControlProtocol';
 import { getDeviceWebSocketUrl } from '../services/askUiBridgeClient';
 import {
   getInitialLiveAppSurfaceState,
@@ -25,10 +26,22 @@ import {
 export function useLiveAppSurface(sessionId: string | null): {
   surfaceState: LiveAppSurfaceState;
   retryLiveAppSurface: () => void;
+  sendDeviceControlMessage: (message: DeviceControlMessage) => void;
 } {
   const [retryToken, setRetryToken] = useState(0);
+  const socketRef = useRef<WebSocket | null>(null);
   const [surfaceState, setSurfaceState] = useState<LiveAppSurfaceState>(() =>
     getInitialLiveAppSurfaceState(sessionId),
+  );
+  const sendDeviceControlMessage = useCallback(
+    (message: DeviceControlMessage) => {
+      const socket = socketRef.current;
+      if (socket?.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      socket.send(JSON.stringify(message));
+    },
+    [],
   );
 
   useEffect(() => {
@@ -42,6 +55,7 @@ export function useLiveAppSurface(sessionId: string | null): {
     let intentionalClose = false;
     let didReceiveFailure = false;
     const socket = new WebSocket(getDeviceWebSocketUrl(sessionId));
+    socketRef.current = socket;
 
     setSurfaceState({
       status: 'connecting',
@@ -79,6 +93,9 @@ export function useLiveAppSurface(sessionId: string | null): {
 
     return () => {
       intentionalClose = true;
+      if (socketRef.current === socket) {
+        socketRef.current = null;
+      }
       socket.close();
     };
   }, [retryToken, sessionId]);
@@ -88,5 +105,6 @@ export function useLiveAppSurface(sessionId: string | null): {
     retryLiveAppSurface() {
       setRetryToken((current) => current + 1);
     },
+    sendDeviceControlMessage,
   };
 }

@@ -1,8 +1,11 @@
 import type { TargetDeviceDisplay } from '../../session/targetDeviceDisplay';
 import type { LiveAppSurfaceState } from '../../live-app-surface/liveAppSurfaceState';
+import type { DeviceControlMessage } from '../../live-app-surface/deviceControlProtocol';
+import { DeviceShell } from './DeviceShell';
 
 type LiveAppSurfaceProps = {
   isSelectWidgetActive: boolean;
+  onDeviceControlMessage: (message: DeviceControlMessage) => void;
   onRetry: () => void;
   surfaceState: LiveAppSurfaceState;
   targetDeviceDisplay: TargetDeviceDisplay;
@@ -10,6 +13,7 @@ type LiveAppSurfaceProps = {
 
 export function LiveAppSurface({
   isSelectWidgetActive,
+  onDeviceControlMessage,
   onRetry,
   surfaceState,
   targetDeviceDisplay,
@@ -22,21 +26,28 @@ export function LiveAppSurface({
         isSelectWidgetActive ? 'live-app-surface-selecting' : ''
       }`}
     >
-      <div className="live-app-surface-placeholder" title={content.title}>
-        <div>{content.label}</div>
-        {content.detail ? (
-          <div className="live-app-surface-detail">{content.detail}</div>
-        ) : null}
-        {surfaceState.status === 'failed' ? (
-          <button
-            className="live-app-surface-retry"
-            onClick={onRetry}
-            type="button"
-          >
-            Retry
-          </button>
-        ) : null}
-      </div>
+      {surfaceState.status === 'waitingForVideo' ? (
+        <DeviceShell
+          onDeviceControlMessage={onDeviceControlMessage}
+          surfaceState={surfaceState}
+        />
+      ) : (
+        <div className="live-app-surface-placeholder" title={content.title}>
+          <div>{content.label}</div>
+          {content.detail ? (
+            <div className="live-app-surface-detail">{content.detail}</div>
+          ) : null}
+          {surfaceState.status === 'failed' ? (
+            <button
+              className="live-app-surface-retry"
+              onClick={onRetry}
+              type="button"
+            >
+              Retry
+            </button>
+          ) : null}
+        </div>
+      )}
     </section>
   );
 }

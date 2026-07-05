@@ -34,6 +34,16 @@ void main() {
       expect(treeResponse.statusCode, HttpStatus.ok);
       expect(fixture.inspectorClient.requestedSessionIds, [sessionId]);
       expect(
+        fixture.logs,
+        contains(
+            '[ask_ui_bridge] widget_tree request session=$sessionId start'),
+      );
+      expect(
+        fixture.logs,
+        contains(
+            '[ask_ui_bridge] widget_tree request session=$sessionId success'),
+      );
+      expect(
         treeBody,
         {
           'root': {

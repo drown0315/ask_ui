@@ -50,6 +50,7 @@ export function AskUiWorkbench() {
         <div {...panelResize.resizeHandleProps} />
         <LiveAppSurface
           isSelectWidgetActive={actions.topBarActionState.isSelectWidgetActive}
+          onDeviceControlMessage={liveAppSurface.sendDeviceControlMessage}
           onRetry={liveAppSurface.retryLiveAppSurface}
           surfaceState={liveAppSurface.surfaceState}
           targetDeviceDisplay={targetDeviceDisplay}

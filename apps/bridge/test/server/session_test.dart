@@ -82,6 +82,14 @@ void main() {
       expect(response.statusCode, HttpStatus.ok);
       expect(body['sessionId'], isA<String>());
       expect(body['sessionId'], isNotEmpty);
+      expect(fixture.logs, contains('[ask_ui_bridge] session create start'));
+      expect(
+        fixture.logs,
+        contains(
+          '[ask_ui_bridge] session create success session=${body['sessionId']} '
+          'deviceId=19271FDF6007TY',
+        ),
+      );
     });
 
     test('returns 400 when target device is not visible to Flutter', () async {
