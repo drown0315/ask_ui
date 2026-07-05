@@ -27,6 +27,7 @@ void main() {
           id: 'session-1',
           vmServiceUri: 'ws://127.0.0.1:12345/ws',
           projectRoot: '/Users/example/app',
+          deviceId: '19271FDF6007TY',
         ),
       );
 
@@ -76,6 +77,7 @@ void main() {
           id: 'session-1',
           vmServiceUri: 'ws://127.0.0.1:12345/ws',
           projectRoot: '/Users/example/app',
+          deviceId: '19271FDF6007TY',
         ),
       );
 
@@ -100,6 +102,7 @@ void main() {
           id: 'session-1',
           vmServiceUri: 'ws://127.0.0.1:12345/ws',
           projectRoot: '/Users/example/app',
+          deviceId: '19271FDF6007TY',
         ),
         enabled: true,
       );
@@ -139,6 +142,7 @@ void main() {
           id: 'session-1',
           vmServiceUri: 'ws://127.0.0.1:12345/ws',
           projectRoot: '/Users/example/app',
+          deviceId: 'android-1',
         ),
         widgetId: 'inspector-2',
       );
@@ -178,6 +182,7 @@ void main() {
         id: 'session-1',
         vmServiceUri: 'ws://127.0.0.1:12345/ws',
         projectRoot: '/Users/example/app',
+        deviceId: '19271FDF6007TY',
       );
 
       final initialStatus = await client.getSelectWidgetModeStatus(session);

@@ -1,6 +1,6 @@
 # Progress: Static UI Development Slices
 
-Status: in progress.
+Status: superseded by bridge-backed workbench integration.
 
 Related planning document:
 
@@ -18,25 +18,25 @@ This progress file follows the slice breakdown in `docs_internal/static-ui-devel
 
 ## Current Phase Boundary
 
-The current phase is static UI only.
+The static UI phase has been superseded. The workbench now has bridge-backed
+session bootstrap, a real Flutter Widget Tree, real TopBar actions, and a
+bridge-owned Android Live App Surface path.
 
 In scope:
 
 - Three-column DevTools-style workbench.
-- Static top toolbar.
-- Mock widget tree.
-- Device stage placeholder.
+- Bridge-backed top toolbar.
+- Real Flutter Widget Tree.
+- Live App Surface with Target Device states, Device View, Surface Controls,
+  and scrcpy/WebCodecs streaming path.
 - Static selection overlay demo.
 - Right-side selection notes and final agent handoff UI.
 - Mock data and shared UI types.
 
 Out of scope:
 
-- Flutter VM Service integration.
-- Real target-device screen streaming.
-- Real widget selection.
-- Real hot reload/hot restart execution.
 - Agent communication.
+- Real widget selection.
 - Persistence.
 
 ## Overall Slice Progress
@@ -46,7 +46,7 @@ Out of scope:
 | 1 | App Shell And Layout | Completed | [001 progress](001-app-shell-and-layout-progress.md) | Initial Vite + React + TypeScript shell is implemented. |
 | 2 | Top Bar | Completed | TBD | Static session toolbar controls are implemented. |
 | 3 | Widget Tree Panel | Completed | TBD | Mock full Flutter tree, selected-node highlight, search UI, refresh action, and resizable left panel are implemented. |
-| 4 | Device Stage With Placeholder | Not started | TBD | Replace plain center placeholder with stage, metadata, and viewport frame. |
+| 4 | Live App Surface | Completed through 0.0.2 slices | [0.0.2 issues](../../issues/0.0.2-live-app-surface.md) | Replaced the plain center placeholder with a Target Device surface, Device View, Surface Controls, WebSocket lifecycle, WebCodecs video path, and scrcpy-backed bridge stream. |
 | 5 | Selection Overlay Layer | Not started | TBD | Add hidden/demo overlay layer inside the device viewport. |
 | 6 | Selection Notes Panel Shell | Not started | TBD | Build right panel sections without detailed child behavior. |
 | 7 | Current Selection Card | Not started | TBD | Show selected widget summary and empty state. |
@@ -60,7 +60,7 @@ Out of scope:
 - [x] 1. App shell and layout.
 - [x] 2. Top bar.
 - [x] 3. Widget tree panel.
-- [ ] 4. Device stage placeholder.
+- [x] 4. Live App Surface.
 - [ ] 5. Selection notes panel shell.
 - [ ] 6. Current selection card.
 - [ ] 7. Selection comment editor.
@@ -74,8 +74,8 @@ Out of scope:
 - [x] The app has a stable three-column workbench shell.
 - [x] The top toolbar communicates session state and static actions.
 - [x] The left panel can display a nested widget tree from mock data.
-- [ ] The center stage has a stable device viewport placeholder.
-- [ ] The center stage reserves an overlay layer for future widget bounds.
+- [x] The Live App Surface has a stable Device View.
+- [ ] The Live App Surface reserves an overlay layer for future widget bounds.
 - [ ] The right panel clearly communicates staged notes before agent handoff.
 - [ ] The current selection summary is easy to scan.
 - [ ] The selection comment editor is visually distinct from the final composer.
@@ -89,13 +89,16 @@ Out of scope:
 - The current App Shell has also received a Vue-green visual polish pass.
 - Slice 2 completed with static device status, Select Widget, and Hot Reload/Hot Restart actions.
 - Slice 3 completed with a mock full Flutter Widget Tree, selected-node-only highlight, app/framework visual weight differences, search field, refresh button, and draggable left-panel resizing.
+- The Widget Tree and TopBar were later connected to the Dart bridge.
+- The Live App Surface was later connected to a bridge-owned Device WebSocket,
+  WebCodecs rendering path, and official scrcpy server stream.
 
 ## Next Candidate Slice
 
-Slice 4: Device Stage With Placeholder.
+Selection notes and agent handoff slices remain the next static UI candidates.
 
 Expected next work:
 
-- Replace the plain center placeholder with a stable device viewport frame.
-- Add static device/stage metadata.
-- Keep the center target preview disabled while reserving space for a future real stream.
+- Build right-panel selection note workflows.
+- Add current selection summary and comment editing.
+- Preserve compatibility with the bridge-backed Live App Surface.

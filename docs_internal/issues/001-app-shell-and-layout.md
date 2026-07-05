@@ -15,14 +15,14 @@ Opening the web app should show a stable development-tool style layout:
 ```text
 TopBar
 ------------------------------------------------
-WidgetTreePanel | DeviceStage | SelectionNotesPanel
+WidgetTreePanel | LiveAppSurface | SelectionNotesPanel
 ```
 
 The page should clearly reserve space for:
 
 - Top toolbar.
 - Left widget tree panel.
-- Center device stage.
+- Center Live App Surface.
 - Right selection notes panel.
 
 ## Scope
@@ -34,7 +34,7 @@ Implement:
 - Full viewport workbench layout.
 - Placeholder `TopBar`.
 - Placeholder `WidgetTreePanel`.
-- Placeholder `DeviceStage`.
+- Placeholder `LiveAppSurface`.
 - Placeholder `SelectionNotesPanel`.
 - Basic CSS for:
   - zero body margin.
@@ -51,7 +51,7 @@ Placeholder text is enough:
 
 - `Ask UI`
 - `Widget Tree`
-- `Device Stage`
+- `Live App Surface`
 - `Selection Notes`
 
 ## Out Of Scope
@@ -93,8 +93,8 @@ apps/
           TopBar.tsx
         widget-tree/
           WidgetTreePanel.tsx
-        device-stage/
-          DeviceStage.tsx
+        live-app-surface/
+          LiveAppSurface.tsx
         selection-notes/
           SelectionNotesPanel.tsx
 ```
@@ -114,4 +114,3 @@ apps/
 ## Notes
 
 This issue intentionally keeps the layout slice small. Future issues should fill each region independently.
-

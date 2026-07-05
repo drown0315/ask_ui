@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ask UI scrcpy Calibration</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        background: #101418;
+        color: #edf2f7;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+      }
+
+      header,
+      footer {
+        padding: 12px 16px;
+        border-color: #2a333d;
+        background: #151b21;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        border-bottom: 1px solid #2a333d;
+      }
+
+      footer {
+        border-top: 1px solid #2a333d;
+      }
+
+      button {
+        border: 1px solid #475463;
+        border-radius: 6px;
+        background: #d7ff64;
+        color: #12170f;
+        font-weight: 700;
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        cursor: default;
+        opacity: 0.55;
+      }
+
+      main {
+        display: grid;
+        place-items: center;
+        min-height: 0;
+        padding: 18px;
+      }
+
+      .surface {
+        display: grid;
+        place-items: center;
+        width: min(100%, 520px);
+        height: 100%;
+        min-height: 0;
+      }
+
+      img {
+        max-width: 100%;
+        max-height: calc(100vh - 170px);
+        background: #050607;
+        border: 1px solid #394553;
+        box-shadow: 0 20px 80px rgb(0 0 0 / 0.35);
+        object-fit: contain;
+        cursor: crosshair;
+        touch-action: none;
+        user-select: none;
+      }
+
+      .status {
+        color: #a7b3c2;
+        font-size: 13px;
+      }
+
+      pre {
+        max-height: 130px;
+        overflow: auto;
+        margin: 0;
+        white-space: pre-wrap;
+        color: #cbd5e1;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <button id="start">Start official scrcpy stream</button>
+      <div class="status" id="status">Idle</div>
+    </header>
+    <main>
+      <div class="surface">
+        <img id="screen" alt="Android device screen stream" />
+      </div>
+    </main>
+    <footer>
+      <pre id="log"></pre>
+    </footer>
+    <script>
+      const startButton = document.getElementById('start');
+      const statusEl = document.getElementById('status');
+      const logEl = document.getElementById('log');
+      const screenEl = document.getElementById('screen');
+
+      let displaySize = null;
+      let streamGeneration = 0;
+      let pointerStart = null;
+
+      function log(message) {
+        const time = new Date().toLocaleTimeString();
+        logEl.textContent = `[${time}] ${message}\n${logEl.textContent}`;
+      }
+
+      async function requestJson(url, options) {
+        const response = await fetch(url, options);
+        const text = await response.text();
+        const body = text ? JSON.parse(text) : {};
+        if (!response.ok) {
+          throw new Error(body.error || response.statusText);
+        }
+        return body;
+      }
+
+      function reloadStream() {
+        if (!displaySize) {
+          return;
+        }
+
+        streamGeneration += 1;
+        screenEl.src = `/stream.mjpg?cache=${Date.now()}&generation=${streamGeneration}`;
+      }
+
+      function eventToDevicePoint(event) {
+        const rect = screenEl.getBoundingClientRect();
+        return {
+          x: Math.round(((event.clientX - rect.left) / rect.width) * displaySize.width),
+          y: Math.round(((event.clientY - rect.top) / rect.height) * displaySize.height),
+        };
+      }
+
+      function gestureDistance(start, end) {
+        return Math.hypot(end.x - start.x, end.y - start.y);
+      }
+
+      async function sendTap(point) {
+        await requestJson('/api/tap', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(point),
+        });
+        log(`tap ${point.x},${point.y}`);
+        reloadStream();
+      }
+
+      async function sendSwipe(start, end, durationMs) {
+        await requestJson('/api/swipe', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            x1: start.x,
+            y1: start.y,
+            x2: end.x,
+            y2: end.y,
+            durationMs,
+          }),
+        });
+        log(`swipe ${start.x},${start.y} -> ${end.x},${end.y} ${durationMs}ms`);
+        reloadStream();
+      }
+
+      startButton.addEventListener('click', async () => {
+        startButton.disabled = true;
+        statusEl.textContent = 'Starting...';
+        try {
+          const body = await requestJson('/api/start', { method: 'POST' });
+          displaySize = body.displaySize;
+          reloadStream();
+          statusEl.textContent =
+            `Streaming ${body.deviceId} ${displaySize.width}x${displaySize.height}`;
+          log(JSON.stringify(body, null, 2));
+        } catch (error) {
+          startButton.disabled = false;
+          statusEl.textContent = 'Failed';
+          log(error.message);
+        }
+      });
+
+      screenEl.addEventListener('load', () => {
+        if (displaySize) {
+          setTimeout(reloadStream, 250);
+        }
+      });
+
+      screenEl.addEventListener('error', () => {
+        if (displaySize) {
+          log('stream segment failed; retrying');
+          setTimeout(reloadStream, 1000);
+        }
+      });
+
+      screenEl.addEventListener('pointerdown', (event) => {
+        if (!displaySize) {
+          return;
+        }
+
+        event.preventDefault();
+        screenEl.setPointerCapture(event.pointerId);
+        pointerStart = {
+          ...eventToDevicePoint(event),
+          pointerId: event.pointerId,
+          startedAt: performance.now(),
+        };
+      });
+
+      screenEl.addEventListener('pointerup', async (event) => {
+        if (!displaySize || !pointerStart || pointerStart.pointerId !== event.pointerId) {
+          return;
+        }
+
+        event.preventDefault();
+        const start = pointerStart;
+        const end = eventToDevicePoint(event);
+        const durationMs = Math.round(performance.now() - start.startedAt);
+        pointerStart = null;
+
+        try {
+          if (gestureDistance(start, end) < 8) {
+            await sendTap(end);
+          } else {
+            await sendSwipe(start, end, durationMs);
+          }
+        } catch (error) {
+          log(`input failed: ${error.message}`);
+        }
+      });
+
+      screenEl.addEventListener('pointercancel', () => {
+        pointerStart = null;
+      });
+    </script>
+  </body>
+</html>

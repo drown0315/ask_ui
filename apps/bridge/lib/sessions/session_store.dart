@@ -4,21 +4,25 @@
 /// - the session id returned to the web page
 /// - the Flutter VM Service URI used to identify the running app
 /// - the Flutter project root used to identify the local source workspace
+/// - the Android device id bound to the running app
 ///
 /// Example:
 /// A page opened with `ws://127.0.0.1:12345/ws` and `/Users/example/app`
-/// receives one `BridgeSession`. Another tab with the same two values receives
-/// the same session because Ask UI treats that target as a singleton session.
+/// on device `19271FDF6007TY` receives one `BridgeSession`. Another tab with
+/// the same values receives the same session because Ask UI treats that target
+/// as a singleton session.
 class BridgeSession {
   const BridgeSession({
     required this.id,
     required this.vmServiceUri,
     required this.projectRoot,
+    required this.deviceId,
   });
 
   final String id;
   final String vmServiceUri;
   final String projectRoot;
+  final String deviceId;
 }
 
 class InvalidSessionRequest implements Exception {
@@ -28,6 +32,20 @@ class InvalidSessionRequest implements Exception {
 
   @override
   String toString() => 'InvalidSessionRequest: $message';
+}
+
+class DeviceMismatchForSession implements Exception {
+  const DeviceMismatchForSession({
+    required this.expectedDeviceId,
+    required this.requestedDeviceId,
+  });
+
+  final String expectedDeviceId;
+  final String requestedDeviceId;
+
+  @override
+  String toString() => 'DeviceMismatchForSession: expected $expectedDeviceId, '
+      'requested $requestedDeviceId';
 }
 
 class SessionStore {
@@ -40,22 +58,25 @@ class SessionStore {
   /// Return the singleton session for one Flutter app target.
   ///
   /// This method:
-  /// 1. trims `vmServiceUri` and `projectRoot`
-  /// 2. rejects blank values because both fields are required to identify the
-  ///    target Flutter app
+  /// 1. trims `vmServiceUri`, `projectRoot`, and `deviceId`
+  /// 2. rejects blank values because all fields are required to identify the
+  ///    workbench session
   /// 3. returns an existing session when the same target was already opened
-  /// 4. creates a new session only for a target that has not been seen before
+  /// 4. rejects a different `deviceId` for an existing Flutter app session
+  /// 5. creates a new session only for a target that has not been seen before
   ///
   /// Args:
   /// - `vmServiceUri`: VM Service WebSocket URI for the running Flutter app.
   ///   Blank values are rejected.
   /// - `projectRoot`: Local Flutter project root for the same app. Blank
   ///   values are rejected.
+  /// - `deviceId`: Stable Android device serial for the same running app.
+  ///   Blank values are rejected.
   ///
   /// Returns:
   /// The existing or newly-created `BridgeSession` for the target. Repeated
-  /// calls with the same trimmed `vmServiceUri` and `projectRoot` return the
-  /// same object.
+  /// calls with the same trimmed `vmServiceUri`, `projectRoot`, and `deviceId`
+  /// return the same object.
   ///
   /// Example:
   /// Calling this twice with `ws://127.0.0.1:12345/ws` and
@@ -64,13 +85,17 @@ class SessionStore {
   BridgeSession createSession({
     required String vmServiceUri,
     required String projectRoot,
+    required String deviceId,
   }) {
     final trimmedVmServiceUri = vmServiceUri.trim();
     final trimmedProjectRoot = projectRoot.trim();
+    final trimmedDeviceId = deviceId.trim();
 
-    if (trimmedVmServiceUri.isEmpty || trimmedProjectRoot.isEmpty) {
+    if (trimmedVmServiceUri.isEmpty ||
+        trimmedProjectRoot.isEmpty ||
+        trimmedDeviceId.isEmpty) {
       throw const InvalidSessionRequest(
-        'vmServiceUri and projectRoot are required',
+        'vmServiceUri, projectRoot, and deviceId are required',
       );
     }
 
@@ -82,6 +107,12 @@ class SessionStore {
     if (existingSessionId != null) {
       final existingSession = _sessions[existingSessionId];
       if (existingSession != null) {
+        if (existingSession.deviceId != trimmedDeviceId) {
+          throw DeviceMismatchForSession(
+            expectedDeviceId: existingSession.deviceId,
+            requestedDeviceId: trimmedDeviceId,
+          );
+        }
         return existingSession;
       }
     }
@@ -90,6 +121,7 @@ class SessionStore {
       id: 'session-${_nextId++}',
       vmServiceUri: trimmedVmServiceUri,
       projectRoot: trimmedProjectRoot,
+      deviceId: trimmedDeviceId,
     );
     _sessions[session.id] = session;
     _sessionIdsByTarget[targetKey] = session.id;

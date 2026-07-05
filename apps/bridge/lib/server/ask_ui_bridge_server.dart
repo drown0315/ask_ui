@@ -3,8 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../app_controller/flutter_app_controller.dart';
+import '../device/device_stream.dart';
+import '../device/scrcpy_device_stream.dart';
+import '../device_control/device_control_protocol.dart';
 import '../inspector/flutter_inspector_client.dart';
 import '../logging/bridge_logger.dart';
+import '../sessions/flutter_device_checker.dart';
 import '../sessions/session_store.dart';
 
 class AskUiBridgeServer {
@@ -12,16 +16,28 @@ class AskUiBridgeServer {
     required SessionStore sessionStore,
     required FlutterInspectorClient inspectorClient,
     required FlutterAppController appController,
+    FlutterDeviceChecker? flutterDeviceChecker,
+    DeviceStreamFactory? deviceStreamFactory,
+    Duration sessionEventsHeartbeatInterval = const Duration(seconds: 15),
     BridgeLogger? logger,
   })  : _sessionStore = sessionStore,
         _inspectorClient = inspectorClient,
         _appController = appController,
+        _flutterDeviceChecker =
+            flutterDeviceChecker ?? const FlutterDevicesCommandChecker(),
+        _deviceStreamFactory =
+            deviceStreamFactory ?? ScrcpyDeviceStreamFactory(),
+        _sessionEventsHeartbeatInterval = sessionEventsHeartbeatInterval,
         _logger = logger ?? BridgeLogger(write: print);
 
   final SessionStore _sessionStore;
   final FlutterInspectorClient _inspectorClient;
   final FlutterAppController _appController;
+  final FlutterDeviceChecker _flutterDeviceChecker;
+  final DeviceStreamFactory _deviceStreamFactory;
+  final Duration _sessionEventsHeartbeatInterval;
   final BridgeLogger _logger;
+  final Set<String> _activeDeviceSessionIds = {};
   HttpServer? _server;
 
   Future<int> start({required String host, required int port}) async {
@@ -47,6 +63,15 @@ class AskUiBridgeServer {
 
     if (request.method == 'POST' && request.uri.path == '/api/sessions') {
       await _createSession(request);
+      return;
+    }
+
+    if (request.method == 'GET' &&
+        request.uri.pathSegments.length == 4 &&
+        request.uri.pathSegments[0] == 'api' &&
+        request.uri.pathSegments[1] == 'sessions' &&
+        request.uri.pathSegments[3] == 'device') {
+      await _openDevice(request);
       return;
     }
 
@@ -121,6 +146,7 @@ class AskUiBridgeServer {
   }
 
   Future<void> _createSession(HttpRequest request) async {
+    _logger.info('session create start');
     Map<String, Object?> body;
 
     try {
@@ -131,6 +157,7 @@ class AskUiBridgeServer {
       }
       body = decoded;
     } on FormatException {
+      _logger.info('session create failed error=invalid_json');
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badRequest,
@@ -141,12 +168,83 @@ class AskUiBridgeServer {
 
     final vmServiceUri = body['vmServiceUri'];
     final projectRoot = body['projectRoot'];
+    final deviceId = body['deviceId'];
 
-    if (vmServiceUri is! String || projectRoot is! String) {
+    if (vmServiceUri is! String ||
+        projectRoot is! String ||
+        deviceId is! String) {
+      _logger.info('session create failed error=missing_session_parameters');
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badRequest,
         body: {'error': 'missing_session_parameters'},
+      );
+      return;
+    }
+
+    if (vmServiceUri.trim().isEmpty ||
+        projectRoot.trim().isEmpty ||
+        deviceId.trim().isEmpty) {
+      _logger.info('session create failed error=missing_session_parameters');
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'missing_session_parameters'},
+      );
+      return;
+    }
+
+    late final FlutterDeviceAvailability targetDeviceAvailability;
+    try {
+      targetDeviceAvailability = await _flutterDeviceChecker.checkDeviceId(
+        deviceId,
+      );
+    } catch (error, stackTrace) {
+      _logger.info(
+        'target_device_check_failed command="flutter devices --machine" '
+        'deviceId=$deviceId error=$error\n'
+        'Stack trace:\n$stackTrace',
+      );
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {
+          'error': 'target_device_check_failed',
+          'message': 'Ask UI could not check Flutter target devices.',
+          'deviceId': deviceId,
+        },
+      );
+      return;
+    }
+
+    if (targetDeviceAvailability == FlutterDeviceAvailability.notFound) {
+      _logger.info(
+        'session create failed error=target_device_not_found deviceId=$deviceId',
+      );
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {
+          'error': 'target_device_not_found',
+          'message': 'Target Device $deviceId is not listed by Flutter.',
+          'deviceId': deviceId,
+        },
+      );
+      return;
+    }
+
+    if (targetDeviceAvailability == FlutterDeviceAvailability.unavailable) {
+      _logger.info(
+        'session create failed error=target_device_unavailable deviceId=$deviceId',
+      );
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {
+          'error': 'target_device_unavailable',
+          'message': 'Target Device $deviceId is not available.',
+          'deviceId': deviceId,
+        },
       );
       return;
     }
@@ -155,26 +253,48 @@ class AskUiBridgeServer {
       final session = _sessionStore.createSession(
         vmServiceUri: vmServiceUri,
         projectRoot: projectRoot,
+        deviceId: deviceId,
       );
       await _writeJson(
         request.response,
         body: {'sessionId': session.id},
       );
+      _logger.info(
+        'session create success session=${session.id} deviceId=${session.deviceId}',
+      );
     } on InvalidSessionRequest {
+      _logger.info('session create failed error=missing_session_parameters');
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badRequest,
         body: {'error': 'missing_session_parameters'},
       );
+    } on DeviceMismatchForSession catch (error) {
+      _logger.info(
+        'session create failed error=device_mismatch_for_session '
+        'expectedDeviceId=${error.expectedDeviceId} '
+        'requestedDeviceId=${error.requestedDeviceId}',
+      );
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {
+          'error': 'device_mismatch_for_session',
+          'message': 'VM Service device does not match Target Device '
+              '${error.requestedDeviceId}.',
+          'expectedDeviceId': error.expectedDeviceId,
+          'requestedDeviceId': error.requestedDeviceId,
+        },
+      );
     }
   }
 
-  Future<void> _getWidgetTree(HttpRequest request) async {
+  Future<void> _openDevice(HttpRequest request) async {
     final sessionId = request.uri.pathSegments[2];
     final session = _sessionStore.find(sessionId);
 
     if (session == null) {
-      _logger.info('hot_reload request session=$sessionId session_not_found');
+      _logger.info('device websocket session=$sessionId session_not_found');
       await _writeJson(
         request.response,
         statusCode: HttpStatus.notFound,
@@ -183,13 +303,168 @@ class AskUiBridgeServer {
       return;
     }
 
+    final socket = await WebSocketTransformer.upgrade(request);
+    _logger.info('device websocket session=$sessionId open');
+    if (_activeDeviceSessionIds.contains(sessionId)) {
+      _logger.info('device websocket session=$sessionId already_active');
+      socket.add(jsonEncode({
+        'type': 'error',
+        'error': 'device_already_active',
+        'message': 'Device is already active for this bridge session.',
+      }));
+      await socket.close();
+      return;
+    }
+
+    _activeDeviceSessionIds.add(sessionId);
+    DeviceStream? deviceStream;
+    var socketClosed = false;
+    var deviceStreamClosed = false;
+    Future<void> closeDeviceStream() async {
+      final stream = deviceStream;
+      if (stream == null || deviceStreamClosed) {
+        return;
+      }
+      deviceStreamClosed = true;
+      await stream.close();
+    }
+
+    socket.listen(
+      (message) {
+        if (message is! String) {
+          return;
+        }
+
+        final Map<String, Object?>? controlError =
+            DeviceControlProtocol.validateTextMessage(message);
+        if (controlError != null) {
+          _logger.info(
+            'device control session=$sessionId control_error '
+            'error=${controlError['error']}',
+          );
+          socket.add(jsonEncode(controlError));
+          return;
+        }
+        _logAcceptedDeviceControl(sessionId: sessionId, rawMessage: message);
+        final decoded = jsonDecode(message);
+        if (decoded is Map<String, Object?>) {
+          unawaited(deviceStream?.handleControl(decoded));
+        }
+      },
+      onDone: () async {
+        socketClosed = true;
+        _activeDeviceSessionIds.remove(sessionId);
+        await closeDeviceStream();
+        _logger.info('device websocket session=$sessionId close');
+      },
+      onError: (error) async {
+        socketClosed = true;
+        _activeDeviceSessionIds.remove(sessionId);
+        await closeDeviceStream();
+        _logger.info('device websocket session=$sessionId error=$error');
+      },
+    );
+    final streamSink = _WebSocketDeviceStreamSink(
+      socket: socket,
+      logger: _logger,
+      sessionId: sessionId,
+    );
+    final streamFactory = request.uri.queryParameters['debugVideo'] == 'fixture'
+        ? FixtureH264DeviceStreamFactory(chunk: _fixtureH264AnnexBChunk)
+        : _deviceStreamFactory;
+
+    try {
+      deviceStream = await streamFactory.start(
+        session: session,
+        sink: streamSink,
+      );
+      if (socketClosed) {
+        await closeDeviceStream();
+        return;
+      }
+      if (request.uri.queryParameters['debugMetadata'] == 'rotation') {
+        streamSink.sendMetadata(DeviceMetadata(
+          deviceId: session.deviceId,
+          screenWidth: 2400,
+          screenHeight: 1080,
+          maxFps: 60,
+          videoCodec: 'h264',
+          controlReady: true,
+        ));
+      }
+    } catch (error, stackTrace) {
+      _logger.info(
+        'device websocket session=$sessionId start_failed '
+        'error=$error\nStack trace:\n$stackTrace',
+      );
+      if (socketClosed) {
+        return;
+      }
+      socket.add(jsonEncode({
+        'type': 'error',
+        'error': 'device_start_failed',
+        'message': 'Device failed to start.',
+      }));
+      await socket.close();
+    }
+  }
+
+  void _logAcceptedDeviceControl({
+    required String sessionId,
+    required String rawMessage,
+  }) {
+    final decoded = jsonDecode(rawMessage);
+    if (decoded is! Map<String, Object?>) {
+      return;
+    }
+
+    if (decoded['type'] == DeviceControlProtocol.systemKeyType) {
+      _logger.info(
+        'device control session=$sessionId systemKey key=${decoded['key']}',
+      );
+      return;
+    }
+
+    if (decoded['type'] != DeviceControlProtocol.touchType) {
+      return;
+    }
+
+    final action = decoded['action'];
+    if (action == 'move') {
+      return;
+    }
+
+    _logger.info(
+      'device control session=$sessionId touch action=$action '
+      'pointerId=${decoded['pointerId']} x=${decoded['x']} y=${decoded['y']}',
+    );
+  }
+
+  Future<void> _getWidgetTree(HttpRequest request) async {
+    final sessionId = request.uri.pathSegments[2];
+    final session = _sessionStore.find(sessionId);
+
+    if (session == null) {
+      _logger.info('widget_tree request session=$sessionId session_not_found');
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notFound,
+        body: {'error': 'session_not_found'},
+      );
+      return;
+    }
+
+    _logger.info('widget_tree request session=$sessionId start');
     try {
       final root = await _inspectorClient.fetchRootWidgetTree(session);
       await _writeJson(
         request.response,
         body: {'root': root.toJson()},
       );
+      _logger.info('widget_tree request session=$sessionId success');
     } catch (error) {
+      _logger
+          .info('widget_tree request session=$sessionId failed error=$error');
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badGateway,
@@ -206,6 +481,7 @@ class AskUiBridgeServer {
     final session = _sessionStore.find(sessionId);
 
     if (session == null) {
+      _logger.info('hot_reload request session=$sessionId session_not_found');
       await _writeJson(
         request.response,
         statusCode: HttpStatus.notFound,
@@ -310,11 +586,15 @@ class AskUiBridgeServer {
       return;
     }
 
+    _logger.info('select_widget status session=$sessionId start');
     try {
       final status = await _inspectorClient.getSelectWidgetModeStatus(session);
       await _writeJson(
         request.response,
         body: status.toJson(),
+      );
+      _logger.info(
+        'select_widget status session=$sessionId success known=${status.enabled != null}',
       );
     } catch (error) {
       _logger
@@ -475,44 +755,80 @@ class AskUiBridgeServer {
       ..set(HttpHeaders.transferEncodingHeader, 'chunked')
       ..set(HttpHeaders.connectionHeader, 'keep-alive');
 
-    _writeSseEvent(
-      request.response,
-      event: 'bridge_session_event',
-      data: {
-        'type': 'select_widget_mode_snapshot',
-        'sessionId': sessionId,
-        'payload': {
-          'known': snapshot.enabled != null,
-          if (snapshot.enabled != null) 'enabled': snapshot.enabled,
-        },
-      },
-    );
-    await request.response.flush();
+    Timer? heartbeat;
+    StreamSubscription<SelectWidgetModeStatus>? subscription;
+    var streamClosed = false;
+    var writeQueue = Future<void>.value();
 
-    final subscription =
-        _inspectorClient.watchSelectWidgetModeStatus(session).listen((status) {
+    Future<void> closeSseStream() async {
+      if (streamClosed) {
+        return;
+      }
+      streamClosed = true;
+      heartbeat?.cancel();
+      await subscription?.cancel();
+      _logger.info('events stream session=$sessionId close');
+    }
+
+    Future<void> enqueueSseWrite(void Function() write) {
+      final nextWrite = writeQueue.then((_) async {
+        if (streamClosed) {
+          return;
+        }
+
+        try {
+          write();
+          await request.response.flush();
+        } catch (error) {
+          _logger.info(
+            'events stream session=$sessionId write_failed error=$error',
+          );
+          await closeSseStream();
+        }
+      });
+      writeQueue = nextWrite.catchError((_) {});
+      return nextWrite;
+    }
+
+    await enqueueSseWrite(() {
       _writeSseEvent(
         request.response,
         event: 'bridge_session_event',
         data: {
-          'type': 'select_widget_mode_changed',
+          'type': 'select_widget_mode_snapshot',
           'sessionId': sessionId,
           'payload': {
-            if (status.enabled != null) 'enabled': status.enabled,
+            'known': snapshot.enabled != null,
+            if (snapshot.enabled != null) 'enabled': snapshot.enabled,
           },
         },
       );
-      request.response.flush();
     });
-    final heartbeat = Timer.periodic(const Duration(seconds: 15), (_) {
-      request.response.add(utf8.encode(': ping\n\n'));
-      request.response.flush();
+
+    subscription =
+        _inspectorClient.watchSelectWidgetModeStatus(session).listen((status) {
+      unawaited(enqueueSseWrite(() {
+        _writeSseEvent(
+          request.response,
+          event: 'bridge_session_event',
+          data: {
+            'type': 'select_widget_mode_changed',
+            'sessionId': sessionId,
+            'payload': {
+              if (status.enabled != null) 'enabled': status.enabled,
+            },
+          },
+        );
+      }));
+    });
+    heartbeat = Timer.periodic(_sessionEventsHeartbeatInterval, (_) {
+      unawaited(enqueueSseWrite(() {
+        request.response.add(utf8.encode(': ping\n\n'));
+      }));
     });
 
     request.response.done.whenComplete(() {
-      heartbeat.cancel();
-      subscription.cancel();
-      _logger.info('events stream session=$sessionId close');
+      unawaited(closeSseStream());
     });
   }
 
@@ -604,3 +920,83 @@ class AskUiBridgeServer {
     response.add(utf8.encode('event: $event\ndata: ${jsonEncode(data)}\n\n'));
   }
 }
+
+class _WebSocketDeviceStreamSink implements DeviceStreamSink {
+  _WebSocketDeviceStreamSink({
+    required this.socket,
+    required this.logger,
+    required this.sessionId,
+  });
+
+  final WebSocket socket;
+  final BridgeLogger logger;
+  final String sessionId;
+
+  @override
+  void sendReady(DeviceMetadata metadata) {
+    socket.add(jsonEncode({
+      'type': 'ready',
+      ...metadata.toJson(),
+    }));
+    logger.info(
+      'device websocket session=$sessionId ready '
+      'deviceId=${metadata.deviceId} '
+      'screenWidth=${metadata.screenWidth} '
+      'screenHeight=${metadata.screenHeight}',
+    );
+  }
+
+  @override
+  void sendMetadata(DeviceMetadata metadata) {
+    socket.add(jsonEncode({
+      'type': 'metadata',
+      ...metadata.toJson(),
+    }));
+    logger.info(
+      'device websocket session=$sessionId metadata '
+      'deviceId=${metadata.deviceId} '
+      'screenWidth=${metadata.screenWidth} '
+      'screenHeight=${metadata.screenHeight}',
+    );
+  }
+
+  @override
+  void sendVideoChunk(List<int> bytes) {
+    socket.add(bytes);
+  }
+
+  @override
+  void fail(String error, String message) {
+    socket.add(jsonEncode({
+      'type': 'error',
+      'error': error,
+      'message': message,
+    }));
+  }
+
+  @override
+  void log(String message) {
+    logger.info('device websocket session=$sessionId $message');
+  }
+
+  @override
+  Future<void> close() async {
+    await socket.close();
+  }
+}
+
+/// Single-frame Annex B H.264 byte fixture for the Device WebSocket shell.
+///
+/// The bytes are a 16x16 Constrained Baseline IDR frame generated by ffmpeg.
+/// They prove that the bridge can send decodable binary video bytes over the
+/// same WebSocket as JSON protocol messages.
+final List<int> _fixtureH264AnnexBChunk = [
+  ...base64Decode(
+    'AAAAAWdCwArd7ARAAAADAEAAAAMAo8SJ4AAAAAFozg/IAAABBgX//03cRem95tlIt5Ys2CDZI+7veDI2NCAtIGNvcmUgMTY1IHIzMjIyIGIzNTYwNWEgLSBILjI2NC9NUEVHLTQgQVZDIGNvZGVjIC0gQ29weWxlZnQgMjAwMy0yMDI1IC0gaHR0cDovL3d3dy52aWRlb2xhbi5vcmcveDI2NC5odG1sIC0gb3B0aW9uczogY2FiYWM9MCByZWY9MSBkZWJsb2NrPTA6MDowIGFuYWx5c2U9MDowIG1lPWRpYSBzdWJtZT0wIHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTAgbWVfcmFuZ2U9MTYgY2hyb21hX21lPTEgdHJlbGxpcz0wIDh4OGRjdD0wIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zmc2V0PTAgdGhyZWFkcz0xIGxvb2thaGVhZF90aHJlYWRzPTEgc2xpY2VkX3RocmVhZHM9MCBucj0wIGRlY2ltYXRlPTEgaW50ZXJsYWNlZD0wIGJsdXJheV9jb21wYXQ9MCBjb25zdHJhaW5lZF9pbnRyYT0wIGJmcmFtZXM9MCB3ZWlnaHRwPTAga2V5aW50PTEga2V5aW50X21pbj0xIHNjZW5lY3V0PTAgaW50cmFfcmVmcmVzaD0wIHJjPWNyZiBtYnRyZWU9MCBjcmY9MjMuMCBxY29tcD0wLjYwIHFwbWluPTAgcXBtYXg9NjkgcXBzdGVwPTQgaXBfcmF0aW89MS40MCBhcT0wAIAAAAFliIQ6JigACQLg',
+  ),
+  0x00,
+  0x00,
+  0x01,
+  0x09,
+  0xf0,
+];

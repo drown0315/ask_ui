@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>scrcpy WebCodecs Stream 工作原理</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        --bg: #f7f8fa;
+        --panel: #ffffff;
+        --ink: #17202a;
+        --muted: #596575;
+        --line: #d7dde5;
+        --strong: #0f766e;
+        --accent: #d97706;
+        --code: #eef2f6;
+        --shadow: 0 10px 28px rgb(23 32 42 / 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+      }
+
+      main {
+        width: min(1160px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 28px 0 40px;
+      }
+
+      header {
+        margin-bottom: 22px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 32px;
+        line-height: 1.15;
+        letter-spacing: 0;
+      }
+
+      h2 {
+        margin: 0 0 12px;
+        font-size: 18px;
+        line-height: 1.25;
+        letter-spacing: 0;
+      }
+
+      h3 {
+        margin: 0 0 8px;
+        font-size: 15px;
+        line-height: 1.25;
+        letter-spacing: 0;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.65;
+      }
+
+      code {
+        padding: 2px 5px;
+        border-radius: 4px;
+        background: var(--code);
+        color: #1f2937;
+        font-family: "SFMono-Regular", Consolas, monospace;
+        font-size: 0.92em;
+      }
+
+      .lead {
+        max-width: 820px;
+        font-size: 15px;
+      }
+
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(120px, 1fr));
+        gap: 10px;
+        align-items: stretch;
+        margin: 22px 0;
+      }
+
+      .node {
+        position: relative;
+        min-height: 112px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+
+      .node:not(:last-child)::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        right: -10px;
+        width: 10px;
+        height: 2px;
+        background: var(--strong);
+      }
+
+      .node strong {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--ink);
+        font-size: 14px;
+      }
+
+      .node span {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .node.android {
+        border-top: 4px solid #16a34a;
+      }
+
+      .node.bridge {
+        border-top: 4px solid var(--strong);
+      }
+
+      .node.browser {
+        border-top: 4px solid #2563eb;
+      }
+
+      .node.input {
+        border-top: 4px solid var(--accent);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .card {
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+
+      .wide {
+        grid-column: 1 / -1;
+      }
+
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .step {
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfd;
+      }
+
+      .step .num {
+        display: inline-grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        margin-bottom: 8px;
+        border-radius: 999px;
+        background: var(--strong);
+        color: #fff;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      ul {
+        margin: 10px 0 0;
+        padding-left: 18px;
+        color: var(--muted);
+        line-height: 1.65;
+      }
+
+      .two-column {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+
+      .callout {
+        border-left: 4px solid var(--accent);
+        background: #fff8eb;
+      }
+
+      .badge {
+        display: inline-block;
+        margin-bottom: 10px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: #e7f8f5;
+        color: #0f766e;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .mini-flow {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr auto 1fr;
+        gap: 8px;
+        align-items: center;
+        margin-top: 12px;
+      }
+
+      .mini-box {
+        min-height: 58px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfd;
+        font-size: 13px;
+      }
+
+      .arrow {
+        color: var(--strong);
+        font-weight: 800;
+      }
+
+      @media (max-width: 920px) {
+        .flow {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .node:not(:last-child)::after {
+          display: none;
+        }
+
+        .steps,
+        .grid,
+        .two-column {
+          grid-template-columns: 1fr;
+        }
+
+        .mini-flow {
+          grid-template-columns: 1fr;
+        }
+
+        .arrow {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="badge">Ask UI Device Spike</div>
+        <h1>scrcpy WebCodecs Stream 工作原理</h1>
+        <p class="lead">
+          这个页面解释当前 <code>test_scrcpy</code> WebCodecs MVP 如何把 Android 设备画面嵌到网页里。
+          它是能力校准方案：视频走官方 scrcpy 4.0 raw H.264，浏览器用 WebCodecs 解码，点击和滑动暂时走 ADB input。
+        </p>
+      </header>
+
+      <section class="flow" aria-label="整体数据流">
+        <div class="node android">
+          <strong>Android 设备</strong>
+          <span>运行目标 app，系统 display 被 scrcpy server 捕获。</span>
+        </div>
+        <div class="node android">
+          <strong>scrcpy-server</strong>
+          <span>通过 <code>app_process</code> 启动，输出 raw H.264 Annex B。</span>
+        </div>
+        <div class="node bridge">
+          <strong>ADB reverse</strong>
+          <span>设备端主动连接 <code>localabstract:scrcpy_&lt;scid&gt;</code> 到本机端口。</span>
+        </div>
+        <div class="node bridge">
+          <strong>Node bridge</strong>
+          <span>接收视频 socket，把字节转成 WebSocket binary frame。</span>
+        </div>
+        <div class="node browser">
+          <strong>WebCodecs</strong>
+          <span>浏览器拆 Annex B NAL，组装 access unit，交给 <code>VideoDecoder</code>。</span>
+        </div>
+        <div class="node browser">
+          <strong>Canvas</strong>
+          <span><code>VideoFrame</code> 绘制到画布，形成可点击的设备画面。</span>
+        </div>
+      </section>
+
+      <section class="grid">
+        <article class="card wide">
+          <h2>一条视频帧大致怎么走</h2>
+          <div class="steps">
+            <div class="step">
+              <div class="num">1</div>
+              <h3>设备编码</h3>
+              <p>scrcpy server 从 Android display 取画面，并用设备编码器产出 H.264 NAL。</p>
+            </div>
+            <div class="step">
+              <div class="num">2</div>
+              <h3>本机接收</h3>
+              <p>Node 先监听端口，再通过 ADB reverse 让 Android server 连回本机。</p>
+            </div>
+            <div class="step">
+              <div class="num">3</div>
+              <h3>浏览器传输</h3>
+              <p>Node 不解码，只把收到的 raw bytes 放进 WebSocket binary frame。</p>
+            </div>
+            <div class="step">
+              <div class="num">4</div>
+              <h3>解码渲染</h3>
+              <p>WebCodecs 解码出 <code>VideoFrame</code>，前端绘制到 <code>canvas</code>。</p>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <h2>为什么是 raw H.264 Annex B</h2>
+          <p>
+            官方 scrcpy server 开启 <code>raw_stream=true</code> 后，会关闭 scrcpy 自己的设备元数据、帧元数据和 stream
+            metadata。video socket 上剩下的是裸 H.264 Annex B NAL 字节流。
+          </p>
+          <ul>
+            <li>优点：链路短，适合低延迟校准。</li>
+            <li>代价：浏览器侧必须自己拆 NAL、组 access unit。</li>
+            <li>MSE 不能直接吃这条裸流；MSE 需要先封装成 fMP4。</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <h2>Node bridge 做什么</h2>
+          <p>
+            Node 在这个 MVP 里负责本地能力边界：选择 <code>deviceId</code>，push 官方 scrcpy server，建立 ADB reverse，
+            启动 Android 端 server，并把视频 bytes 交给浏览器。
+          </p>
+          <ul>
+            <li>Node 不做 H.264 解码。</li>
+            <li>Node 当前只允许一个 raw stream 连接。</li>
+            <li>断开时要清理 scrcpy process、video socket 和 ADB tunnel。</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <h2>WebCodecs 做什么</h2>
+          <p>
+            浏览器收到的 WebSocket binary chunk 不是视频帧。前端先按 Annex B start code 拆出 NAL，再基于 NAL type
+            组装 access unit，最后调用 <code>VideoDecoder.decode()</code>。
+          </p>
+          <ul>
+            <li>从 SPS 里解析 <code>avc1.xxxxxx</code> codec string。</li>
+            <li>配置 <code>VideoDecoder</code> 时不传 <code>description</code>，让输入按 Annex B 解释。</li>
+            <li>每个输出的 <code>VideoFrame</code> 绘制后必须 <code>close()</code>。</li>
+          </ul>
+        </article>
+
+        <article class="card callout">
+          <h2>关键坑：TCP chunk 不是 frame</h2>
+          <p>
+            网络层可能把半个 NAL、多个 NAL、甚至 SPS/PPS/IDR 混在任意 chunk 里发过来。
+            所以不能把一次 WebSocket message 直接当成一帧给 <code>VideoDecoder</code>。
+          </p>
+          <div class="mini-flow">
+            <div class="mini-box">WebSocket binary chunk</div>
+            <div class="arrow">→</div>
+            <div class="mini-box">Annex B NAL parser</div>
+            <div class="arrow">→</div>
+            <div class="mini-box">Access unit / EncodedVideoChunk</div>
+          </div>
+        </article>
+
+        <article class="card wide">
+          <h2>输入事件为什么暂时走 ADB</h2>
+          <div class="two-column">
+            <div>
+              <h3>当前 MVP</h3>
+              <p>
+                鼠标点击映射到设备坐标后调用 <code>adb shell input tap</code>。
+                鼠标按住拖拽映射为 <code>adb shell input swipe</code>。
+              </p>
+            </div>
+            <div>
+              <h3>后续方向</h3>
+              <p>
+                正式低延迟输入应校准官方 scrcpy control protocol。那条路线可以承载 touch down、move、up、多点触控、滚轮和键盘。
+              </p>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <h2>当前 MVP 限制</h2>
+          <ul>
+            <li>只支持 Android。</li>
+            <li>只支持一个 WebCodecs 页面连接。</li>
+            <li>H.264 parser 仍是校准级实现。</li>
+            <li>timestamp 目前按固定帧间隔生成。</li>
+            <li>还没有 MSE 或 wasm decoder fallback。</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <h2>产品化前要补齐</h2>
+          <ul>
+            <li>把 session lifecycle 做进 bridge，而不是页面直接管理。</li>
+            <li>抽出可测试的 Annex B parser 和 access unit builder。</li>
+            <li>明确 backpressure 和丢帧策略。</li>
+            <li>补上状态观测：connected、configured、decoded、dropped、queue size。</li>
+            <li>再校准 scrcpy control protocol。</li>
+          </ul>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

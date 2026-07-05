@@ -63,7 +63,6 @@ Expected elements:
 - Product/session identity.
 - Target device or simulator status.
 - Select Widget mode.
-- Operate mode for normal app interaction.
 - Hot Reload.
 - Hot Restart.
 
@@ -75,7 +74,7 @@ The center is the primary workspace. It displays the running Flutter app.
 
 The developer should be able to:
 
-- Operate the app normally.
+- Operate the app normally by clicking the live app surface.
 - Switch into selection mode.
 - Click UI areas to select them.
 - See a clear highlight around the selected area.
@@ -181,4 +180,3 @@ Out of scope for this draft:
 - Should the product support selecting non-widget regions when the exact widget target is ambiguous?
 - How much code location detail should be visible to the user before sending?
 - Should Hot Reload be triggered by the user only, or can the agent request it after edits?
-

@@ -19,10 +19,10 @@ This issue covers the real-action contract for:
 The Top Bar should remain the user's primary control point for switching between
 normal app operation and Flutter workbench actions.
 
-`Select Widget` is a toggle, not a submit action. Turning it on puts the device
-stage into widget-picking mode. Users may select one or more widgets, add notes
-near those selections or in the right panel, and only send the collected context
-to the coding agent from the chat composer.
+`Select Widget` is a toggle, not a submit action. Turning it on puts the Live
+App Surface into widget-picking mode. Users may select one or more widgets, add
+notes near those selections or in the right panel, and only send the collected
+context to the coding agent from the chat composer.
 
 `Hot Reload` runs Flutter hot reload for the current bridge session. The button
 should show an in-progress state while the action is running, report failures
@@ -67,7 +67,7 @@ Future widget selection API shape:
 
 ```text
 POST /api/sessions/:sessionId/inspector/select-widget
-body: { "x": number, "y": number, "coordinateSpace": "device-stage" }
+body: { "x": number, "y": number, "coordinateSpace": "live-app-surface" }
 response: {
   "selectedNodeId": string,
   "widgetType"?: string,
@@ -88,7 +88,7 @@ For the first real-action slice:
   UI matches the target app Inspector mode.
 - Add action states for `Hot Reload` and `Hot Restart`: idle, running, failed,
   and unsupported where needed.
-- Reuse the existing bridge session created from `vmServiceUri + projectRoot`.
+- Reuse the existing bridge session created from `vmServiceUri + projectRoot + deviceId`.
 - After successful hot reload, fetch a fresh Widget Tree snapshot through the
   existing session.
 - Treat node ids as snapshot-scoped after reload.

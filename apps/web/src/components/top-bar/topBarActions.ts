@@ -1,3 +1,5 @@
+import type { TargetDeviceDisplay } from '../../session/targetDeviceDisplay';
+
 export type WorkbenchActionStatus = 'idle' | 'running' | 'failed' | 'unsupported';
 
 export type WorkbenchActionState = {
@@ -58,7 +60,10 @@ export function markSessionActionUnavailable(
   };
 }
 
-export function getTopBarStatusMessage(state: TopBarActionState): string {
+export function getTopBarStatusMessage(
+  state: TopBarActionState,
+  targetDeviceDisplay?: TargetDeviceDisplay,
+): string {
   if (state.selectWidget.status === 'running') {
     return 'Select Widget mode updating';
   }
@@ -85,6 +90,18 @@ export function getTopBarStatusMessage(state: TopBarActionState): string {
 
   if (state.isSelectWidgetActive) {
     return 'Select Widget mode on';
+  }
+
+  if (targetDeviceDisplay?.status === 'incomplete') {
+    return 'Session incomplete';
+  }
+
+  if (targetDeviceDisplay?.status === 'creating') {
+    return 'Connecting';
+  }
+
+  if (targetDeviceDisplay?.status === 'error') {
+    return 'Session error';
   }
 
   return 'Ready';

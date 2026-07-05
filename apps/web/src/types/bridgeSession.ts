@@ -20,7 +20,7 @@ export type WidgetTreeLoadState =
 export type BridgeSessionState =
   | {
       status: 'incomplete';
-      missing: Array<'vmServiceUri' | 'projectRoot'>;
+      missing: Array<'vmServiceUri' | 'projectRoot' | 'deviceId'>;
     }
   | {
       status: 'creating';
@@ -28,7 +28,7 @@ export type BridgeSessionState =
   | {
       status: 'ready';
       sessionId: string;
-      widgetTree: WidgetTreeLoadState;
+      targetDeviceId: string;
     }
   | {
       status: 'error';

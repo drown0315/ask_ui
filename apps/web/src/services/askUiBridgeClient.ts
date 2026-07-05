@@ -1,6 +1,7 @@
 export type CreateBridgeSessionRequest = {
   vmServiceUri: string;
   projectRoot: string;
+  deviceId: string;
 };
 
 export type CreateBridgeSessionResponse = {
@@ -103,6 +104,41 @@ export function resolveBridgeOrigin(envOrigin: string | undefined): string {
 }
 
 /**
+ * Build the bridge-owned Live App Surface Device WebSocket URL for one session.
+ *
+ * Args:
+ * - `sessionId`: Existing bridge session id. The URL does not include
+ *   `deviceId` because the bridge session already owns the Target Device
+ *   binding.
+ * - `envOrigin`: Optional bridge HTTP origin. When omitted, the local bridge
+ *   default is used.
+ *
+ * Returns:
+ * A `ws:` or `wss:` URL under `/api/sessions/:sessionId/device`.
+ *
+ * Example:
+ * `getDeviceWebSocketUrl('session-1', 'http://127.0.0.1:8787')`
+ * returns `ws://127.0.0.1:8787/api/sessions/session-1/device`.
+ */
+export function getDeviceWebSocketUrl(
+  sessionId: string,
+  envOrigin?: string,
+  options?: {
+    debugVideo?: 'fixture';
+  },
+): string {
+  const url = new URL(resolveBridgeOrigin(envOrigin));
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  url.pathname = `/api/sessions/${encodeURIComponent(sessionId)}/device`;
+  url.search = '';
+  if (options?.debugVideo) {
+    url.searchParams.set('debugVideo', options.debugVideo);
+  }
+  url.hash = '';
+  return url.toString();
+}
+
+/**
  * Decode a bridge HTTP response as JSON and normalize empty response failures.
  *
  * Args:
@@ -136,21 +172,24 @@ export async function parseBridgeJsonResponse<T>(
   }
 }
 
-const bridgeOrigin = resolveBridgeOrigin(import.meta.env?.VITE_ASK_UI_BRIDGE_ORIGIN);
+export const bridgeOrigin = resolveBridgeOrigin(
+  import.meta.env?.VITE_ASK_UI_BRIDGE_ORIGIN,
+);
 
 /**
  * Create or reuse one bridge session for a running Flutter app target.
  *
  * Args:
- * - `request`: VM Service URI and project root read from the page URL.
+ * - `request`: VM Service URI, project root, and device id read from the page
+ *   URL.
  *
  * Returns:
  * The bridge session id for that target. The Dart bridge may return an existing
  * session id when another tab already opened the same target.
  *
  * Example:
- * Passing `ws://127.0.0.1:12345/ws` and `/Users/example/app` returns a
- * response such as `{sessionId: 'session-1'}`.
+ * Passing `ws://127.0.0.1:12345/ws`, `/Users/example/app`, and
+ * `19271FDF6007TY` returns a response such as `{sessionId: 'session-1'}`.
  */
 export async function createBridgeSession(
   request: CreateBridgeSessionRequest,

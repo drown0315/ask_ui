@@ -1,9 +1,11 @@
 import type { WorkbenchActionState } from './topBarActions';
+import type { TargetDeviceDisplay } from '../../session/targetDeviceDisplay';
 
 type TopBarProps = {
   isSelectWidgetActive: boolean;
   hotReload: WorkbenchActionState;
   hotRestart: WorkbenchActionState;
+  targetDeviceDisplay: TargetDeviceDisplay;
   statusMessage: string;
   onToggleSelectWidget: () => void;
   onHotReload: () => void;
@@ -22,6 +24,7 @@ export function TopBar({
   isSelectWidgetActive,
   hotReload,
   hotRestart,
+  targetDeviceDisplay,
   statusMessage,
   onToggleSelectWidget,
   onHotReload,
@@ -36,7 +39,9 @@ export function TopBar({
 
       <div className="top-bar-session" aria-label="Target device status">
         <span className="status-dot" aria-hidden="true" />
-        <span>iPhone 15 Pro</span>
+        <span className="target-device-label" title={targetDeviceDisplay.title}>
+          {targetDeviceDisplay.topBarLabel}
+        </span>
         <span className="session-muted" title={statusMessage}>
           {statusMessage}
         </span>
