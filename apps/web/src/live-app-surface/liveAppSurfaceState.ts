@@ -21,7 +21,6 @@ export type LiveAppSurfaceState =
   | {
       status: 'renderingVideo';
       metadata: LiveAppSurfaceMetadata;
-      videoFrame: unknown;
     }
   | {
       status: 'failed';
@@ -104,24 +103,20 @@ export function reduceLiveAppSurfaceMessage(
  *
  * Args:
  * - `state`: Current Surface state. Only states with metadata can render video.
- * - `videoFrame`: Decoded WebCodecs frame that the Device View should draw.
- *
  * Returns:
  * A `renderingVideo` state when metadata is available; otherwise the original
  * state is left unchanged because there is no Device View coordinate space yet.
  */
 export function reduceLiveAppSurfaceFirstFrameRendered(
   state: LiveAppSurfaceState,
-  videoFrame: unknown,
 ): LiveAppSurfaceState {
-  if (!('metadata' in state)) {
+  if (state.status !== 'waitingForVideo') {
     return state;
   }
 
   return {
     status: 'renderingVideo',
     metadata: state.metadata,
-    videoFrame,
   };
 }
 

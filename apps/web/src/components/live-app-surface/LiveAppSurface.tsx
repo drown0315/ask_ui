@@ -1,11 +1,15 @@
 import type { TargetDeviceDisplay } from '../../session/targetDeviceDisplay';
 import type { LiveAppSurfaceState } from '../../live-app-surface/liveAppSurfaceState';
 import type { DeviceControlMessage } from '../../live-app-surface/deviceControlProtocol';
+import type { DeviceVideoFrameRenderer } from '../../live-app-surface/deviceVideoFrameRenderer';
 import { DeviceShell } from './DeviceShell';
 
 type LiveAppSurfaceProps = {
   isSelectWidgetActive: boolean;
   onDeviceControlMessage: (message: DeviceControlMessage) => void;
+  onDeviceVideoRendererChange: (
+    renderer: DeviceVideoFrameRenderer | null,
+  ) => void;
   onRetry: () => void;
   surfaceState: LiveAppSurfaceState;
   targetDeviceDisplay: TargetDeviceDisplay;
@@ -14,6 +18,7 @@ type LiveAppSurfaceProps = {
 export function LiveAppSurface({
   isSelectWidgetActive,
   onDeviceControlMessage,
+  onDeviceVideoRendererChange,
   onRetry,
   surfaceState,
   targetDeviceDisplay,
@@ -30,6 +35,7 @@ export function LiveAppSurface({
       surfaceState.status === 'renderingVideo' ? (
         <DeviceShell
           onDeviceControlMessage={onDeviceControlMessage}
+          onDeviceVideoRendererChange={onDeviceVideoRendererChange}
           surfaceState={surfaceState}
         />
       ) : (

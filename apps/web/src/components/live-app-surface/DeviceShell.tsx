@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent } from 'react';
 import type { LiveAppSurfaceState } from '../../live-app-surface/liveAppSurfaceState';
 import {
@@ -12,10 +12,17 @@ import {
   mapPointToDeviceCoordinates,
   type DeviceViewFit,
 } from '../../live-app-surface/deviceViewGeometry';
-import { drawDeviceVideoFrame } from '../../live-app-surface/deviceVideoFrameRenderer';
+import {
+  bindDeviceVideoCanvas,
+  type DeviceVideoCanvasBinding,
+  type DeviceVideoFrameRenderer,
+} from '../../live-app-surface/deviceVideoFrameRenderer';
 
 type DeviceShellProps = {
   onDeviceControlMessage: (message: DeviceControlMessage) => void;
+  onDeviceVideoRendererChange: (
+    renderer: DeviceVideoFrameRenderer | null,
+  ) => void;
   surfaceState: Extract<
     LiveAppSurfaceState,
     { status: 'waitingForVideo' | 'renderingVideo' }
@@ -30,10 +37,11 @@ type DeviceShellProps = {
  */
 export function DeviceShell({
   onDeviceControlMessage,
+  onDeviceVideoRendererChange,
   surfaceState,
 }: DeviceShellProps) {
   const areaRef = useRef<HTMLDivElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const videoCanvasBindingRef = useRef<DeviceVideoCanvasBinding | null>(null);
   const activePointerRef = useRef<{
     pointerId: number;
     screenWidth: number;
@@ -45,6 +53,11 @@ export function DeviceShell({
   const [areaSize, setAreaSize] = useState({ width: 0, height: 0 });
   const metadata = surfaceState.metadata;
   const metadataKey = `${metadata.deviceId}:${metadata.screenWidth}:${metadata.screenHeight}`;
+  if (!videoCanvasBindingRef.current) {
+    videoCanvasBindingRef.current = bindDeviceVideoCanvas({
+      onRendererChange: onDeviceVideoRendererChange,
+    });
+  }
 
   useEffect(() => {
     const area = areaRef.current;
@@ -103,25 +116,23 @@ export function DeviceShell({
     metadata.screenWidth,
   ]);
 
+  const setCanvasElement = useCallback((canvas: HTMLCanvasElement | null) => {
+    videoCanvasBindingRef.current?.setCanvas(canvas);
+  }, []);
+
   useEffect(() => {
-    if (surfaceState.status !== 'renderingVideo') {
-      return;
-    }
-
-    const canvas = canvasRef.current;
-    if (!canvas) {
-      return;
-    }
-
-    drawDeviceVideoFrame({
-      canvas,
+    videoCanvasBindingRef.current?.resize({
       screenHeight: metadata.screenHeight,
       screenWidth: metadata.screenWidth,
-      videoFrame: surfaceState.videoFrame as CanvasImageSource & {
-        close?: () => void;
-      },
     });
-  }, [metadata.screenHeight, metadata.screenWidth, surfaceState]);
+  }, [metadata.screenHeight, metadata.screenWidth]);
+
+  useEffect(() => {
+    const videoCanvasBinding = videoCanvasBindingRef.current;
+    return () => {
+      videoCanvasBinding?.close();
+    };
+  }, []);
 
   const sendPointerMessage = (
     action: 'down' | 'move' | 'up' | 'cancel',
@@ -210,18 +221,17 @@ export function DeviceShell({
             }}
             title={metadata.deviceId}
           >
-            {surfaceState.status === 'renderingVideo' ? (
-              <canvas
-                aria-label="Device video"
-                className="device-view-canvas"
-                ref={canvasRef}
-              />
-            ) : (
+            <canvas
+              aria-label="Device video"
+              className="device-view-canvas"
+              ref={setCanvasElement}
+            />
+            {surfaceState.status === 'waitingForVideo' ? (
               <>
                 <div className="device-view-status">Waiting for video</div>
                 <div className="device-view-device-id">{metadata.deviceId}</div>
               </>
-            )}
+            ) : null}
           </div>
         ) : null}
       </div>

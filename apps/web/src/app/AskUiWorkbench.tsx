@@ -51,6 +51,7 @@ export function AskUiWorkbench() {
         <LiveAppSurface
           isSelectWidgetActive={actions.topBarActionState.isSelectWidgetActive}
           onDeviceControlMessage={liveAppSurface.sendDeviceControlMessage}
+          onDeviceVideoRendererChange={liveAppSurface.setDeviceVideoRenderer}
           onRetry={liveAppSurface.retryLiveAppSurface}
           surfaceState={liveAppSurface.surfaceState}
           targetDeviceDisplay={targetDeviceDisplay}

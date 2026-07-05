@@ -86,7 +86,6 @@ test('applies complete metadata updates without changing waiting state', () => {
 });
 
 test('moves from Waiting for video to rendering after the first video frame is rendered', () => {
-  const videoFrame = { close() {} };
   const state = reduceLiveAppSurfaceFirstFrameRendered(
     {
       status: 'waitingForVideo',
@@ -99,7 +98,6 @@ test('moves from Waiting for video to rendering after the first video frame is r
         controlReady: true,
       },
     },
-    videoFrame,
   );
 
   assert.deepEqual(state, {
@@ -112,6 +110,21 @@ test('moves from Waiting for video to rendering after the first video frame is r
       videoCodec: 'h264',
       controlReady: true,
     },
-    videoFrame,
   });
+});
+
+test('keeps the same rendering state after later video frames render', () => {
+  const state = {
+    status: 'renderingVideo' as const,
+    metadata: {
+      deviceId: '19271FDF6007TY',
+      screenWidth: 1080,
+      screenHeight: 2400,
+      maxFps: 60,
+      videoCodec: 'h264' as const,
+      controlReady: true,
+    },
+  };
+
+  assert.equal(reduceLiveAppSurfaceFirstFrameRendered(state), state);
 });

@@ -12,6 +12,7 @@ import {
   type DeviceVideoPipeline,
   type WebCodecsLike,
 } from './deviceVideoPipeline';
+import type { DeviceVideoFrameRenderer } from './deviceVideoFrameRenderer';
 
 /**
  * Open and manage the Live App Surface Device WebSocket for a bridge session.
@@ -33,9 +34,11 @@ export function useLiveAppSurface(sessionId: string | null): {
   surfaceState: LiveAppSurfaceState;
   retryLiveAppSurface: () => void;
   sendDeviceControlMessage: (message: DeviceControlMessage) => void;
+  setDeviceVideoRenderer: (renderer: DeviceVideoFrameRenderer | null) => void;
 } {
   const [retryToken, setRetryToken] = useState(0);
   const socketRef = useRef<WebSocket | null>(null);
+  const videoRendererRef = useRef<DeviceVideoFrameRenderer | null>(null);
   const [surfaceState, setSurfaceState] = useState<LiveAppSurfaceState>(() =>
     getInitialLiveAppSurfaceState(sessionId),
   );
@@ -46,6 +49,12 @@ export function useLiveAppSurface(sessionId: string | null): {
         return;
       }
       socket.send(JSON.stringify(message));
+    },
+    [],
+  );
+  const setDeviceVideoRenderer = useCallback(
+    (renderer: DeviceVideoFrameRenderer | null) => {
+      videoRendererRef.current = renderer;
     },
     [],
   );
@@ -73,8 +82,18 @@ export function useLiveAppSurface(sessionId: string | null): {
         });
       },
       onFrame: (videoFrame) => {
+        const videoRenderer = videoRendererRef.current;
+        if (!videoRenderer) {
+          const maybeClosableFrame = videoFrame as { close?: () => void };
+          maybeClosableFrame.close?.();
+          return;
+        }
+
+        videoRenderer.render(
+          videoFrame as CanvasImageSource & { close?: () => void },
+        );
         setSurfaceState((state) =>
-          reduceLiveAppSurfaceFirstFrameRendered(state, videoFrame),
+          reduceLiveAppSurfaceFirstFrameRendered(state),
         );
       },
       onFirstFrameRendered: () => {},
@@ -166,6 +185,7 @@ export function useLiveAppSurface(sessionId: string | null): {
       setRetryToken((current) => current + 1);
     },
     sendDeviceControlMessage,
+    setDeviceVideoRenderer,
   };
 }
 
