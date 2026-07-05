@@ -318,6 +318,17 @@ class AskUiBridgeServer {
 
     _activeDeviceSessionIds.add(sessionId);
     DeviceStream? deviceStream;
+    var socketClosed = false;
+    var deviceStreamClosed = false;
+    Future<void> closeDeviceStream() async {
+      final stream = deviceStream;
+      if (stream == null || deviceStreamClosed) {
+        return;
+      }
+      deviceStreamClosed = true;
+      await stream.close();
+    }
+
     socket.listen(
       (message) {
         if (message is! String) {
@@ -341,13 +352,15 @@ class AskUiBridgeServer {
         }
       },
       onDone: () async {
+        socketClosed = true;
         _activeDeviceSessionIds.remove(sessionId);
-        await deviceStream?.close();
+        await closeDeviceStream();
         _logger.info('device websocket session=$sessionId close');
       },
       onError: (error) async {
+        socketClosed = true;
         _activeDeviceSessionIds.remove(sessionId);
-        await deviceStream?.close();
+        await closeDeviceStream();
         _logger.info('device websocket session=$sessionId error=$error');
       },
     );
@@ -365,6 +378,10 @@ class AskUiBridgeServer {
         session: session,
         sink: streamSink,
       );
+      if (socketClosed) {
+        await closeDeviceStream();
+        return;
+      }
       if (request.uri.queryParameters['debugMetadata'] == 'rotation') {
         streamSink.sendMetadata(DeviceMetadata(
           deviceId: session.deviceId,
@@ -380,6 +397,9 @@ class AskUiBridgeServer {
         'device websocket session=$sessionId start_failed '
         'error=$error\nStack trace:\n$stackTrace',
       );
+      if (socketClosed) {
+        return;
+      }
       socket.add(jsonEncode({
         'type': 'error',
         'error': 'device_start_failed',

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:ask_ui_bridge/device/device_stream.dart';
+import 'package:ask_ui_bridge/sessions/session_store.dart';
 import 'package:test/test.dart';
 
 import 'bridge_server_test_harness.dart';
@@ -148,6 +150,32 @@ void main() {
 
       expect(message, containsPair('type', 'ready'));
       expect(message, containsPair('deviceId', '19271FDF6007TY'));
+    });
+
+    test('closes a device stream that starts after the WebSocket closes',
+        () async {
+      final streamFactory = DelayedDeviceStreamFactory();
+      await fixture.restartWithDeviceSource(streamFactory);
+      final client = HttpClient();
+      addTearDown(client.close);
+      final sessionId = await createSession(client, fixture.baseUri);
+      final deviceUri = fixture.baseUri.replace(
+        scheme: 'ws',
+        path: '/api/sessions/$sessionId/device',
+      );
+
+      final socket = await WebSocket.connect(deviceUri.toString());
+      await streamFactory.started.future.timeout(const Duration(seconds: 2));
+      await socket.close();
+      await waitForLog(
+        fixture.logs,
+        '[ask_ui_bridge] device websocket session=$sessionId close',
+      );
+      final stream = RecordingDeviceStream();
+
+      streamFactory.complete(stream);
+
+      await stream.closed.future.timeout(const Duration(seconds: 2));
     });
 
     test('rejects a device WebSocket for an unknown session', () async {
@@ -525,6 +553,49 @@ Future<ReadyDeviceSocket> openReadyDeviceSocket(
 Future<Map<String, Object?>> readJsonMessage(Stream<dynamic> messages) async {
   return jsonDecode(await messages.first.timeout(const Duration(seconds: 2)))
       as Map<String, Object?>;
+}
+
+Future<void> waitForLog(List<String> logs, String expected) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (DateTime.now().isBefore(deadline)) {
+    if (logs.contains(expected)) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+  fail('Expected log not found: $expected');
+}
+
+class DelayedDeviceStreamFactory implements DeviceStreamFactory {
+  final started = Completer<void>();
+  final _stream = Completer<DeviceStream>();
+
+  @override
+  Future<DeviceStream> start({
+    required BridgeSession session,
+    required DeviceStreamSink sink,
+  }) {
+    started.complete();
+    return _stream.future;
+  }
+
+  void complete(DeviceStream stream) {
+    _stream.complete(stream);
+  }
+}
+
+class RecordingDeviceStream implements DeviceStream {
+  final closed = Completer<void>();
+
+  @override
+  Future<void> handleControl(Map<String, Object?> message) async {}
+
+  @override
+  Future<void> close() async {
+    if (!closed.isCompleted) {
+      closed.complete();
+    }
+  }
 }
 
 class ReadyDeviceSocket {
