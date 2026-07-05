@@ -24,6 +24,10 @@ Ask UI binds a workbench session to one Target Device from the page URL at start
 
 The startup parameter is `deviceId`, the stable Android device serial used directly for ADB and scrcpy targeting.
 
+The Target Device Display Name is the human-readable device name reported for the Target Device.
+
+It is used for developer-facing identification, while `deviceId` remains the stable targeting identifier.
+
 Without a Target Device, the workbench session is not established.
 
 One `vmServiceUri` belongs to exactly one Target Device for the lifetime of the workbench session.

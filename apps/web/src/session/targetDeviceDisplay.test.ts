@@ -42,7 +42,24 @@ test('describes Target Device error state', () => {
   );
 });
 
-test('describes ready Target Device state with the real device id', () => {
+test('describes ready Target Device state with the display name in the TopBar', () => {
+  assert.deepEqual(
+    getTargetDeviceDisplay({
+      status: 'ready',
+      sessionId: 'session-1',
+      targetDeviceId: '19271FDF6007TY',
+      targetDeviceDisplayName: 'Pixel 6',
+    }),
+    {
+      topBarLabel: 'Pixel 6',
+      surfaceLabel: '19271FDF6007TY',
+      title: 'Pixel 6 (19271FDF6007TY)',
+      status: 'ready',
+    },
+  );
+});
+
+test('falls back to the target device id when display name is missing', () => {
   assert.deepEqual(
     getTargetDeviceDisplay({
       status: 'ready',

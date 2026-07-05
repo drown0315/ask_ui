@@ -322,7 +322,7 @@ class RecordingFlutterAppController implements FlutterAppController {
 
 class FailingFlutterDeviceChecker implements FlutterDeviceChecker {
   @override
-  Future<FlutterDeviceAvailability> checkDeviceId(String deviceId) async {
+  Future<FlutterDeviceCheckResult> checkDeviceId(String deviceId) async {
     throw StateError('Flutter devices exploded');
   }
 }

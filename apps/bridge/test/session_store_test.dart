@@ -28,15 +28,18 @@ void main() {
         vmServiceUri: 'ws://127.0.0.1:12345/ws',
         projectRoot: '/Users/example/app',
         deviceId: '19271FDF6007TY',
+        deviceDisplayName: 'Pixel 6',
       );
       final secondSession = store.createSession(
         vmServiceUri: '  ws://127.0.0.1:12345/ws  ',
         projectRoot: '  /Users/example/app  ',
         deviceId: '  19271FDF6007TY  ',
+        deviceDisplayName: 'Updated Pixel 6',
       );
 
       expect(secondSession, same(firstSession));
       expect(secondSession.id, firstSession.id);
+      expect(secondSession.deviceDisplayName, 'Updated Pixel 6');
       expect(store.sessionCount, 1);
     });
 

@@ -29,6 +29,7 @@ export type BridgeSessionState =
       status: 'ready';
       sessionId: string;
       targetDeviceId: string;
+      targetDeviceDisplayName?: string;
     }
   | {
       status: 'error';

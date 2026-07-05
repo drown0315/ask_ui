@@ -118,6 +118,10 @@ void main() {
       expect(response.statusCode, HttpStatus.ok);
       expect(body['sessionId'], isA<String>());
       expect(body['sessionId'], isNotEmpty);
+      expect(body['targetDevice'], {
+        'id': '19271FDF6007TY',
+        'displayName': 'Pixel 6',
+      });
       expect(fixture.logs, contains('[ask_ui_bridge] session create start'));
       expect(
         fixture.logs,

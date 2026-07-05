@@ -24,8 +24,8 @@ export type TargetDeviceDisplay = {
  * Stable TopBar and Live App Surface labels for the Target Device area.
  *
  * Example:
- * A ready session for `19271FDF6007TY` returns `Device 19271FDF6007TY` for the
- * TopBar and the raw id for the Live App Surface context.
+ * A ready session for `19271FDF6007TY` named `Pixel 6` returns `Pixel 6` for
+ * the TopBar and the raw id for the Live App Surface context.
  */
 export function getTargetDeviceDisplay(
   state: BridgeSessionState,
@@ -54,6 +54,16 @@ export function getTargetDeviceDisplay(
       surfaceLabel: 'Device unavailable',
       title: state.message,
       status: 'error',
+    };
+  }
+
+  const displayName = state.targetDeviceDisplayName?.trim() ?? '';
+  if (displayName) {
+    return {
+      topBarLabel: displayName,
+      surfaceLabel: state.targetDeviceId,
+      title: `${displayName} (${state.targetDeviceId})`,
+      status: 'ready',
     };
   }
 

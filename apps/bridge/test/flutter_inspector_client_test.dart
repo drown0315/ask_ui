@@ -23,7 +23,7 @@ void main() {
       );
 
       final root = await client.fetchRootWidgetTree(
-        const BridgeSession(
+        BridgeSession(
           id: 'session-1',
           vmServiceUri: 'ws://127.0.0.1:12345/ws',
           projectRoot: '/Users/example/app',
@@ -73,7 +73,7 @@ void main() {
       );
 
       final root = await client.fetchRootWidgetTree(
-        const BridgeSession(
+        BridgeSession(
           id: 'session-1',
           vmServiceUri: 'ws://127.0.0.1:12345/ws',
           projectRoot: '/Users/example/app',
@@ -98,7 +98,7 @@ void main() {
       );
 
       final result = await client.setSelectWidgetMode(
-        const BridgeSession(
+        BridgeSession(
           id: 'session-1',
           vmServiceUri: 'ws://127.0.0.1:12345/ws',
           projectRoot: '/Users/example/app',
@@ -138,7 +138,7 @@ void main() {
       );
 
       final result = await client.selectWidgetById(
-        const BridgeSession(
+        BridgeSession(
           id: 'session-1',
           vmServiceUri: 'ws://127.0.0.1:12345/ws',
           projectRoot: '/Users/example/app',
@@ -178,7 +178,7 @@ void main() {
         vmServiceFactory: RecordingFlutterInspectorVmServiceFactory(vmService),
         logger: BridgeLogger(write: logs.add),
       );
-      const session = BridgeSession(
+      final session = BridgeSession(
         id: 'session-1',
         vmServiceUri: 'ws://127.0.0.1:12345/ws',
         projectRoot: '/Users/example/app',

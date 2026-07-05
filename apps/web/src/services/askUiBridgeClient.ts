@@ -6,6 +6,10 @@ export type CreateBridgeSessionRequest = {
 
 export type CreateBridgeSessionResponse = {
   sessionId: string;
+  targetDevice?: {
+    id: string;
+    displayName?: string;
+  };
 };
 
 export type WidgetTreeNodeResponse = {
@@ -218,9 +222,27 @@ export async function createBridgeSession(
     throw new Error('Bridge session response did not include sessionId');
   }
 
-  return {
+  const responseBody: CreateBridgeSessionResponse = {
     sessionId: body.sessionId,
   };
+
+  if (
+    body.targetDevice &&
+    typeof body.targetDevice === 'object' &&
+    'id' in body.targetDevice &&
+    typeof body.targetDevice.id === 'string'
+  ) {
+    responseBody.targetDevice = {
+      id: body.targetDevice.id,
+      displayName:
+        'displayName' in body.targetDevice &&
+        typeof body.targetDevice.displayName === 'string'
+          ? body.targetDevice.displayName
+          : undefined,
+    };
+  }
+
+  return responseBody;
 }
 
 /**
