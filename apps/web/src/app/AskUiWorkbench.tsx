@@ -38,7 +38,10 @@ export function AskUiWorkbench() {
         onHotReload={actions.handleHotReload}
         onHotRestart={actions.handleHotRestart}
         onToggleSelectWidget={actions.handleToggleSelectWidget}
-        statusMessage={getTopBarStatusMessage(actions.topBarActionState)}
+        statusMessage={getTopBarStatusMessage(
+          actions.topBarActionState,
+          targetDeviceDisplay,
+        )}
         targetDeviceDisplay={targetDeviceDisplay}
       />
       <div className="workbench-content" style={panelResize.contentStyle}>

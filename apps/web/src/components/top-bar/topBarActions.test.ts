@@ -69,3 +69,15 @@ test('marks hot actions unavailable when no bridge session is ready', () => {
     'Bridge session required before hot reload.',
   );
 });
+
+test('describes incomplete Target Device sessions instead of ready', () => {
+  assert.equal(
+    getTopBarStatusMessage(initialTopBarActionState, {
+      topBarLabel: 'Device required',
+      surfaceLabel: 'Device required',
+      title: 'Device required',
+      status: 'incomplete',
+    }),
+    'Session incomplete',
+  );
+});
