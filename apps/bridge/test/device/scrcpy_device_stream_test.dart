@@ -80,6 +80,16 @@ void main() {
         'control=true',
       ]),
     );
+    expect(runner.startedCommands.single, contains('max_size=1080'));
+  });
+
+  test('does not scale the scrcpy stream by default', () {
+    final config = ScrcpyDeviceStreamConfig.fromEnvironment(
+      environment: const {},
+      scidFactory: () => 'abc123',
+    );
+
+    expect(config.maxSize, 0);
   });
 
   test('writes touch and system key controls to the scrcpy control socket',

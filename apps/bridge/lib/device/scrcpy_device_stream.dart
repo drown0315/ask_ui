@@ -43,17 +43,20 @@ class ScrcpyDeviceStreamConfig {
   /// Example:
   /// `SCRCPY_SERVER=/tmp/scrcpy-server MAX_FPS=30` returns a config that
   /// pushes `/tmp/scrcpy-server` and starts scrcpy with `max_fps=30`.
-  factory ScrcpyDeviceStreamConfig.fromEnvironment() {
-    final environment = Platform.environment;
+  factory ScrcpyDeviceStreamConfig.fromEnvironment({
+    Map<String, String>? environment,
+    String Function()? scidFactory,
+  }) {
+    final effectiveEnvironment = environment ?? Platform.environment;
     return ScrcpyDeviceStreamConfig(
-      adbExecutable: environment['ADB'] ?? 'adb',
-      serverPath: environment['SCRCPY_SERVER'] ??
+      adbExecutable: effectiveEnvironment['ADB'] ?? 'adb',
+      serverPath: effectiveEnvironment['SCRCPY_SERVER'] ??
           '/opt/homebrew/Cellar/scrcpy/4.0/share/scrcpy/scrcpy-server',
-      scid: createScrcpyScid(),
-      maxSize: int.tryParse(environment['MAX_SIZE'] ?? '') ?? 1080,
-      maxFps: int.tryParse(environment['MAX_FPS'] ?? '') ?? 60,
+      scid: scidFactory?.call() ?? createScrcpyScid(),
+      maxSize: int.tryParse(effectiveEnvironment['MAX_SIZE'] ?? '') ?? 0,
+      maxFps: int.tryParse(effectiveEnvironment['MAX_FPS'] ?? '') ?? 60,
       videoBitRate:
-          int.tryParse(environment['VIDEO_BIT_RATE'] ?? '') ?? 8000000,
+          int.tryParse(effectiveEnvironment['VIDEO_BIT_RATE'] ?? '') ?? 8000000,
     );
   }
 
@@ -415,7 +418,7 @@ class ScrcpyDeviceStream implements DeviceStream {
   /// The returned list includes `raw_stream=true` so the video socket carries
   /// Annex B H.264 bytes instead of scrcpy frame metadata.
   List<String> _serverArgs() {
-    return [
+    final args = [
       '-s',
       session.deviceId,
       'shell',
@@ -429,12 +432,14 @@ class ScrcpyDeviceStream implements DeviceStream {
       'audio=false',
       'control=true',
       'raw_stream=true',
-      'max_size=${_config.maxSize}',
+      if (_config.maxSize > 0) 'max_size=${_config.maxSize}',
       'max_fps=${_config.maxFps}',
       'video_bit_rate=${_config.videoBitRate}',
       'cleanup=false',
       'power_on=false',
     ];
+
+    return args;
   }
 
   /// Encode one validated touch message as a scrcpy control packet.
