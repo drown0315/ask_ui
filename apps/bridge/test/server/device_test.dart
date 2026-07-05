@@ -57,6 +57,50 @@ void main() {
       );
     });
 
+    test('streams device source ready metadata and H264 chunks', () async {
+      await fixture.restartWithDeviceSource(
+        FakeDeviceSourceFactory(
+          ready: const FakeDeviceReady(
+            screenWidth: 720,
+            screenHeight: 1280,
+            maxFps: 30,
+          ),
+          videoChunks: [
+            [0, 0, 0, 1, 0x65],
+          ],
+        ),
+      );
+      final client = HttpClient();
+      addTearDown(client.close);
+      final sessionId = await createSession(client, fixture.baseUri);
+      final deviceUri = fixture.baseUri.replace(
+        scheme: 'ws',
+        path: '/api/sessions/$sessionId/device',
+      );
+
+      final socket = await WebSocket.connect(deviceUri.toString());
+      addTearDown(socket.close);
+      final messages = socket.asBroadcastStream();
+
+      final readyMessage = jsonDecode(await messages.first.timeout(
+        const Duration(seconds: 2),
+      )) as Map<String, Object?>;
+      final videoChunk = await messages.firstWhere((message) {
+        return message is List<int>;
+      }).timeout(const Duration(seconds: 2)) as List<int>;
+
+      expect(readyMessage, {
+        'type': 'ready',
+        'deviceId': '19271FDF6007TY',
+        'screenWidth': 720,
+        'screenHeight': 1280,
+        'maxFps': 30,
+        'videoCodec': 'h264',
+        'controlReady': true,
+      });
+      expect(videoChunk, [0, 0, 0, 1, 0x65]);
+    });
+
     test('rejects a second active device WebSocket for one session', () async {
       final client = HttpClient();
       addTearDown(client.close);
@@ -185,7 +229,7 @@ void main() {
       expect(
         fixture.logs,
         contains(
-          '[ask_ui_bridge] device websocket session=$sessionId fixture_video '
+          '[ask_ui_bridge] device websocket session=$sessionId video_chunk '
           'bytes=${videoChunk.length}',
         ),
       );

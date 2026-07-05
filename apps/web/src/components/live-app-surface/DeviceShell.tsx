@@ -115,7 +115,13 @@ export function DeviceShell({
 
     canvas.width = metadata.screenWidth;
     canvas.height = metadata.screenHeight;
-    context.drawImage(surfaceState.videoFrame as CanvasImageSource, 0, 0);
+    context.drawImage(
+      surfaceState.videoFrame as CanvasImageSource,
+      0,
+      0,
+      metadata.screenWidth,
+      metadata.screenHeight,
+    );
 
     return () => {
       const maybeClosableFrame = surfaceState.videoFrame as {

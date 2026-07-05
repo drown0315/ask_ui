@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:ask_ui_bridge/app_controller/flutter_app_controller.dart';
+import 'package:ask_ui_bridge/device/device_stream.dart';
 import 'package:ask_ui_bridge/inspector/flutter_inspector_client.dart';
 import 'package:ask_ui_bridge/logging/bridge_logger.dart';
 import 'package:ask_ui_bridge/server/ask_ui_bridge_server.dart';
@@ -21,18 +22,37 @@ class BridgeServerFixture {
     FlutterDeviceChecker flutterDeviceChecker = const FakeFlutterDeviceChecker(
       {'19271FDF6007TY', 'device-1', 'device-2'},
     ),
+    DeviceStreamFactory deviceStreamFactory = const ShellDeviceStreamFactory(),
   }) async {
     inspectorClient = RecordingFlutterInspectorClient();
     appController = RecordingFlutterAppController();
     logs = <String>[];
-    await _startServer(flutterDeviceChecker: flutterDeviceChecker);
+    await _startServer(
+      flutterDeviceChecker: flutterDeviceChecker,
+      deviceStreamFactory: deviceStreamFactory,
+    );
   }
 
   Future<void> restartWithDeviceChecker(
     FlutterDeviceChecker flutterDeviceChecker,
   ) async {
     await server.close();
-    await _startServer(flutterDeviceChecker: flutterDeviceChecker);
+    await _startServer(
+      flutterDeviceChecker: flutterDeviceChecker,
+      deviceStreamFactory: const ShellDeviceStreamFactory(),
+    );
+  }
+
+  Future<void> restartWithDeviceSource(
+    DeviceStreamFactory deviceStreamFactory,
+  ) async {
+    await server.close();
+    await _startServer(
+      flutterDeviceChecker: const FakeFlutterDeviceChecker(
+        {'19271FDF6007TY', 'device-1', 'device-2'},
+      ),
+      deviceStreamFactory: deviceStreamFactory,
+    );
   }
 
   Future<void> close() async {
@@ -41,12 +61,14 @@ class BridgeServerFixture {
 
   Future<void> _startServer({
     required FlutterDeviceChecker flutterDeviceChecker,
+    required DeviceStreamFactory deviceStreamFactory,
   }) async {
     server = AskUiBridgeServer(
       sessionStore: SessionStore(),
       inspectorClient: inspectorClient,
       appController: appController,
       flutterDeviceChecker: flutterDeviceChecker,
+      deviceStreamFactory: deviceStreamFactory,
       logger: BridgeLogger(write: logs.add),
     );
     final port = await server.start(
@@ -54,6 +76,47 @@ class BridgeServerFixture {
       port: 0,
     );
     baseUri = Uri.parse('http://${InternetAddress.loopbackIPv4.host}:$port');
+  }
+}
+
+class FakeDeviceReady {
+  const FakeDeviceReady({
+    required this.screenWidth,
+    required this.screenHeight,
+    required this.maxFps,
+  });
+
+  final int screenWidth;
+  final int screenHeight;
+  final int maxFps;
+}
+
+class FakeDeviceSourceFactory implements DeviceStreamFactory {
+  FakeDeviceSourceFactory({
+    required this.ready,
+    this.videoChunks = const [],
+  });
+
+  final FakeDeviceReady ready;
+  final List<List<int>> videoChunks;
+
+  @override
+  Future<DeviceStream> start({
+    required BridgeSession session,
+    required DeviceStreamSink sink,
+  }) async {
+    sink.sendReady(DeviceMetadata(
+      deviceId: session.deviceId,
+      screenWidth: ready.screenWidth,
+      screenHeight: ready.screenHeight,
+      maxFps: ready.maxFps,
+      videoCodec: 'h264',
+      controlReady: true,
+    ));
+    for (final chunk in videoChunks) {
+      sink.sendVideoChunk(chunk);
+    }
+    return const ShellDeviceStream();
   }
 }
 

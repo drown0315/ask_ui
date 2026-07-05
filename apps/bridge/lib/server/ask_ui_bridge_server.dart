@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../app_controller/flutter_app_controller.dart';
+import '../device/device_stream.dart';
+import '../device/scrcpy_device_stream.dart';
 import '../device_control/device_control_protocol.dart';
 import '../inspector/flutter_inspector_client.dart';
 import '../logging/bridge_logger.dart';
@@ -15,18 +17,22 @@ class AskUiBridgeServer {
     required FlutterInspectorClient inspectorClient,
     required FlutterAppController appController,
     FlutterDeviceChecker? flutterDeviceChecker,
+    DeviceStreamFactory? deviceStreamFactory,
     BridgeLogger? logger,
   })  : _sessionStore = sessionStore,
         _inspectorClient = inspectorClient,
         _appController = appController,
         _flutterDeviceChecker =
             flutterDeviceChecker ?? const FlutterDevicesCommandChecker(),
+        _deviceStreamFactory =
+            deviceStreamFactory ?? ScrcpyDeviceStreamFactory(),
         _logger = logger ?? BridgeLogger(write: print);
 
   final SessionStore _sessionStore;
   final FlutterInspectorClient _inspectorClient;
   final FlutterAppController _appController;
   final FlutterDeviceChecker _flutterDeviceChecker;
+  final DeviceStreamFactory _deviceStreamFactory;
   final BridgeLogger _logger;
   final Set<String> _activeDeviceSessionIds = {};
   HttpServer? _server;
@@ -308,6 +314,7 @@ class AskUiBridgeServer {
     }
 
     _activeDeviceSessionIds.add(sessionId);
+    DeviceStream? deviceStream;
     socket.listen(
       (message) {
         if (message is! String) {
@@ -325,53 +332,57 @@ class AskUiBridgeServer {
           return;
         }
         _logAcceptedDeviceControl(sessionId: sessionId, rawMessage: message);
+        final decoded = jsonDecode(message);
+        if (decoded is Map<String, Object?>) {
+          unawaited(deviceStream?.handleControl(decoded));
+        }
       },
-      onDone: () {
+      onDone: () async {
         _activeDeviceSessionIds.remove(sessionId);
+        await deviceStream?.close();
         _logger.info('device websocket session=$sessionId close');
       },
-      onError: (error) {
+      onError: (error) async {
         _activeDeviceSessionIds.remove(sessionId);
+        await deviceStream?.close();
         _logger.info('device websocket session=$sessionId error=$error');
       },
     );
-    final bool sendsFixtureVideo =
-        request.uri.queryParameters['debugVideo'] == 'fixture';
-    final int readyScreenWidth = sendsFixtureVideo ? 16 : 1080;
-    final int readyScreenHeight = sendsFixtureVideo ? 16 : 2400;
-    socket.add(jsonEncode({
-      'type': 'ready',
-      ..._buildDeviceMetadata(
-        deviceId: session.deviceId,
-        screenWidth: readyScreenWidth,
-        screenHeight: readyScreenHeight,
-      ),
-    }));
-    _logger.info(
-      'device websocket session=$sessionId ready '
-      'deviceId=${session.deviceId} '
-      'screenWidth=$readyScreenWidth screenHeight=$readyScreenHeight',
+    final streamSink = _WebSocketDeviceStreamSink(
+      socket: socket,
+      logger: _logger,
+      sessionId: sessionId,
     );
-    if (request.uri.queryParameters['debugMetadata'] == 'rotation') {
-      socket.add(jsonEncode({
-        'type': 'metadata',
-        ..._buildDeviceMetadata(
+    final streamFactory = request.uri.queryParameters['debugVideo'] == 'fixture'
+        ? FixtureH264DeviceStreamFactory(chunk: _fixtureH264AnnexBChunk)
+        : _deviceStreamFactory;
+
+    try {
+      deviceStream = await streamFactory.start(
+        session: session,
+        sink: streamSink,
+      );
+      if (request.uri.queryParameters['debugMetadata'] == 'rotation') {
+        streamSink.sendMetadata(DeviceMetadata(
           deviceId: session.deviceId,
           screenWidth: 2400,
           screenHeight: 1080,
-        ),
+          maxFps: 60,
+          videoCodec: 'h264',
+          controlReady: true,
+        ));
+      }
+    } catch (error, stackTrace) {
+      _logger.info(
+        'device websocket session=$sessionId start_failed '
+        'error=$error\nStack trace:\n$stackTrace',
+      );
+      socket.add(jsonEncode({
+        'type': 'error',
+        'error': 'device_start_failed',
+        'message': 'Device failed to start.',
       }));
-      _logger.info(
-        'device websocket session=$sessionId metadata '
-        'deviceId=${session.deviceId} screenWidth=2400 screenHeight=1080',
-      );
-    }
-    if (sendsFixtureVideo) {
-      socket.add(_fixtureH264AnnexBChunk);
-      _logger.info(
-        'device websocket session=$sessionId fixture_video '
-        'bytes=${_fixtureH264AnnexBChunk.length}',
-      );
+      await socket.close();
     }
   }
 
@@ -404,21 +415,6 @@ class AskUiBridgeServer {
       'device control session=$sessionId touch action=$action '
       'pointerId=${decoded['pointerId']} x=${decoded['x']} y=${decoded['y']}',
     );
-  }
-
-  Map<String, Object?> _buildDeviceMetadata({
-    required String deviceId,
-    required int screenWidth,
-    required int screenHeight,
-  }) {
-    return {
-      'deviceId': deviceId,
-      'screenWidth': screenWidth,
-      'screenHeight': screenHeight,
-      'maxFps': 60,
-      'videoCodec': 'h264',
-      'controlReady': true,
-    };
   }
 
   Future<void> _getWidgetTree(HttpRequest request) async {
@@ -863,6 +859,73 @@ class AskUiBridgeServer {
     required Map<String, Object?> data,
   }) {
     response.add(utf8.encode('event: $event\ndata: ${jsonEncode(data)}\n\n'));
+  }
+}
+
+class _WebSocketDeviceStreamSink implements DeviceStreamSink {
+  _WebSocketDeviceStreamSink({
+    required this.socket,
+    required this.logger,
+    required this.sessionId,
+  });
+
+  final WebSocket socket;
+  final BridgeLogger logger;
+  final String sessionId;
+
+  @override
+  void sendReady(DeviceMetadata metadata) {
+    socket.add(jsonEncode({
+      'type': 'ready',
+      ...metadata.toJson(),
+    }));
+    logger.info(
+      'device websocket session=$sessionId ready '
+      'deviceId=${metadata.deviceId} '
+      'screenWidth=${metadata.screenWidth} '
+      'screenHeight=${metadata.screenHeight}',
+    );
+  }
+
+  @override
+  void sendMetadata(DeviceMetadata metadata) {
+    socket.add(jsonEncode({
+      'type': 'metadata',
+      ...metadata.toJson(),
+    }));
+    logger.info(
+      'device websocket session=$sessionId metadata '
+      'deviceId=${metadata.deviceId} '
+      'screenWidth=${metadata.screenWidth} '
+      'screenHeight=${metadata.screenHeight}',
+    );
+  }
+
+  @override
+  void sendVideoChunk(List<int> bytes) {
+    socket.add(bytes);
+    logger.info(
+      'device websocket session=$sessionId video_chunk bytes=${bytes.length}',
+    );
+  }
+
+  @override
+  void fail(String error, String message) {
+    socket.add(jsonEncode({
+      'type': 'error',
+      'error': error,
+      'message': message,
+    }));
+  }
+
+  @override
+  void log(String message) {
+    logger.info('device websocket session=$sessionId $message');
+  }
+
+  @override
+  Future<void> close() async {
+    await socket.close();
   }
 }
 
