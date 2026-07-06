@@ -2,6 +2,7 @@ export type CreateBridgeSessionRequest = {
   vmServiceUri: string;
   projectRoot: string;
   deviceId: string;
+  clientId?: string;
 };
 
 export type CreateBridgeSessionResponse = {
@@ -10,11 +11,15 @@ export type CreateBridgeSessionResponse = {
     id: string;
     displayName?: string;
   };
+  readOnly: boolean;
 };
 
 export type WidgetTreeNodeResponse = {
   id: string;
   label: string;
+  sourceLocation?: string;
+  visibleText?: string;
+  semanticInfo?: string;
   children: WidgetTreeNodeResponse[];
 };
 
@@ -51,13 +56,80 @@ export type WidgetSelectionResponse = {
   message?: string;
 };
 
-export type BridgeSessionEvent = {
-  type: 'select_widget_mode_snapshot' | 'select_widget_mode_changed';
+export type AgentStatusResponse =
+  | 'waiting_for_agent'
+  | 'agent_ready'
+  | 'agent_working';
+
+export type ChatMessageResponse = {
+  id: string;
+  role: 'user' | 'agent' | 'system';
+  text: string;
+};
+
+export type GetChatSessionResponse = {
+  status: 'ok';
+  agentStatus: AgentStatusResponse;
+  readOnly: boolean;
+  messages: ChatMessageResponse[];
+};
+
+export type SendPlainTextChatMessageResponse = {
+  status: 'ok';
+  message: ChatMessageResponse;
+};
+
+export type BridgeSessionEvent =
+  | {
+      type: 'select_widget_mode_snapshot' | 'select_widget_mode_changed';
+      sessionId: string;
+      payload: {
+        known?: boolean;
+        enabled?: boolean;
+      };
+    }
+  | {
+      type: 'chat_snapshot';
+      sessionId: string;
+      payload: {
+        agentStatus: AgentStatusResponse;
+        messages: ChatMessageResponse[];
+      };
+    }
+  | {
+      type: 'agent_status_changed';
+      sessionId: string;
+      payload: {
+        agentStatus: AgentStatusResponse;
+      };
+    }
+  | {
+      type: 'chat_history_changed';
+      sessionId: string;
+      payload: {
+        messages: ChatMessageResponse[];
+      };
+    };
+
+export type SelectWidgetBridgeSessionEvent = Extract<
+  BridgeSessionEvent,
+  { type: 'select_widget_mode_snapshot' | 'select_widget_mode_changed' }
+>;
+
+export type ChatBridgeSessionEvent = Exclude<
+  BridgeSessionEvent,
+  SelectWidgetBridgeSessionEvent
+>;
+
+type LegacyBridgeSessionEvent = {
+  type:
+    | 'select_widget_mode_snapshot'
+    | 'select_widget_mode_changed'
+    | 'chat_snapshot'
+    | 'agent_status_changed'
+    | 'chat_history_changed';
   sessionId: string;
-  payload: {
-    known?: boolean;
-    enabled?: boolean;
-  };
+  payload: Record<string, unknown>;
 };
 
 type BridgeSessionEventSource = Pick<
@@ -67,6 +139,7 @@ type BridgeSessionEventSource = Pick<
 
 type SubscribeToBridgeSessionEventsOptions = {
   createEventSource?: (url: string) => BridgeSessionEventSource;
+  onDisconnect?: () => void;
   onInvalidEvent?: (error: Error) => void;
 };
 
@@ -224,6 +297,7 @@ export async function createBridgeSession(
 
   const responseBody: CreateBridgeSessionResponse = {
     sessionId: body.sessionId,
+    readOnly: body.readOnly === true,
   };
 
   if (
@@ -243,6 +317,106 @@ export async function createBridgeSession(
   }
 
   return responseBody;
+}
+
+/**
+ * Fetch the current Bridge Session Chat snapshot.
+ *
+ * Args:
+ * - `sessionId`: Existing bridge session id.
+ * - `clientId`: Browser-tab id used by the bridge to report read-only mode for
+ *   secondary tabs.
+ *
+ * Returns:
+ * Chat History, Agent Status, and whether this browser client is read-only.
+ */
+export async function getChatSession(
+  sessionId: string,
+  clientId: string | null = null,
+): Promise<GetChatSessionResponse> {
+  const url = new URL(
+    `${bridgeOrigin}/api/sessions/${encodeURIComponent(sessionId)}/chat`,
+  );
+  if (clientId) {
+    url.searchParams.set('clientId', clientId);
+  }
+
+  const response = await fetch(url.toString());
+  const body = await parseBridgeJsonResponse<Partial<GetChatSessionResponse>>(
+    response,
+    'Failed to load Chat History',
+  );
+
+  if (!response.ok) {
+    throw new BridgeRequestError(
+      body.message ?? body.error ?? 'Failed to load Chat History',
+      body.error,
+    );
+  }
+
+  if (
+    body.status !== 'ok' ||
+    !isAgentStatusResponse(body.agentStatus) ||
+    !Array.isArray(body.messages)
+  ) {
+    throw new Error('Chat response did not include Chat History');
+  }
+
+  return {
+    status: 'ok',
+    agentStatus: body.agentStatus,
+    readOnly: body.readOnly === true,
+    messages: body.messages,
+  };
+}
+
+/**
+ * Send one plain text Chat message to the active Agent Session poller.
+ *
+ * Args:
+ * - `sessionId`: Existing bridge session id.
+ * - `text`: Composer text. The caller is responsible for local empty-state and
+ *   length validation; the bridge repeats those checks before delivery.
+ *
+ * Returns:
+ * The stored user Chat History message when the active poller accepts it.
+ */
+export async function sendPlainTextChatMessage(
+  sessionId: string,
+  text: string,
+): Promise<SendPlainTextChatMessageResponse> {
+  const response = await fetch(
+    `${bridgeOrigin}/api/sessions/${encodeURIComponent(
+      sessionId,
+    )}/chat/messages`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text }),
+    },
+  );
+
+  const body = await parseBridgeJsonResponse<
+    Partial<SendPlainTextChatMessageResponse>
+  >(response, 'Failed to send Chat message');
+
+  if (!response.ok) {
+    throw new BridgeRequestError(
+      body.message ?? body.error ?? 'Failed to send Chat message',
+      body.error,
+    );
+  }
+
+  if (body.status !== 'ok' || !body.message) {
+    throw new Error('Chat send response did not include the sent message');
+  }
+
+  return {
+    status: 'ok',
+    message: body.message,
+  };
 }
 
 /**
@@ -518,6 +692,9 @@ export function subscribeToBridgeSessionEvents(
       );
     }
   });
+  source.addEventListener('error', () => {
+    options.onDisconnect?.();
+  });
 
   return {
     close() {
@@ -544,12 +721,9 @@ export function subscribeToBridgeSessionEvents(
  * becomes a typed event that can update the Select Widget toggle.
  */
 function parseBridgeSessionEvent(rawData: string): BridgeSessionEvent {
-  const decoded = JSON.parse(rawData) as Partial<BridgeSessionEvent>;
+  const decoded = JSON.parse(rawData) as Partial<LegacyBridgeSessionEvent>;
 
-  if (
-    decoded.type !== 'select_widget_mode_snapshot' &&
-    decoded.type !== 'select_widget_mode_changed'
-  ) {
+  if (!decoded.type || !isBridgeSessionEventType(decoded.type)) {
     throw new Error('Bridge session event has an unknown type');
   }
 
@@ -561,7 +735,54 @@ function parseBridgeSessionEvent(rawData: string): BridgeSessionEvent {
     throw new Error('Bridge session event did not include payload');
   }
 
+  validateBridgeSessionEventPayload(decoded as LegacyBridgeSessionEvent);
+
   return decoded as BridgeSessionEvent;
+}
+
+function isBridgeSessionEventType(
+  type: string,
+): type is LegacyBridgeSessionEvent['type'] {
+  return (
+    type === 'select_widget_mode_snapshot' ||
+    type === 'select_widget_mode_changed' ||
+    type === 'chat_snapshot' ||
+    type === 'agent_status_changed' ||
+    type === 'chat_history_changed'
+  );
+}
+
+function validateBridgeSessionEventPayload(event: LegacyBridgeSessionEvent) {
+  if (
+    event.type === 'select_widget_mode_snapshot' ||
+    event.type === 'select_widget_mode_changed'
+  ) {
+    return;
+  }
+
+  if (
+    (event.type === 'chat_snapshot' ||
+      event.type === 'agent_status_changed') &&
+    !isAgentStatusResponse(event.payload.agentStatus)
+  ) {
+    throw new Error('Chat event did not include Agent Status');
+  }
+
+  if (
+    (event.type === 'chat_snapshot' ||
+      event.type === 'chat_history_changed') &&
+    !Array.isArray(event.payload.messages)
+  ) {
+    throw new Error('Chat event did not include Chat History');
+  }
+}
+
+function isAgentStatusResponse(value: unknown): value is AgentStatusResponse {
+  return (
+    value === 'waiting_for_agent' ||
+    value === 'agent_ready' ||
+    value === 'agent_working'
+  );
 }
 
 async function postSessionAction<T extends { status: 'ok' }>(

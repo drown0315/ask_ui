@@ -13,7 +13,7 @@ The Ask UI page is a development-tool workbench, not a content site. The first v
 - WebSocket communication with a local bridge.
 - Target Device stream rendering through the bridge-owned Live App Surface.
 - DOM overlay positioning for selected widgets.
-- Selection note state management.
+- Selection Comment state management.
 - Agent handoff state.
 - Potential desktop wrapping after the web UI stabilizes.
 
@@ -40,7 +40,9 @@ apps/
         top-bar/
         widget-tree/
         live-app-surface/
-        selection-notes/
+        chat/
+      selection-comments/
+      chat/
       data/
         mockWorkbenchData.ts
       types/
@@ -143,18 +145,38 @@ For the first real Widget Tree integration, the intended scope was:
 - Treat missing `vmServiceUri`, missing `projectRoot`, or missing `deviceId` as an incomplete session state, and do not fetch the real tree.
 - Do not implement selected widget bounds, comments, or agent handoff in this slice.
 
-Minimal bridge API shape:
+Baseline bridge API shape:
 
 ```text
 POST /api/sessions
-body: { "vmServiceUri": "...", "projectRoot": "...", "deviceId": "..." }
-response: { "sessionId": "..." }
+body: { "vmServiceUri": "...", "projectRoot": "...", "deviceId": "...", "clientId": "..." }
+response: { "sessionId": "...", "targetDevice": { "id": "...", "displayName": "..." }, "readOnly": false }
 
 GET /api/sessions/:sessionId/widget-tree
 response: { "root": ... }
+
+GET /api/sessions/:sessionId/chat?clientId=...
+response: { "status": "ok", "agentStatus": "waiting_for_agent" | "agent_ready" | "agent_working", "readOnly": false, "messages": [...] }
+
+POST /api/sessions/:sessionId/chat/messages
+body: { "text": "..." }
+response: { "status": "ok", "message": { "id": "...", "role": "user", "text": "..." } }
+
+GET /api/sessions/:sessionId/agent/poll
+response: { "status": "ok", "message": { ... }, "nextStep": "..." }
+
+POST /api/sessions/:sessionId/agent/reply
+body: { "text": "..." }
+response: { "status": "ok", "message": { "id": "...", "role": "agent", "text": "..." } }
+
+POST /api/sessions/:sessionId/agent/error
+body: { "text": "..." }
+response: { "status": "ok", "message": { "id": "...", "role": "system", "text": "..." } }
 ```
 
 The web page should create one session per opened Ask UI page. The Widget Tree refresh action should reuse the existing `sessionId` and fetch a fresh tree snapshot from that session.
+
+The first browser tab that creates a Bridge Session is the primary client when it supplies `clientId`. Later browser tabs for the same session are read-only: they may observe Chat History and Agent Status, but cannot control the Live App Surface, Select Widget mode, Selection Comment editing, composer editing, or Send.
 
 The first real Widget Tree integration should fetch the Flutter Inspector summary tree only. The bridge should call `ext.flutter.inspector.getRootWidgetTree` with `isSummaryTree=true`, `withPreviews=true`, and `fullDetails=false`. Do not add a full-tree or "show implementation widgets" toggle in this slice.
 
@@ -196,6 +218,22 @@ Widget Tree refresh behavior:
 - Do not implement best-effort selection restoration in the first real Widget Tree integration.
 - Do not call `setSelectionById`, read selected widget bounds, or create comment targets in this slice.
 
+Selection Chat behavior:
+
+- Bridge Session memory owns Chat History and Agent Status.
+- Chat History is not restored after the bridge backend restarts or the Bridge Session is destroyed.
+- The session event stream remains the shared update path; no separate Chat WebSocket is introduced.
+- Session events include `select_widget_mode_snapshot`, `select_widget_mode_changed`, `chat_snapshot`, `agent_status_changed`, and `chat_history_changed`.
+- One Agent Session may long-poll `/api/sessions/:sessionId/agent/poll`; a second active poll is rejected.
+- Agent Status is `agent_ready` while a poller waits, `agent_working` after a user message is handed off, and `waiting_for_agent` when no poller is waiting.
+- Plain text Chat Send requires Agent Status `agent_ready`, non-empty text, and at most 4000 characters. Send has no offline queue.
+- Staged Selection Comments are local web state in this slice. Add comment requires Select Widget mode, reliable widget id and label, non-empty text, loaded Widget Tree state, and a batch of fewer than 20 comments.
+- Each staged Selection Comment creates a composer Attachment Token that shows only `#n` and widget label.
+- Attachment Token clicks for locatable widgets may synchronize Flutter Inspector selection and Widget Context Panel selection. Unavailable token clicks show stored widget metadata in the Chat Panel without navigating, forcing stale Inspector selection, or restoring stale markers.
+- Live App Surface markers are automatic and not draggable. They are visible only while Select Widget mode is on and the target widget id is currently locatable in the loaded Widget Tree.
+- Turning Select Widget mode off hides selection outline and markers without clearing staged Selection Comments or Attachment Tokens.
+- This slice does not send Selection Comments as Chat attachments, capture snapshots, store marker coordinates or widget bounds, or automatically restore markers after navigating back to a previously locatable widget.
+
 ## Styling
 
 Start with plain CSS or CSS Modules.
@@ -218,4 +256,4 @@ Do not use Next.js for the first version. The product does not need SSR, SEO, fi
 
 Do not start with Electron or Tauri. Build the browser web UI first. Desktop packaging can be evaluated after the core interaction is validated.
 
-Do not implement Flutter VM Service, device streaming, or agent communication as part of the static UI stack decision.
+The original static UI stack decision did not implement Flutter VM Service, device streaming, or agent communication. Those runtime capabilities now live behind the bridge-backed workbench integration described above.

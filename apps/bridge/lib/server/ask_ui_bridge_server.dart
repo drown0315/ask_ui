@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../app_controller/flutter_app_controller.dart';
+import '../chat/chat_session.dart';
 import '../device/device_stream.dart';
 import '../device/scrcpy_device_stream.dart';
 import '../device_control/device_control_protocol.dart';
@@ -119,6 +120,61 @@ class AskUiBridgeServer {
         request.uri.pathSegments.length == 4 &&
         request.uri.pathSegments[0] == 'api' &&
         request.uri.pathSegments[1] == 'sessions' &&
+        request.uri.pathSegments[3] == 'chat') {
+      await _getChat(request);
+      return;
+    }
+
+    if (request.method == 'POST' &&
+        request.uri.pathSegments.length == 5 &&
+        request.uri.pathSegments[0] == 'api' &&
+        request.uri.pathSegments[1] == 'sessions' &&
+        request.uri.pathSegments[3] == 'chat' &&
+        request.uri.pathSegments[4] == 'messages') {
+      await _sendChatMessage(request);
+      return;
+    }
+
+    if (request.method == 'GET' &&
+        request.uri.pathSegments.length == 5 &&
+        request.uri.pathSegments[0] == 'api' &&
+        request.uri.pathSegments[1] == 'sessions' &&
+        request.uri.pathSegments[3] == 'agent' &&
+        request.uri.pathSegments[4] == 'poll') {
+      await _pollAgent(request);
+      return;
+    }
+
+    if (request.method == 'POST' &&
+        request.uri.pathSegments.length == 5 &&
+        request.uri.pathSegments[0] == 'api' &&
+        request.uri.pathSegments[1] == 'sessions' &&
+        request.uri.pathSegments[3] == 'agent' &&
+        request.uri.pathSegments[4] == 'reply') {
+      await _writeAgentChatMessage(
+        request,
+        writeMessage: (chat, text) => chat.appendAgentReply(text),
+      );
+      return;
+    }
+
+    if (request.method == 'POST' &&
+        request.uri.pathSegments.length == 5 &&
+        request.uri.pathSegments[0] == 'api' &&
+        request.uri.pathSegments[1] == 'sessions' &&
+        request.uri.pathSegments[3] == 'agent' &&
+        request.uri.pathSegments[4] == 'error') {
+      await _writeAgentChatMessage(
+        request,
+        writeMessage: (chat, text) => chat.appendAgentError(text),
+      );
+      return;
+    }
+
+    if (request.method == 'GET' &&
+        request.uri.pathSegments.length == 4 &&
+        request.uri.pathSegments[0] == 'api' &&
+        request.uri.pathSegments[1] == 'sessions' &&
         request.uri.pathSegments[3] == 'select-widget-mode') {
       await _getSelectWidgetMode(request);
       return;
@@ -173,6 +229,7 @@ class AskUiBridgeServer {
     final vmServiceUri = body['vmServiceUri'];
     final projectRoot = body['projectRoot'];
     final deviceId = body['deviceId'];
+    final clientId = body['clientId'];
 
     if (vmServiceUri is! String ||
         projectRoot is! String ||
@@ -278,6 +335,7 @@ class AskUiBridgeServer {
         projectRoot: projectRoot,
         deviceId: deviceId,
         deviceDisplayName: targetDeviceCheck.device?.displayName ?? '',
+        clientId: clientId is String ? clientId : null,
       );
       await _writeJson(
         request.response,
@@ -287,6 +345,8 @@ class AskUiBridgeServer {
             'id': session.deviceId,
             'displayName': session.deviceDisplayName,
           },
+          'readOnly':
+              session.isReadOnlyClient(clientId is String ? clientId : null),
         },
       );
       _logger.info(
@@ -317,6 +377,268 @@ class AskUiBridgeServer {
         },
       );
     }
+  }
+
+  /// Return the current Chat state for one Bridge Session.
+  ///
+  /// This endpoint gives the web app an initial Chat History and Agent Status
+  /// snapshot before it starts consuming later updates from the existing
+  /// session events stream.
+  Future<void> _getChat(HttpRequest request) async {
+    final String sessionId = request.uri.pathSegments[2];
+    final BridgeSession? session = _sessionStore.find(sessionId);
+
+    if (session == null) {
+      _logger.info('chat request session=$sessionId session_not_found');
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notFound,
+        body: {'error': 'session_not_found'},
+      );
+      return;
+    }
+
+    final String? clientId = request.uri.queryParameters['clientId'];
+    await _writeJson(
+      request.response,
+      body: session.chat.snapshot().toJson(
+            readOnly: session.isReadOnlyClient(clientId),
+          ),
+    );
+  }
+
+  /// Send one plain text Chat message to the currently waiting Agent Session.
+  ///
+  /// This endpoint intentionally has no offline queue. If no Agent Session is
+  /// actively polling, the browser keeps its composer text and can try again
+  /// once Agent Status returns to `agent_ready`.
+  Future<void> _sendChatMessage(HttpRequest request) async {
+    final String sessionId = request.uri.pathSegments[2];
+    final BridgeSession? session = _sessionStore.find(sessionId);
+
+    if (session == null) {
+      _logger.info('chat send session=$sessionId session_not_found');
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notFound,
+        body: {'error': 'session_not_found'},
+      );
+      return;
+    }
+
+    late final Map<String, Object?> body;
+    try {
+      final String rawBody = await utf8.decodeStream(request);
+      final decoded = jsonDecode(rawBody);
+      if (decoded is! Map<String, Object?>) {
+        throw const FormatException('Expected JSON object');
+      }
+      body = decoded;
+    } on FormatException {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'invalid_json'},
+      );
+      return;
+    }
+
+    final text = body['text'];
+    if (text is! String || text.trim().isEmpty) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'empty_chat_message'},
+      );
+      return;
+    }
+
+    if (text.length > 4000) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'chat_message_too_long'},
+      );
+      return;
+    }
+
+    final ChatMessage? message = session.chat.sendUserTextMessage(text);
+    if (message == null) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.conflict,
+        body: {'error': 'agent_not_ready'},
+      );
+      return;
+    }
+
+    await _writeJson(
+      request.response,
+      body: {
+        'status': 'ok',
+        'message': message.toJson(),
+      },
+    );
+  }
+
+  /// Wait for the next Chat message for the launching Agent Session.
+  ///
+  /// The normal agent loop leaves `timeoutMs` unset and waits indefinitely.
+  /// Tests and debugging clients may pass `timeoutMs` to get a bounded response.
+  Future<void> _pollAgent(HttpRequest request) async {
+    final String sessionId = request.uri.pathSegments[2];
+    final BridgeSession? session = _sessionStore.find(sessionId);
+
+    if (session == null) {
+      _logger.info('agent poll session=$sessionId session_not_found');
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notFound,
+        body: {'error': 'session_not_found'},
+      );
+      return;
+    }
+
+    final Duration? timeout = _parseOptionalTimeout(
+      request.uri.queryParameters['timeoutMs'],
+    );
+    var clientDisconnected = false;
+    var responseWritten = false;
+    Timer? disconnectHeartbeat;
+    void markClientDisconnected() {
+      if (responseWritten || clientDisconnected) {
+        return;
+      }
+
+      clientDisconnected = true;
+      disconnectHeartbeat?.cancel();
+      session.chat.cancelAgentWait();
+    }
+
+    request.response.done.whenComplete(() {
+      markClientDisconnected();
+    });
+
+    try {
+      final Future<AgentPollResult> poll = session.chat.waitForAgentMessage(
+        timeout: timeout,
+      );
+      request.response.headers.contentType = ContentType.json;
+      request.response.write('\n');
+      await request.response.flush();
+      disconnectHeartbeat = Timer.periodic(
+        const Duration(milliseconds: 50),
+        (_) {
+          unawaited(
+            (() async {
+              try {
+                request.response.write('\n');
+                await request.response.flush();
+              } catch (_) {
+                markClientDisconnected();
+              }
+            })(),
+          );
+        },
+      );
+
+      final AgentPollResult result = await poll;
+      disconnectHeartbeat.cancel();
+      if (clientDisconnected) {
+        return;
+      }
+
+      responseWritten = true;
+      request.response.write(jsonEncode(result.toJson()));
+      await request.response.close();
+    } on AgentPollAlreadyActive {
+      responseWritten = true;
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.conflict,
+        body: {'error': 'agent_poll_already_active'},
+      );
+    }
+  }
+
+  Duration? _parseOptionalTimeout(String? timeoutMs) {
+    if (timeoutMs == null || timeoutMs.isEmpty) {
+      return null;
+    }
+
+    final int? milliseconds = int.tryParse(timeoutMs);
+    if (milliseconds == null || milliseconds < 0) {
+      return null;
+    }
+
+    return Duration(milliseconds: milliseconds);
+  }
+
+  /// Store one agent-authored Chat History message.
+  ///
+  /// The caller chooses whether the message is a normal `agent` reply or a
+  /// command-level `system` error. Both share the same plain text body contract.
+  Future<void> _writeAgentChatMessage(
+    HttpRequest request, {
+    required ChatMessage Function(ChatSession chat, String text) writeMessage,
+  }) async {
+    final String sessionId = request.uri.pathSegments[2];
+    final BridgeSession? session = _sessionStore.find(sessionId);
+
+    if (session == null) {
+      _logger.info('agent write session=$sessionId session_not_found');
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notFound,
+        body: {'error': 'session_not_found'},
+      );
+      return;
+    }
+
+    late final Map<String, Object?> body;
+    try {
+      final String rawBody = await utf8.decodeStream(request);
+      final decoded = jsonDecode(rawBody);
+      if (decoded is! Map<String, Object?>) {
+        throw const FormatException('Expected JSON object');
+      }
+      body = decoded;
+    } on FormatException {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'invalid_json'},
+      );
+      return;
+    }
+
+    final text = body['text'];
+    if (text is! String || text.trim().isEmpty) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'empty_chat_message'},
+      );
+      return;
+    }
+
+    if (text.length > 4000) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'chat_message_too_long'},
+      );
+      return;
+    }
+
+    final ChatMessage message = writeMessage(session.chat, text);
+    await _writeJson(
+      request.response,
+      body: {
+        'status': 'ok',
+        'message': message.toJson(),
+      },
+    );
   }
 
   Future<void> _openDevice(HttpRequest request) async {
@@ -728,10 +1050,12 @@ class AskUiBridgeServer {
   ///
   /// This method:
   /// 1. validates that the session exists
-  /// 2. writes one Select Widget mode snapshot as the first SSE event
+  /// 2. writes Select Widget mode and Chat snapshots as initial SSE events
   /// 3. forwards later Select Widget mode changes observed by the Inspector
   ///    client
-  /// 4. clears the subscription and heartbeat when the browser disconnects
+  /// 4. forwards later Chat History and Agent Status changes from the Bridge
+  ///    Session Chat state
+  /// 5. clears subscriptions and the heartbeat when the browser disconnects
   ///
   /// Args:
   /// - `request`: GET request whose path is
@@ -739,13 +1063,15 @@ class AskUiBridgeServer {
   ///   `session_not_found` response instead of an SSE stream.
   ///
   /// Returns:
-  /// A long-lived `text/event-stream` response. The first event has
-  /// `type=select_widget_mode_snapshot`; later updates use
-  /// `type=select_widget_mode_changed`.
+  /// A long-lived `text/event-stream` response. Initial events include
+  /// `select_widget_mode_snapshot` and `chat_snapshot`; later updates include
+  /// `select_widget_mode_changed`, `agent_status_changed`, and
+  /// `chat_history_changed`.
   ///
   /// Example:
-  /// A browser subscribing to `session-1` first receives the cached state, then
-  /// receives another event when DevTools toggles Select Widget mode.
+  /// A browser subscribing to `session-1` first receives cached Select Widget
+  /// and Chat state, then receives another event when DevTools toggles Select
+  /// Widget mode or Chat state changes.
   Future<void> _streamSessionEvents(HttpRequest request) async {
     final sessionId = request.uri.pathSegments[2];
     final session = _sessionStore.find(sessionId);
@@ -786,7 +1112,8 @@ class AskUiBridgeServer {
       ..set(HttpHeaders.connectionHeader, 'keep-alive');
 
     Timer? heartbeat;
-    StreamSubscription<SelectWidgetModeStatus>? subscription;
+    StreamSubscription<SelectWidgetModeStatus>? selectWidgetSubscription;
+    StreamSubscription<ChatSessionEvent>? chatSubscription;
     var streamClosed = false;
     var writeQueue = Future<void>.value();
 
@@ -796,7 +1123,8 @@ class AskUiBridgeServer {
       }
       streamClosed = true;
       heartbeat?.cancel();
-      await subscription?.cancel();
+      await selectWidgetSubscription?.cancel();
+      await chatSubscription?.cancel();
       _logger.info('events stream session=$sessionId close');
     }
 
@@ -835,7 +1163,26 @@ class AskUiBridgeServer {
       );
     });
 
-    subscription =
+    await enqueueSseWrite(() {
+      _writeSseEvent(
+        request.response,
+        event: 'bridge_session_event',
+        data: {
+          'type': 'chat_snapshot',
+          'sessionId': sessionId,
+          'payload': {
+            'agentStatus': session.chat.snapshot().agentStatus.wireName,
+            'messages': session.chat
+                .snapshot()
+                .messages
+                .map((message) => message.toJson())
+                .toList(),
+          },
+        },
+      );
+    });
+
+    selectWidgetSubscription =
         _inspectorClient.watchSelectWidgetModeStatus(session).listen((status) {
       unawaited(enqueueSseWrite(() {
         _writeSseEvent(
@@ -847,6 +1194,18 @@ class AskUiBridgeServer {
             'payload': {
               if (status.enabled != null) 'enabled': status.enabled,
             },
+          },
+        );
+      }));
+    });
+    chatSubscription = session.chat.events.listen((event) {
+      unawaited(enqueueSseWrite(() {
+        _writeSseEvent(
+          request.response,
+          event: 'bridge_session_event',
+          data: {
+            ...event.toJson(),
+            'sessionId': sessionId,
           },
         );
       }));

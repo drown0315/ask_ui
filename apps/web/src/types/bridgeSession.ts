@@ -1,6 +1,9 @@
 export type WidgetTreeNode = {
   id: string;
   label: string;
+  sourceLocation?: string;
+  visibleText?: string;
+  semanticInfo?: string;
   children: WidgetTreeNode[];
 };
 
@@ -30,6 +33,8 @@ export type BridgeSessionState =
       sessionId: string;
       targetDeviceId: string;
       targetDeviceDisplayName?: string;
+      clientId: string;
+      readOnly: boolean;
     }
   | {
       status: 'error';

@@ -134,7 +134,11 @@ class FakeDeviceSourceFactory implements DeviceStreamFactory {
   }
 }
 
-Future<String> createSession(HttpClient client, Uri baseUri) async {
+Future<String> createSession(
+  HttpClient client,
+  Uri baseUri, {
+  String? clientId,
+}) async {
   final createRequest = await client.postUrl(baseUri.resolve('/api/sessions'));
   createRequest.headers.contentType = ContentType.json;
   createRequest.write(
@@ -142,6 +146,7 @@ Future<String> createSession(HttpClient client, Uri baseUri) async {
       'vmServiceUri': 'ws://127.0.0.1:12345/ws',
       'projectRoot': '/Users/example/app',
       'deviceId': '19271FDF6007TY',
+      if (clientId != null) 'clientId': clientId,
     }),
   );
 
@@ -150,6 +155,43 @@ Future<String> createSession(HttpClient client, Uri baseUri) async {
       as Map<String, Object?>;
 
   return createBody['sessionId']! as String;
+}
+
+Future<String> readChatStatus(
+  HttpClient client,
+  Uri baseUri,
+  String sessionId,
+) async {
+  final request = await client.getUrl(
+    baseUri.resolve('/api/sessions/$sessionId/chat'),
+  );
+  final response = await request.close();
+  final body =
+      jsonDecode(await utf8.decodeStream(response)) as Map<String, Object?>;
+
+  return body['agentStatus']! as String;
+}
+
+Future<void> waitForChatStatus(
+  HttpClient client,
+  Uri baseUri,
+  String sessionId,
+  String status,
+) async {
+  final DateTime deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (DateTime.now().isBefore(deadline)) {
+    final String currentStatus = await readChatStatus(
+      client,
+      baseUri,
+      sessionId,
+    );
+    if (currentStatus == status) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+
+  throw StateError('Timed out waiting for Chat status $status.');
 }
 
 Stream<SseEvent> readSseEvents(HttpClientResponse response) async* {
