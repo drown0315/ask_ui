@@ -1050,10 +1050,12 @@ class AskUiBridgeServer {
   ///
   /// This method:
   /// 1. validates that the session exists
-  /// 2. writes one Select Widget mode snapshot as the first SSE event
+  /// 2. writes Select Widget mode and Chat snapshots as initial SSE events
   /// 3. forwards later Select Widget mode changes observed by the Inspector
   ///    client
-  /// 4. clears the subscription and heartbeat when the browser disconnects
+  /// 4. forwards later Chat History and Agent Status changes from the Bridge
+  ///    Session Chat state
+  /// 5. clears subscriptions and the heartbeat when the browser disconnects
   ///
   /// Args:
   /// - `request`: GET request whose path is
@@ -1061,13 +1063,15 @@ class AskUiBridgeServer {
   ///   `session_not_found` response instead of an SSE stream.
   ///
   /// Returns:
-  /// A long-lived `text/event-stream` response. The first event has
-  /// `type=select_widget_mode_snapshot`; later updates use
-  /// `type=select_widget_mode_changed`.
+  /// A long-lived `text/event-stream` response. Initial events include
+  /// `select_widget_mode_snapshot` and `chat_snapshot`; later updates include
+  /// `select_widget_mode_changed`, `agent_status_changed`, and
+  /// `chat_history_changed`.
   ///
   /// Example:
-  /// A browser subscribing to `session-1` first receives the cached state, then
-  /// receives another event when DevTools toggles Select Widget mode.
+  /// A browser subscribing to `session-1` first receives cached Select Widget
+  /// and Chat state, then receives another event when DevTools toggles Select
+  /// Widget mode or Chat state changes.
   Future<void> _streamSessionEvents(HttpRequest request) async {
     final sessionId = request.uri.pathSegments[2];
     final session = _sessionStore.find(sessionId);

@@ -18,8 +18,9 @@ enum AgentStatus {
 
 /// Role for one persisted Chat History message.
 ///
-/// Issue 2 only stores and serializes messages. Later slices append user,
-/// agent, and system messages through send/reply endpoints.
+/// User messages come from the browser composer, agent messages are normal
+/// Agent Session replies, and system messages represent command-level agent
+/// errors.
 enum ChatMessageRole {
   user('user'),
   agent('agent'),
@@ -33,8 +34,8 @@ enum ChatMessageRole {
 /// One message in Bridge Session Chat History.
 ///
 /// It carries the stable message id, the role displayed by the web Chat
-/// History, and plain text content. Attachment summaries are added in a later
-/// Selection Chat slice.
+/// History, and plain text content. Selection Comment attachments are added to
+/// message payloads in a later Selection Chat slice.
 class ChatMessage {
   const ChatMessage({
     required this.id,

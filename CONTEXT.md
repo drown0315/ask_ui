@@ -38,7 +38,7 @@ The `deviceId` startup parameter must identify that same Target Device.
 
 The center workbench surface where the developer views and operates the Flutter app running on the Target Device.
 
-It is the primary place for normal app interaction, widget selection, selected-area highlighting, and note markers.
+It is the primary place for normal app interaction, widget selection, selected-area highlighting, and Selection Comment markers.
 
 Pointer input on the Live App Surface is always sent to the Target Device. When Select Widget is enabled, Flutter Inspector decides whether that input selects a widget.
 _Avoid_: Device Stage, Operate Mode
@@ -54,3 +54,21 @@ It does not include the Surface Controls.
 The device-control area inside the Live App Surface for Android system actions such as Back, Home, and Recents.
 
 Surface Controls operate the Target Device but are not part of the Device View coordinate space.
+
+## Chat Panel
+
+The right-side workbench panel where the developer reviews the current selected widget, stages Selection Comments, sees Chat History, and sends Chat messages to the waiting Agent Session.
+
+The Chat Panel owns the visible Attachment Tokens for unsent Selection Comments, but staged Selection Comments remain local browser state until a later send slice attaches them to a Chat message.
+
+## Selection Comment
+
+A user-authored comment attached to a selected Flutter widget target.
+
+Selection Comments are staged locally before send. A staged comment can appear as an Attachment Token in the Chat composer and as a numbered marker on the Live App Surface while Select Widget mode is enabled and the widget target is currently locatable.
+
+## Attachment Token
+
+A compact Chat composer token for one staged Selection Comment.
+
+Attachment Tokens show only a `#n` number and widget label. They do not show the full comment text. Clicking a locatable token may synchronize the Flutter Inspector selection and Widget Context Panel selection; clicking an unavailable token still shows stored widget metadata in the Chat Panel without restoring stale app or overlay state.
