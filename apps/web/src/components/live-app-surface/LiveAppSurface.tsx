@@ -1,4 +1,5 @@
 import type { TargetDeviceDisplay } from '../../session/targetDeviceDisplay';
+import type { SelectionCommentOverlayMarker } from '../../selection-comments/selectionCommentState';
 import type { LiveAppSurfaceState } from '../../live-app-surface/liveAppSurfaceState';
 import type { DeviceControlMessage } from '../../live-app-surface/deviceControlProtocol';
 import type { DeviceVideoFrameRenderer } from '../../live-app-surface/deviceVideoFrameRenderer';
@@ -7,6 +8,7 @@ import { DeviceShell } from './DeviceShell';
 type LiveAppSurfaceProps = {
   isInputDisabled: boolean;
   isSelectWidgetActive: boolean;
+  overlayMarkers: SelectionCommentOverlayMarker[];
   onDeviceControlMessage: (message: DeviceControlMessage) => void;
   onDeviceVideoRendererChange: (
     renderer: DeviceVideoFrameRenderer | null,
@@ -19,6 +21,7 @@ type LiveAppSurfaceProps = {
 export function LiveAppSurface({
   isInputDisabled,
   isSelectWidgetActive,
+  overlayMarkers,
   onDeviceControlMessage,
   onDeviceVideoRendererChange,
   onRetry,
@@ -35,12 +38,27 @@ export function LiveAppSurface({
     >
       {surfaceState.status === 'waitingForVideo' ||
       surfaceState.status === 'renderingVideo' ? (
-        <DeviceShell
-          isInputDisabled={isInputDisabled}
-          onDeviceControlMessage={onDeviceControlMessage}
-          onDeviceVideoRendererChange={onDeviceVideoRendererChange}
-          surfaceState={surfaceState}
-        />
+        <div className="live-app-device-stage">
+          <DeviceShell
+            isInputDisabled={isInputDisabled}
+            onDeviceControlMessage={onDeviceControlMessage}
+            onDeviceVideoRendererChange={onDeviceVideoRendererChange}
+            surfaceState={surfaceState}
+          />
+          {overlayMarkers.length > 0 ? (
+            <div className="selection-marker-layer" aria-label="Selection Comment markers">
+              {overlayMarkers.map((marker) => (
+                <div
+                  className="selection-marker"
+                  key={marker.id}
+                  title={marker.widgetLabel}
+                >
+                  {marker.number}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
       ) : (
         <div className="live-app-surface-placeholder" title={content.title}>
           <div>{content.label}</div>
