@@ -1,4 +1,9 @@
-import { useState, type FormEvent, type KeyboardEvent } from 'react';
+import {
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react';
 import { getInitialChatPanelState } from './chatPanelContent';
 import {
   CHAT_COMPOSER_TEXT_LIMIT,
@@ -11,17 +16,39 @@ import {
   getVisibleChatHistoryMessages,
   type ChatSessionState,
 } from '../../chat/chatSessionState';
+import {
+  addSelectionComment,
+  deleteSelectionComment,
+  getDraftForSelectedWidget,
+  getInitialSelectionCommentState,
+  getNumberedSelectionComments,
+  getSelectionCommentInputState,
+  SELECTION_COMMENT_TEXT_LIMIT,
+  updateSelectionCommentDraft,
+  updateSelectionCommentText,
+  type SelectedWidgetTarget,
+} from '../../selection-comments/selectionCommentState';
 import { sendPlainTextChatMessage } from '../../services/askUiBridgeClient';
 
 export function ChatPanel({
   chatSessionState,
+  isSelectWidgetActive,
+  selectedWidget,
   sessionId,
+  widgetTreeStatus,
 }: {
   chatSessionState: ChatSessionState;
+  isSelectWidgetActive: boolean;
+  selectedWidget: SelectedWidgetTarget | null;
   sessionId: string | null;
+  widgetTreeStatus: 'loading' | 'loaded' | 'error';
 }) {
   const content = getInitialChatPanelState();
+  const commentInputRef = useRef<HTMLTextAreaElement>(null);
   const [composerText, setComposerText] = useState('');
+  const [selectionCommentState, setSelectionCommentState] = useState(
+    getInitialSelectionCommentState,
+  );
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const agentStatusValue =
@@ -36,6 +63,38 @@ export function ChatPanel({
   const composerDisabledReason =
     composerState.disabledReason ?? content.composerDisabledReason;
   const visibleMessages = getVisibleChatHistoryMessages(chatSessionState);
+  const selectionCommentText = getDraftForSelectedWidget(
+    selectionCommentState,
+    selectedWidget,
+  );
+  const selectedWidgetComments = getNumberedSelectionComments(
+    selectionCommentState,
+    selectedWidget,
+  );
+  const selectionCommentInputState = getSelectionCommentInputState({
+    isSelectWidgetActive,
+    selectedWidget,
+    widgetTreeStatus,
+    text: selectionCommentText,
+    batchSize: selectionCommentState.comments.length,
+  });
+
+  function handleAddSelectionComment() {
+    if (!selectionCommentInputState.canAdd || selectedWidget === null) {
+      return;
+    }
+
+    setSelectionCommentState((currentState) => {
+      const nextState = addSelectionComment(
+        currentState,
+        selectedWidget,
+        selectionCommentText,
+      );
+
+      return updateSelectionCommentDraft(nextState, selectedWidget, '');
+    });
+    requestAnimationFrame(() => commentInputRef.current?.focus());
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -86,7 +145,114 @@ export function ChatPanel({
         <div id="selected-widget-title" className="chat-section-title">
           {content.selectedWidgetTitle}
         </div>
-        <p className="chat-empty-state">{content.selectedWidgetEmptyState}</p>
+        {selectedWidget === null ? (
+          <p className="chat-empty-state">{content.selectedWidgetEmptyState}</p>
+        ) : (
+          <div className="selected-widget-content">
+            <div className="selected-widget-summary">
+              <div className="selected-widget-name">
+                {selectedWidget.displayLabel}
+              </div>
+              {selectedWidget.sourceLocation ? (
+                <div className="selected-widget-meta">
+                  {selectedWidget.sourceLocation}
+                </div>
+              ) : null}
+              {selectedWidget.visibleText ? (
+                <div className="selected-widget-detail">
+                  <span>Text</span>
+                  <strong>{selectedWidget.visibleText}</strong>
+                </div>
+              ) : null}
+              {selectedWidget.semanticInfo ? (
+                <div className="selected-widget-detail">
+                  <span>Semantic</span>
+                  <strong>{selectedWidget.semanticInfo}</strong>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="selection-comment-list" aria-label="Selection Comments">
+              {selectedWidgetComments.length === 0 ? (
+                <div className="selection-comment-empty">No Selection Comments.</div>
+              ) : (
+                selectedWidgetComments.map((comment) => (
+                  <div className="selection-comment-item" key={comment.id}>
+                    <div className="selection-comment-number">
+                      {comment.number}
+                    </div>
+                    <textarea
+                      aria-label={`Selection Comment ${comment.number}`}
+                      className="selection-comment-edit"
+                      maxLength={SELECTION_COMMENT_TEXT_LIMIT}
+                      onChange={(event) => {
+                        const nextText = event.currentTarget.value;
+
+                        setSelectionCommentState((currentState) =>
+                          updateSelectionCommentText(
+                            currentState,
+                            comment.id,
+                            nextText,
+                          ),
+                        );
+                      }}
+                      rows={2}
+                      value={comment.text}
+                    />
+                    <button
+                      aria-label={`Delete Selection Comment ${comment.number}`}
+                      className="selection-comment-delete"
+                      onClick={() =>
+                        setSelectionCommentState((currentState) =>
+                          deleteSelectionComment(currentState, comment.id),
+                        )
+                      }
+                      type="button"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="selection-comment-composer">
+              <textarea
+                aria-label="Selection Comment"
+                className="selection-comment-input"
+                maxLength={SELECTION_COMMENT_TEXT_LIMIT}
+                onChange={(event) => {
+                  const nextText = event.currentTarget.value;
+
+                  setSelectionCommentState((currentState) =>
+                    updateSelectionCommentDraft(
+                      currentState,
+                      selectedWidget,
+                      nextText,
+                    ),
+                  );
+                }}
+                placeholder="Comment on this widget..."
+                ref={commentInputRef}
+                rows={3}
+                value={selectionCommentText}
+              />
+              <div className="selection-comment-footer">
+                <span className="selection-comment-disabled-reason">
+                  {selectionCommentInputState.disabledReason}
+                </span>
+                <button
+                  className="selection-comment-add"
+                  disabled={!selectionCommentInputState.canAdd}
+                  onClick={handleAddSelectionComment}
+                  type="button"
+                >
+                  Add comment
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="chat-history" aria-labelledby="chat-history-title">

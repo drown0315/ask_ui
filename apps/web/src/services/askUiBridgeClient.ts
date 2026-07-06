@@ -17,6 +17,9 @@ export type CreateBridgeSessionResponse = {
 export type WidgetTreeNodeResponse = {
   id: string;
   label: string;
+  sourceLocation?: string;
+  visibleText?: string;
+  semanticInfo?: string;
   children: WidgetTreeNodeResponse[];
 };
 
