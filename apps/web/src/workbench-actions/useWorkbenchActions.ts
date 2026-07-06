@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BridgeRequestError,
   hotReloadSession,
@@ -64,6 +64,39 @@ export function useWorkbenchActions(
     previousActive: topBarActionState.isSelectWidgetActive,
     skipNextSync: false,
   });
+
+  const syncSelectWidgetModeFromBridgeEvent = useCallback(
+    (event: BridgeSessionEvent) => {
+      if (
+        event.sessionId !== sessionId ||
+        (event.type !== 'select_widget_mode_snapshot' &&
+          event.type !== 'select_widget_mode_changed') ||
+        typeof event.payload.enabled !== 'boolean'
+      ) {
+        return;
+      }
+
+      const externalEnabled = event.payload.enabled;
+      setTopBarActionState((state) => {
+        if (state.isSelectWidgetActive === externalEnabled) {
+          return state;
+        }
+
+        selectWidgetSyncRef.current.skipNextSync = true;
+        return {
+          ...state,
+          isSelectWidgetActive: externalEnabled,
+          selectWidget: {
+            status: 'idle',
+            message: externalEnabled
+              ? 'Select Widget mode enabled.'
+              : 'Select Widget mode disabled.',
+          },
+        };
+      });
+    },
+    [sessionId],
+  );
 
   useEffect(() => {
     if (!selectWidgetSyncRef.current.didMount) {
@@ -158,37 +191,7 @@ export function useWorkbenchActions(
     return () => {
       subscription.close();
     };
-  }, [sessionId]);
-
-  function syncSelectWidgetModeFromBridgeEvent(event: BridgeSessionEvent) {
-    if (
-      event.sessionId !== sessionId ||
-      (event.type !== 'select_widget_mode_snapshot' &&
-        event.type !== 'select_widget_mode_changed') ||
-      typeof event.payload.enabled !== 'boolean'
-    ) {
-      return;
-    }
-
-    const externalEnabled = event.payload.enabled;
-    setTopBarActionState((state) => {
-      if (state.isSelectWidgetActive === externalEnabled) {
-        return state;
-      }
-
-      selectWidgetSyncRef.current.skipNextSync = true;
-      return {
-        ...state,
-        isSelectWidgetActive: externalEnabled,
-        selectWidget: {
-          status: 'idle',
-          message: externalEnabled
-            ? 'Select Widget mode enabled.'
-            : 'Select Widget mode disabled.',
-        },
-      };
-    });
-  }
+  }, [sessionId, syncSelectWidgetModeFromBridgeEvent]);
 
   function handleToggleSelectWidget() {
     if (sessionId === null) {

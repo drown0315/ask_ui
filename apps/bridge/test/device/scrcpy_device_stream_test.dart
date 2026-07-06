@@ -581,13 +581,14 @@ class FakeScrcpyCommandRunner implements ScrcpyCommandRunner {
     scheduleMicrotask(() async {
       Socket? video;
       Socket? control;
-      if (connectVideoSocket) {
-        video = await Socket.connect(InternetAddress.loopbackIPv4, port);
-        videoSocket = video;
-        video.add([0, 0, 0, 1, 0x65]);
-        await video.flush();
-        addTearDown(video.destroy);
+      if (!connectVideoSocket) {
+        return;
       }
+      video = await Socket.connect(InternetAddress.loopbackIPv4, port);
+      videoSocket = video;
+      video.add([0, 0, 0, 1, 0x65]);
+      await video.flush();
+      addTearDown(video.destroy);
       if (connectControlSocket) {
         control = await Socket.connect(InternetAddress.loopbackIPv4, port);
         controlSocket = control;
@@ -600,8 +601,8 @@ class FakeScrcpyCommandRunner implements ScrcpyCommandRunner {
         });
         addTearDown(control.destroy);
       }
-      if ((connectVideoSocket && video != null) &&
-          (connectControlSocket && control != null) &&
+      if (connectControlSocket &&
+          control != null &&
           !_socketsReady.isCompleted) {
         _socketsReady.complete();
       }
