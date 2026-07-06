@@ -365,13 +365,16 @@ function WidgetTreeSessionState({
 export function WidgetTreePanel({
   bridgeSessionState,
   onRefresh,
+  onSelectedWidgetIdChange,
+  selectedWidgetId,
   widgetTreeState,
 }: {
   bridgeSessionState: BridgeSessionState;
   onRefresh: () => Promise<void>;
+  onSelectedWidgetIdChange: (widgetId: string | null) => void;
+  selectedWidgetId: string | null;
   widgetTreeState: WidgetTreeLoadState;
 }) {
-  const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchActiveIndex, setSearchActiveIndex] = useState(-1);
@@ -401,10 +404,10 @@ export function WidgetTreePanel({
     bridgeSessionState.status === 'ready' && widgetTreeState.status !== 'loading';
 
   useEffect(() => {
-    setSelectedWidgetId(null);
+    onSelectedWidgetIdChange(null);
     setSelectionError(null);
     setSearchActiveIndex(-1);
-  }, [widgetTreeState]);
+  }, [onSelectedWidgetIdChange, widgetTreeState]);
 
   async function handleSelectWidget(widgetId: string) {
     if (bridgeSessionState.status !== 'ready') {
@@ -412,13 +415,13 @@ export function WidgetTreePanel({
     }
 
     const previousWidgetId = selectedWidgetId;
-    setSelectedWidgetId(widgetId);
+    onSelectedWidgetIdChange(widgetId);
     setSelectionError(null);
 
     try {
       await selectWidgetById(bridgeSessionState.sessionId, widgetId);
     } catch (error: unknown) {
-      setSelectedWidgetId(previousWidgetId);
+      onSelectedWidgetIdChange(previousWidgetId);
       setSelectionError(
         error instanceof Error ? error.message : 'Failed to select Flutter widget',
       );
