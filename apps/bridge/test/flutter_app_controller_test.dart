@@ -25,7 +25,7 @@ void main() {
       );
 
       final result = await controller.hotReload(
-        const BridgeSession(
+        BridgeSession(
           id: 'session-1',
           vmServiceUri: 'ws://127.0.0.1:12345/ws',
           projectRoot: '/Users/example/app',
@@ -86,7 +86,7 @@ void main() {
       );
 
       final result = await controller.hotReload(
-        const BridgeSession(
+        BridgeSession(
           id: 'session-1',
           vmServiceUri: 'ws://127.0.0.1:12345/ws',
           projectRoot: '/Users/example/app',
@@ -135,7 +135,7 @@ void main() {
       );
 
       final result = await controller.hotRestart(
-        const BridgeSession(
+        BridgeSession(
           id: 'session-1',
           vmServiceUri: 'ws://127.0.0.1:12345/ws',
           projectRoot: '/Users/example/app',
@@ -172,7 +172,7 @@ void main() {
       );
 
       final result = await controller.hotRestart(
-        const BridgeSession(
+        BridgeSession(
           id: 'session-1',
           vmServiceUri: 'ws://127.0.0.1:12345/ws',
           projectRoot: '/Users/example/app',
@@ -212,7 +212,7 @@ void main() {
 
       await expectLater(
         controller.hotRestart(
-          const BridgeSession(
+          BridgeSession(
             id: 'session-1',
             vmServiceUri: 'ws://127.0.0.1:12345/ws',
             projectRoot: '/Users/example/app',

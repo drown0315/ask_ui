@@ -18,6 +18,22 @@ function initialBridgeSessionState(locationHref: string): BridgeSessionState {
   };
 }
 
+function getBridgeClientId(): string {
+  const storageKey = 'ask-ui-bridge-client-id';
+  try {
+    const existingClientId = window.sessionStorage.getItem(storageKey);
+    if (existingClientId) {
+      return existingClientId;
+    }
+
+    const nextClientId = window.crypto.randomUUID();
+    window.sessionStorage.setItem(storageKey, nextClientId);
+    return nextClientId;
+  } catch {
+    return `client-${Math.random().toString(36).slice(2)}`;
+  }
+}
+
 /**
  * Create or reuse the bridge session described by the workbench URL.
  *
@@ -53,13 +69,15 @@ export function useBridgeSession(locationHref: string): {
     }
 
     setBridgeSessionState({ status: 'creating' });
+    const clientId = getBridgeClientId();
 
     createBridgeSession({
       vmServiceUri: bootstrap.vmServiceUri,
       projectRoot: bootstrap.projectRoot,
       deviceId: bootstrap.deviceId,
+      clientId,
     }).then(
-      ({ sessionId }) => {
+      ({ sessionId, readOnly }) => {
         if (!isCurrent) {
           return;
         }
@@ -68,6 +86,8 @@ export function useBridgeSession(locationHref: string): {
           status: 'ready',
           sessionId,
           targetDeviceId: bootstrap.deviceId,
+          clientId,
+          readOnly,
         });
       },
       (error: unknown) => {

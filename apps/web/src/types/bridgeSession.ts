@@ -29,6 +29,8 @@ export type BridgeSessionState =
       status: 'ready';
       sessionId: string;
       targetDeviceId: string;
+      clientId: string;
+      readOnly: boolean;
     }
   | {
       status: 'error';

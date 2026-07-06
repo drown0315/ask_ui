@@ -1,3 +1,5 @@
+import '../chat/chat_session.dart';
+
 /// One Ask UI workbench session for a Flutter app target.
 ///
 /// It records:
@@ -5,6 +7,7 @@
 /// - the Flutter VM Service URI used to identify the running app
 /// - the Flutter project root used to identify the local source workspace
 /// - the Android device id bound to the running app
+/// - the in-memory Chat state for the Agent Session conversation
 ///
 /// Example:
 /// A page opened with `ws://127.0.0.1:12345/ws` and `/Users/example/app`
@@ -12,17 +15,39 @@
 /// the same values receives the same session because Ask UI treats that target
 /// as a singleton session.
 class BridgeSession {
-  const BridgeSession({
+  BridgeSession({
     required this.id,
     required this.vmServiceUri,
     required this.projectRoot,
     required this.deviceId,
-  });
+    this.primaryClientId,
+    ChatSession? chat,
+  }) : chat = chat ?? ChatSession();
 
   final String id;
   final String vmServiceUri;
   final String projectRoot;
   final String deviceId;
+  final String? primaryClientId;
+  final ChatSession chat;
+
+  /// Return whether a browser client should be read-only for this session.
+  ///
+  /// Args:
+  /// - `clientId`: Stable browser-tab client id supplied by the web app. When
+  ///   omitted, the caller is treated as writable so older callers can still
+  ///   load session state.
+  ///
+  /// Returns:
+  /// `true` only when the Bridge Session has a primary browser client and the
+  /// supplied client id belongs to another browser tab.
+  bool isReadOnlyClient(String? clientId) {
+    if (primaryClientId == null || clientId == null) {
+      return false;
+    }
+
+    return primaryClientId != clientId;
+  }
 }
 
 class InvalidSessionRequest implements Exception {
@@ -86,6 +111,7 @@ class SessionStore {
     required String vmServiceUri,
     required String projectRoot,
     required String deviceId,
+    String? clientId,
   }) {
     final trimmedVmServiceUri = vmServiceUri.trim();
     final trimmedProjectRoot = projectRoot.trim();
@@ -122,6 +148,7 @@ class SessionStore {
       vmServiceUri: trimmedVmServiceUri,
       projectRoot: trimmedProjectRoot,
       deviceId: trimmedDeviceId,
+      primaryClientId: _normalizeOptionalClientId(clientId),
     );
     _sessions[session.id] = session;
     _sessionIdsByTarget[targetKey] = session.id;
@@ -129,6 +156,15 @@ class SessionStore {
   }
 
   BridgeSession? find(String id) => _sessions[id];
+
+  String? _normalizeOptionalClientId(String? clientId) {
+    final String? trimmedClientId = clientId?.trim();
+    if (trimmedClientId == null || trimmedClientId.isEmpty) {
+      return null;
+    }
+
+    return trimmedClientId;
+  }
 
   /// Build the lookup key for one singleton Flutter app target.
   ///

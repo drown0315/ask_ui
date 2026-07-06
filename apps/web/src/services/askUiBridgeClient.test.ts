@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   BridgeRequestError,
   createBridgeSession,
+  getChatSession,
   getDeviceWebSocketUrl,
   getSelectWidgetModeStatus,
   hotReloadSession,
@@ -93,6 +94,51 @@ test('creates bridge session with target device id', async () => {
     ]);
     assert.deepEqual(result, {
       sessionId: 'session-1',
+      readOnly: false,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('loads Chat History and Agent Status for a bridge session', async () => {
+  const requestedUrls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    requestedUrls.push(String(input));
+    return new Response(
+      JSON.stringify({
+        status: 'ok',
+        agentStatus: 'agent_ready',
+        readOnly: true,
+        messages: [
+          {
+            id: 'message-1',
+            role: 'agent',
+            text: 'Ready.',
+          },
+        ],
+      }),
+    );
+  };
+
+  try {
+    const result = await getChatSession('session-1', 'browser-2');
+
+    assert.deepEqual(requestedUrls, [
+      'http://127.0.0.1:8787/api/sessions/session-1/chat?clientId=browser-2',
+    ]);
+    assert.deepEqual(result, {
+      status: 'ok',
+      agentStatus: 'agent_ready',
+      readOnly: true,
+      messages: [
+        {
+          id: 'message-1',
+          role: 'agent',
+          text: 'Ready.',
+        },
+      ],
     });
   } finally {
     globalThis.fetch = originalFetch;
@@ -319,6 +365,48 @@ test('subscribes to bridge session events with EventSource', () => {
     'http://127.0.0.1:8787/api/sessions/session-1/events',
   ]);
   assert.deepEqual(closed, [true]);
+});
+
+test('parses Chat bridge session events from EventSource', () => {
+  const listeners = new Map<string, (event: MessageEvent) => void>();
+  const events: unknown[] = [];
+
+  subscribeToBridgeSessionEvents(
+    'session-1',
+    (event) => {
+      events.push(event);
+    },
+    {
+      createEventSource() {
+        return {
+          addEventListener(eventName, listener) {
+            listeners.set(eventName, listener as (event: MessageEvent) => void);
+          },
+          close() {},
+        };
+      },
+    },
+  );
+
+  listeners.get('bridge_session_event')?.({
+    data: JSON.stringify({
+      type: 'agent_status_changed',
+      sessionId: 'session-1',
+      payload: {
+        agentStatus: 'agent_working',
+      },
+    }),
+  } as MessageEvent);
+
+  assert.deepEqual(events, [
+    {
+      type: 'agent_status_changed',
+      sessionId: 'session-1',
+      payload: {
+        agentStatus: 'agent_working',
+      },
+    },
+  ]);
 });
 
 test('reports unsupported hot restart responses from the bridge', async () => {

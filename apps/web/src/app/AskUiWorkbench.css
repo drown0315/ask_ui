@@ -695,6 +695,51 @@ body {
   text-align: center;
 }
 
+.chat-connection-warning {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(199, 71, 71, 0.24);
+  border-radius: 7px;
+  background: #fff8f7;
+  color: #9f312d;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.chat-history-list {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-history-message {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid rgba(66, 184, 131, 0.16);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.chat-history-message-role {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.chat-history-message-text {
+  color: var(--vue-ink);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .chat-composer {
   display: grid;
   gap: 8px;
