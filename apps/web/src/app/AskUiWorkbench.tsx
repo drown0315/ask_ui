@@ -1,5 +1,5 @@
 import { LiveAppSurface } from '../components/live-app-surface/LiveAppSurface';
-import { SelectionNotesPanel } from '../components/selection-notes/SelectionNotesPanel';
+import { ChatPanel } from '../components/chat/ChatPanel';
 import { TopBar } from '../components/top-bar/TopBar';
 import { getTopBarStatusMessage } from '../components/top-bar/topBarActions';
 import { WidgetTreePanel } from '../components/widget-tree/WidgetTreePanel';
@@ -59,7 +59,7 @@ export function AskUiWorkbench() {
           surfaceState={liveAppSurface.surfaceState}
           targetDeviceDisplay={targetDeviceDisplay}
         />
-        <SelectionNotesPanel />
+        <ChatPanel />
       </div>
     </main>
   );
