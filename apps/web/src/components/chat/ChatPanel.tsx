@@ -1,7 +1,23 @@
 import { getInitialChatPanelState } from './chatPanelContent';
+import {
+  getAgentStatusLabel,
+  type ChatSessionState,
+} from '../../chat/chatSessionState';
 
-export function ChatPanel() {
+export function ChatPanel({
+  chatSessionState,
+}: {
+  chatSessionState: ChatSessionState;
+}) {
   const content = getInitialChatPanelState();
+  const agentStatusValue =
+    chatSessionState.status === 'ready'
+      ? getAgentStatusLabel(chatSessionState.agentStatus)
+      : content.agentStatusValue;
+  const composerDisabledReason =
+    chatSessionState.status === 'ready' && chatSessionState.readOnly
+      ? 'Read-only browser tabs cannot send Chat messages.'
+      : content.composerDisabledReason;
 
   return (
     <aside className="workbench-panel chat-panel" aria-label={content.title}>
@@ -10,7 +26,7 @@ export function ChatPanel() {
         <div className="agent-status" aria-label={content.agentStatusLabel}>
           <span className="agent-status-dot" aria-hidden="true" />
           <span className="agent-status-label">{content.agentStatusLabel}</span>
-          <span className="agent-status-value">{content.agentStatusValue}</span>
+          <span className="agent-status-value">{agentStatusValue}</span>
         </div>
       </header>
 
@@ -25,7 +41,29 @@ export function ChatPanel() {
         <div id="chat-history-title" className="chat-section-title">
           {content.chatHistoryTitle}
         </div>
-        <div className="chat-history-empty">{content.chatHistoryEmptyState}</div>
+        {chatSessionState.status === 'ready' &&
+        chatSessionState.connectionWarning ? (
+          <div className="chat-connection-warning">
+            {chatSessionState.connectionWarning}
+          </div>
+        ) : null}
+        {chatSessionState.status === 'ready' &&
+        chatSessionState.messages.length > 0 ? (
+          <ol className="chat-history-list">
+            {chatSessionState.messages.map((message) => (
+              <li className="chat-history-message" key={message.id}>
+                <div className="chat-history-message-role">{message.role}</div>
+                <div className="chat-history-message-text">{message.text}</div>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <div className="chat-history-empty">
+            {chatSessionState.status === 'loading'
+              ? 'Loading Chat History...'
+              : content.chatHistoryEmptyState}
+          </div>
+        )}
       </section>
 
       <form className="chat-composer" aria-label="Chat composer">
@@ -38,7 +76,7 @@ export function ChatPanel() {
         />
         <div className="chat-composer-footer">
           <span className="chat-composer-disabled-reason">
-            {content.composerDisabledReason}
+            {composerDisabledReason}
           </span>
           <button className="chat-send-button" disabled type="submit">
             Send

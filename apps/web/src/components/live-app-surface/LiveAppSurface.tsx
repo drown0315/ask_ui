@@ -9,6 +9,7 @@ import {
 } from './liveAppSurfaceContent';
 
 type LiveAppSurfaceProps = {
+  isInputDisabled: boolean;
   isSelectWidgetActive: boolean;
   onDeviceControlMessage: (message: DeviceControlMessage) => void;
   onDeviceVideoRendererChange: (
@@ -20,6 +21,7 @@ type LiveAppSurfaceProps = {
 };
 
 export function LiveAppSurface({
+  isInputDisabled,
   isSelectWidgetActive,
   onDeviceControlMessage,
   onDeviceVideoRendererChange,
@@ -35,6 +37,7 @@ export function LiveAppSurface({
     >
       {surfaceState.status === 'renderingVideo' ? (
         <DeviceShell
+          isInputDisabled={isInputDisabled}
           onDeviceControlMessage={onDeviceControlMessage}
           onDeviceVideoRendererChange={onDeviceVideoRendererChange}
           surfaceState={surfaceState}

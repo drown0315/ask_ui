@@ -30,6 +30,8 @@ export type BridgeSessionState =
       sessionId: string;
       targetDeviceId: string;
       targetDeviceDisplayName?: string;
+      clientId: string;
+      readOnly: boolean;
     }
   | {
       status: 'error';

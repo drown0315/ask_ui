@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../app_controller/flutter_app_controller.dart';
+import '../chat/chat_session.dart';
 import '../device/device_stream.dart';
 import '../device/scrcpy_device_stream.dart';
 import '../device_control/device_control_protocol.dart';
@@ -119,6 +120,15 @@ class AskUiBridgeServer {
         request.uri.pathSegments.length == 4 &&
         request.uri.pathSegments[0] == 'api' &&
         request.uri.pathSegments[1] == 'sessions' &&
+        request.uri.pathSegments[3] == 'chat') {
+      await _getChat(request);
+      return;
+    }
+
+    if (request.method == 'GET' &&
+        request.uri.pathSegments.length == 4 &&
+        request.uri.pathSegments[0] == 'api' &&
+        request.uri.pathSegments[1] == 'sessions' &&
         request.uri.pathSegments[3] == 'select-widget-mode') {
       await _getSelectWidgetMode(request);
       return;
@@ -173,6 +183,7 @@ class AskUiBridgeServer {
     final vmServiceUri = body['vmServiceUri'];
     final projectRoot = body['projectRoot'];
     final deviceId = body['deviceId'];
+    final clientId = body['clientId'];
 
     if (vmServiceUri is! String ||
         projectRoot is! String ||
@@ -278,6 +289,7 @@ class AskUiBridgeServer {
         projectRoot: projectRoot,
         deviceId: deviceId,
         deviceDisplayName: targetDeviceCheck.device?.displayName ?? '',
+        clientId: clientId is String ? clientId : null,
       );
       await _writeJson(
         request.response,
@@ -287,6 +299,8 @@ class AskUiBridgeServer {
             'id': session.deviceId,
             'displayName': session.deviceDisplayName,
           },
+          'readOnly':
+              session.isReadOnlyClient(clientId is String ? clientId : null),
         },
       );
       _logger.info(
@@ -317,6 +331,34 @@ class AskUiBridgeServer {
         },
       );
     }
+  }
+
+  /// Return the current Chat state for one Bridge Session.
+  ///
+  /// This endpoint gives the web app an initial Chat History and Agent Status
+  /// snapshot before it starts consuming later updates from the existing
+  /// session events stream.
+  Future<void> _getChat(HttpRequest request) async {
+    final String sessionId = request.uri.pathSegments[2];
+    final BridgeSession? session = _sessionStore.find(sessionId);
+
+    if (session == null) {
+      _logger.info('chat request session=$sessionId session_not_found');
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notFound,
+        body: {'error': 'session_not_found'},
+      );
+      return;
+    }
+
+    final String? clientId = request.uri.queryParameters['clientId'];
+    await _writeJson(
+      request.response,
+      body: session.chat.snapshot().toJson(
+            readOnly: session.isReadOnlyClient(clientId),
+          ),
+    );
   }
 
   Future<void> _openDevice(HttpRequest request) async {
@@ -786,7 +828,8 @@ class AskUiBridgeServer {
       ..set(HttpHeaders.connectionHeader, 'keep-alive');
 
     Timer? heartbeat;
-    StreamSubscription<SelectWidgetModeStatus>? subscription;
+    StreamSubscription<SelectWidgetModeStatus>? selectWidgetSubscription;
+    StreamSubscription<ChatSessionEvent>? chatSubscription;
     var streamClosed = false;
     var writeQueue = Future<void>.value();
 
@@ -796,7 +839,8 @@ class AskUiBridgeServer {
       }
       streamClosed = true;
       heartbeat?.cancel();
-      await subscription?.cancel();
+      await selectWidgetSubscription?.cancel();
+      await chatSubscription?.cancel();
       _logger.info('events stream session=$sessionId close');
     }
 
@@ -835,7 +879,26 @@ class AskUiBridgeServer {
       );
     });
 
-    subscription =
+    await enqueueSseWrite(() {
+      _writeSseEvent(
+        request.response,
+        event: 'bridge_session_event',
+        data: {
+          'type': 'chat_snapshot',
+          'sessionId': sessionId,
+          'payload': {
+            'agentStatus': session.chat.snapshot().agentStatus.wireName,
+            'messages': session.chat
+                .snapshot()
+                .messages
+                .map((message) => message.toJson())
+                .toList(),
+          },
+        },
+      );
+    });
+
+    selectWidgetSubscription =
         _inspectorClient.watchSelectWidgetModeStatus(session).listen((status) {
       unawaited(enqueueSseWrite(() {
         _writeSseEvent(
@@ -847,6 +910,18 @@ class AskUiBridgeServer {
             'payload': {
               if (status.enabled != null) 'enabled': status.enabled,
             },
+          },
+        );
+      }));
+    });
+    chatSubscription = session.chat.events.listen((event) {
+      unawaited(enqueueSseWrite(() {
+        _writeSseEvent(
+          request.response,
+          event: 'bridge_session_event',
+          data: {
+            ...event.toJson(),
+            'sessionId': sessionId,
           },
         );
       }));

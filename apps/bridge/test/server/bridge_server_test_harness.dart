@@ -134,7 +134,11 @@ class FakeDeviceSourceFactory implements DeviceStreamFactory {
   }
 }
 
-Future<String> createSession(HttpClient client, Uri baseUri) async {
+Future<String> createSession(
+  HttpClient client,
+  Uri baseUri, {
+  String? clientId,
+}) async {
   final createRequest = await client.postUrl(baseUri.resolve('/api/sessions'));
   createRequest.headers.contentType = ContentType.json;
   createRequest.write(
@@ -142,6 +146,7 @@ Future<String> createSession(HttpClient client, Uri baseUri) async {
       'vmServiceUri': 'ws://127.0.0.1:12345/ws',
       'projectRoot': '/Users/example/app',
       'deviceId': '19271FDF6007TY',
+      if (clientId != null) 'clientId': clientId,
     }),
   );
 

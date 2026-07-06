@@ -19,6 +19,7 @@ import {
 } from '../../live-app-surface/deviceVideoFrameRenderer';
 
 type DeviceShellProps = {
+  isInputDisabled: boolean;
   onDeviceControlMessage: (message: DeviceControlMessage) => void;
   onDeviceVideoRendererChange: (
     renderer: DeviceVideoFrameRenderer | null,
@@ -37,6 +38,7 @@ type DeviceShellProps = {
  * Back/Home/Recents are sent over the same Device WebSocket.
  */
 export function DeviceShell({
+  isInputDisabled,
   onDeviceControlMessage,
   onDeviceVideoRendererChange,
   surfaceState,
@@ -139,7 +141,7 @@ export function DeviceShell({
     action: 'down' | 'move' | 'up' | 'cancel',
     event: PointerEvent<HTMLDivElement>,
   ) => {
-    if (!fit || !metadata.controlReady) {
+    if (isInputDisabled || !fit || !metadata.controlReady) {
       return;
     }
 
@@ -215,6 +217,10 @@ export function DeviceShell({
   };
 
   const sendSystemKey = (key: DeviceSystemKey) => {
+    if (isInputDisabled) {
+      return;
+    }
+
     onDeviceControlMessage(buildSystemKeyMessage(key));
   };
 
@@ -255,7 +261,7 @@ export function DeviceShell({
       <div className="surface-controls">
         <button
           aria-label="Back"
-          disabled={!metadata.controlReady}
+          disabled={isInputDisabled || !metadata.controlReady}
           onClick={() => sendSystemKey('back')}
           title="Back"
           type="button"
@@ -264,7 +270,7 @@ export function DeviceShell({
         </button>
         <button
           aria-label="Home"
-          disabled={!metadata.controlReady}
+          disabled={isInputDisabled || !metadata.controlReady}
           onClick={() => sendSystemKey('home')}
           title="Home"
           type="button"
@@ -273,7 +279,7 @@ export function DeviceShell({
         </button>
         <button
           aria-label="Recents"
-          disabled={!metadata.controlReady}
+          disabled={isInputDisabled || !metadata.controlReady}
           onClick={() => sendSystemKey('recents')}
           title="Recents"
           type="button"

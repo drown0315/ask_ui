@@ -16,6 +16,7 @@ import {
 } from '../components/top-bar/topBarActions';
 
 type UseWorkbenchActionsOptions = {
+  isReadOnly: boolean;
   sessionId: string | null;
   widgetTreeState: WidgetTreeLoadState;
   setWidgetTreeState: (state: WidgetTreeLoadState) => void;
@@ -52,6 +53,7 @@ export function useWorkbenchActions(
 } {
   const {
     sessionId,
+    isReadOnly,
     widgetTreeState,
     setWidgetTreeState,
     refreshWidgetTree,
@@ -99,6 +101,22 @@ export function useWorkbenchActions(
   );
 
   useEffect(() => {
+    if (!isReadOnly) {
+      return;
+    }
+
+    selectWidgetSyncRef.current.skipNextSync = true;
+    setTopBarActionState((state) => ({
+      ...state,
+      isSelectWidgetActive: false,
+      selectWidget: {
+        status: 'idle',
+        message: 'Read-only browser tabs cannot use Select Widget mode.',
+      },
+    }));
+  }, [isReadOnly]);
+
+  useEffect(() => {
     if (!selectWidgetSyncRef.current.didMount) {
       selectWidgetSyncRef.current.didMount = true;
       selectWidgetSyncRef.current.previousActive =
@@ -123,7 +141,7 @@ export function useWorkbenchActions(
     selectWidgetSyncRef.current.previousActive =
       topBarActionState.isSelectWidgetActive;
 
-    if (sessionId === null) {
+    if (sessionId === null || isReadOnly) {
       return;
     }
 
@@ -176,7 +194,7 @@ export function useWorkbenchActions(
     return () => {
       isCurrent = false;
     };
-  }, [sessionId, topBarActionState.isSelectWidgetActive]);
+  }, [isReadOnly, sessionId, topBarActionState.isSelectWidgetActive]);
 
   useEffect(() => {
     if (sessionId === null) {
@@ -200,6 +218,17 @@ export function useWorkbenchActions(
         selectWidget: {
           status: 'failed',
           message: 'Bridge session required before Select Widget mode.',
+        },
+      }));
+      return;
+    }
+
+    if (isReadOnly) {
+      setTopBarActionState((state) => ({
+        ...state,
+        selectWidget: {
+          status: 'failed',
+          message: 'Read-only browser tabs cannot use Select Widget mode.',
         },
       }));
       return;
