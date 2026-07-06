@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  getVisibleChatHistoryMessages,
   getInitialChatSessionState,
   reduceChatSessionBridgeEvent,
   reduceChatSessionDisconnected,
@@ -91,4 +92,32 @@ test('maps session event disconnect to Waiting for agent with a warning', () => 
     connectionWarning: 'Bridge session events disconnected.',
     messages: [],
   });
+});
+
+test('adds a temporary Agent working placeholder to visible Chat History', () => {
+  const state = getInitialChatSessionState({
+    status: 'ok',
+    agentStatus: 'agent_working',
+    readOnly: false,
+    messages: [
+      {
+        id: 'message-1',
+        role: 'user',
+        text: 'Make it primary.',
+      },
+    ],
+  });
+
+  assert.deepEqual(getVisibleChatHistoryMessages(state), [
+    {
+      id: 'message-1',
+      role: 'user',
+      text: 'Make it primary.',
+    },
+    {
+      id: 'agent-working-placeholder',
+      role: 'agent',
+      text: 'Agent working...',
+    },
+  ]);
 });

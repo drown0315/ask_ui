@@ -95,3 +95,30 @@ export function getAgentStatusLabel(
 
   return 'Waiting for agent';
 }
+
+/**
+ * Return the Chat History rows visible in the Chat panel.
+ *
+ * The temporary `Agent working...` row is derived from Agent Status and is not
+ * persisted in Bridge Session Chat History.
+ */
+export function getVisibleChatHistoryMessages(
+  state: ChatSessionState,
+): ChatMessageResponse[] {
+  if (state.status !== 'ready') {
+    return [];
+  }
+
+  if (state.agentStatus !== 'agent_working') {
+    return state.messages;
+  }
+
+  return [
+    ...state.messages,
+    {
+      id: 'agent-working-placeholder',
+      role: 'agent',
+      text: 'Agent working...',
+    },
+  ];
+}

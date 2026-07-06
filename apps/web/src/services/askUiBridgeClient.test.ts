@@ -11,6 +11,7 @@ import {
   hotRestartSession,
   parseBridgeJsonResponse,
   resolveBridgeOrigin,
+  sendPlainTextChatMessage,
   setSelectWidgetMode,
   selectWidgetById,
   subscribeToBridgeSessionEvents,
@@ -148,6 +149,79 @@ test('loads Chat History and Agent Status for a bridge session', async () => {
         },
       ],
     });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('sends a plain text Chat message to the bridge session', async () => {
+  const requestedUrls: string[] = [];
+  const requestedBodies: unknown[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    requestedUrls.push(String(input));
+    requestedBodies.push(JSON.parse(String(init?.body)));
+    return new Response(
+      JSON.stringify({
+        status: 'ok',
+        message: {
+          id: 'message-1',
+          role: 'user',
+          text: 'Make this button primary.',
+        },
+      }),
+    );
+  };
+
+  try {
+    const result = await sendPlainTextChatMessage(
+      'session-1',
+      'Make this button primary.',
+    );
+
+    assert.deepEqual(requestedUrls, [
+      'http://127.0.0.1:8787/api/sessions/session-1/chat/messages',
+    ]);
+    assert.deepEqual(requestedBodies, [
+      {
+        text: 'Make this button primary.',
+      },
+    ]);
+    assert.deepEqual(result, {
+      status: 'ok',
+      message: {
+        id: 'message-1',
+        role: 'user',
+        text: 'Make this button primary.',
+      },
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('reports Chat send bridge errors with code and message', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        error: 'agent_not_ready',
+      }),
+      {
+        status: 409,
+      },
+    );
+
+  try {
+    await assert.rejects(
+      sendPlainTextChatMessage('session-1', 'Make this button primary.'),
+      (error) => {
+        assert.ok(error instanceof BridgeRequestError);
+        assert.equal(error.code, 'agent_not_ready');
+        assert.equal(error.message, 'agent_not_ready');
+        return true;
+      },
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }

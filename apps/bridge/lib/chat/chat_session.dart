@@ -173,6 +173,7 @@ class ChatSession {
       StreamController<ChatSessionEvent>.broadcast();
   AgentStatus _agentStatus = AgentStatus.waitingForAgent;
   Completer<AgentPollResult>? _activePoll;
+  int _nextMessageNumber = 1;
 
   Stream<ChatSessionEvent> get events => _eventsController.stream;
 
@@ -199,6 +200,67 @@ class ChatSession {
         List<ChatMessage>.unmodifiable(_messages),
       ),
     );
+  }
+
+  /// Create and deliver one user Chat message to the waiting Agent Session.
+  ///
+  /// Returns `null` when no Agent Session is ready. The message is appended to
+  /// Chat History only after the active poller has accepted the handoff.
+  ChatMessage? sendUserTextMessage(String text) {
+    final ChatMessage message = ChatMessage(
+      id: _createMessageId(),
+      role: ChatMessageRole.user,
+      text: text,
+    );
+
+    if (!deliverMessageToAgent(message)) {
+      return null;
+    }
+
+    return message;
+  }
+
+  /// Append one successful agent reply to Chat History.
+  ///
+  /// A reply completes the current agent work item from the web UI's
+  /// perspective. The launching Agent Session may start another poll after the
+  /// reply has been stored.
+  ChatMessage appendAgentReply(String text) {
+    return _appendAgentAuthoredMessage(
+      role: ChatMessageRole.agent,
+      text: text,
+    );
+  }
+
+  /// Append one agent command error as a system Chat History message.
+  ///
+  /// Command-level failures are separated from normal agent replies so the
+  /// product UI can distinguish tool/session failures from agent prose.
+  ChatMessage appendAgentError(String text) {
+    return _appendAgentAuthoredMessage(
+      role: ChatMessageRole.system,
+      text: text,
+    );
+  }
+
+  ChatMessage _appendAgentAuthoredMessage({
+    required ChatMessageRole role,
+    required String text,
+  }) {
+    final ChatMessage message = ChatMessage(
+      id: _createMessageId(),
+      role: role,
+      text: text,
+    );
+    appendMessage(message);
+    setAgentStatus(AgentStatus.waitingForAgent);
+    return message;
+  }
+
+  String _createMessageId() {
+    final String id = 'message-$_nextMessageNumber';
+    _nextMessageNumber += 1;
+    return id;
   }
 
   /// Wait for the next Chat message for the launching Agent Session.

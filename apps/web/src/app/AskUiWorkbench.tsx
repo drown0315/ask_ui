@@ -70,7 +70,7 @@ export function AskUiWorkbench() {
           surfaceState={liveAppSurface.surfaceState}
           targetDeviceDisplay={targetDeviceDisplay}
         />
-        <ChatPanel chatSessionState={chatSession} />
+        <ChatPanel chatSessionState={chatSession} sessionId={readySessionId} />
       </div>
     </main>
   );
