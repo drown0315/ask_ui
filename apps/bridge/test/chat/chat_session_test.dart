@@ -102,5 +102,78 @@ void main() {
         },
       ]);
     });
+
+    test('reports Agent ready while an Agent Session waits for Chat', () async {
+      final ChatSession chat = ChatSession();
+
+      final Future<AgentPollResult> poll = chat.waitForAgentMessage(
+        timeout: const Duration(milliseconds: 1),
+      );
+
+      expect(chat.snapshot().agentStatus, AgentStatus.agentReady);
+      expect(await poll, const AgentPollResult.timedOut());
+      expect(chat.snapshot().agentStatus, AgentStatus.waitingForAgent);
+    });
+
+    test('rejects a second waiting Agent Session', () async {
+      final ChatSession chat = ChatSession();
+
+      final Future<AgentPollResult> poll = chat.waitForAgentMessage(
+        timeout: const Duration(milliseconds: 1),
+      );
+
+      expect(
+        () =>
+            chat.waitForAgentMessage(timeout: const Duration(milliseconds: 1)),
+        throwsA(isA<AgentPollAlreadyActive>()),
+      );
+      expect(await poll, const AgentPollResult.timedOut());
+    });
+
+    test('returns the current Chat message to the waiting Agent Session',
+        () async {
+      final ChatSession chat = ChatSession();
+
+      final Future<AgentPollResult> poll = chat.waitForAgentMessage();
+      final bool delivered = chat.deliverMessageToAgent(
+        const ChatMessage(
+          id: 'message-1',
+          role: ChatMessageRole.user,
+          text: 'Make this button primary.',
+        ),
+      );
+
+      expect(delivered, isTrue);
+      expect((await poll).toJson(), {
+        'status': 'ok',
+        'message': {
+          'id': 'message-1',
+          'role': 'user',
+          'text': 'Make this button primary.',
+        },
+        'nextStep':
+            'Process this Chat message, write an agent reply or system error, then poll again.',
+      });
+      expect(chat.snapshot().messages.map((message) => message.toJson()), [
+        {
+          'id': 'message-1',
+          'role': 'user',
+          'text': 'Make this button primary.',
+        },
+      ]);
+    });
+
+    test('returns to Waiting for agent when the waiting Agent disconnects',
+        () async {
+      final ChatSession chat = ChatSession();
+
+      final Future<AgentPollResult> poll = chat.waitForAgentMessage();
+      expect(chat.snapshot().agentStatus, AgentStatus.agentReady);
+
+      chat.cancelAgentWait();
+
+      expect(await poll, const AgentPollResult.timedOut());
+      expect(chat.snapshot().agentStatus, AgentStatus.waitingForAgent);
+    });
   });
 }

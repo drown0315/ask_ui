@@ -78,6 +78,51 @@ class ChatSessionSnapshot {
   }
 }
 
+/// Result returned to an Agent Session long-poll request.
+///
+/// A timed out result is used only by tests or debugging clients that pass an
+/// explicit timeout. Product polling keeps waiting until a Chat message is
+/// available or the request disconnects.
+class AgentPollResult {
+  const AgentPollResult.timedOut()
+      : timedOut = true,
+        message = null;
+
+  const AgentPollResult.message(ChatMessage this.message) : timedOut = false;
+
+  final bool timedOut;
+  final ChatMessage? message;
+
+  Map<String, Object?> toJson() {
+    return {
+      'status': timedOut ? 'timeout' : 'ok',
+      'message': message?.toJson(),
+      'nextStep': AgentPollResult.nextStepInstruction,
+    };
+  }
+
+  static const String nextStepInstruction =
+      'Process this Chat message, write an agent reply or system error, then poll again.';
+
+  @override
+  bool operator ==(Object other) {
+    return other is AgentPollResult &&
+        timedOut == other.timedOut &&
+        message == other.message;
+  }
+
+  @override
+  int get hashCode => Object.hash(timedOut, message);
+}
+
+/// Raised when one Bridge Session already has a waiting Agent Session.
+class AgentPollAlreadyActive implements Exception {
+  const AgentPollAlreadyActive();
+
+  @override
+  String toString() => 'AgentPollAlreadyActive';
+}
+
 /// Chat update event emitted by one Bridge Session.
 ///
 /// Events are broadcast to `/api/sessions/{sessionId}/events`, reusing the
@@ -127,6 +172,7 @@ class ChatSession {
   final StreamController<ChatSessionEvent> _eventsController =
       StreamController<ChatSessionEvent>.broadcast();
   AgentStatus _agentStatus = AgentStatus.waitingForAgent;
+  Completer<AgentPollResult>? _activePoll;
 
   Stream<ChatSessionEvent> get events => _eventsController.stream;
 
@@ -153,5 +199,64 @@ class ChatSession {
         List<ChatMessage>.unmodifiable(_messages),
       ),
     );
+  }
+
+  /// Wait for the next Chat message for the launching Agent Session.
+  ///
+  /// Only one Agent Session may wait on a Bridge Session at a time. Passing a
+  /// timeout is intended for tests and debugging; omitting it creates the
+  /// indefinite long-poll used by the normal skill loop.
+  Future<AgentPollResult> waitForAgentMessage({Duration? timeout}) {
+    if (_activePoll != null) {
+      throw const AgentPollAlreadyActive();
+    }
+
+    final Completer<AgentPollResult> poll = Completer<AgentPollResult>();
+    _activePoll = poll;
+    setAgentStatus(AgentStatus.agentReady);
+
+    if (timeout != null) {
+      Timer(timeout, () {
+        if (_activePoll != poll || poll.isCompleted) {
+          return;
+        }
+
+        poll.complete(const AgentPollResult.timedOut());
+      });
+    }
+
+    return poll.future.whenComplete(() {
+      if (_activePoll == poll) {
+        _activePoll = null;
+        setAgentStatus(AgentStatus.waitingForAgent);
+      }
+    });
+  }
+
+  /// Deliver one Chat message to the currently waiting Agent Session.
+  ///
+  /// Returns `false` when no Agent Session is ready, allowing the later Send API
+  /// to reject the browser request without creating an offline queue.
+  bool deliverMessageToAgent(ChatMessage message) {
+    final Completer<AgentPollResult>? poll = _activePoll;
+    if (poll == null || poll.isCompleted) {
+      return false;
+    }
+
+    appendMessage(message);
+    _activePoll = null;
+    setAgentStatus(AgentStatus.agentWorking);
+    poll.complete(AgentPollResult.message(message));
+    return true;
+  }
+
+  /// Cancel the waiting Agent Session after its HTTP request disconnects.
+  void cancelAgentWait() {
+    final Completer<AgentPollResult>? poll = _activePoll;
+    if (poll == null || poll.isCompleted) {
+      return;
+    }
+
+    poll.complete(const AgentPollResult.timedOut());
   }
 }

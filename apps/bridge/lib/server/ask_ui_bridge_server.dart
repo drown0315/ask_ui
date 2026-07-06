@@ -126,6 +126,16 @@ class AskUiBridgeServer {
     }
 
     if (request.method == 'GET' &&
+        request.uri.pathSegments.length == 5 &&
+        request.uri.pathSegments[0] == 'api' &&
+        request.uri.pathSegments[1] == 'sessions' &&
+        request.uri.pathSegments[3] == 'agent' &&
+        request.uri.pathSegments[4] == 'poll') {
+      await _pollAgent(request);
+      return;
+    }
+
+    if (request.method == 'GET' &&
         request.uri.pathSegments.length == 4 &&
         request.uri.pathSegments[0] == 'api' &&
         request.uri.pathSegments[1] == 'sessions' &&
@@ -353,6 +363,99 @@ class AskUiBridgeServer {
             readOnly: session.isReadOnlyClient(clientId),
           ),
     );
+  }
+
+  /// Wait for the next Chat message for the launching Agent Session.
+  ///
+  /// The normal agent loop leaves `timeoutMs` unset and waits indefinitely.
+  /// Tests and debugging clients may pass `timeoutMs` to get a bounded response.
+  Future<void> _pollAgent(HttpRequest request) async {
+    final String sessionId = request.uri.pathSegments[2];
+    final BridgeSession? session = _sessionStore.find(sessionId);
+
+    if (session == null) {
+      _logger.info('agent poll session=$sessionId session_not_found');
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notFound,
+        body: {'error': 'session_not_found'},
+      );
+      return;
+    }
+
+    final Duration? timeout = _parseOptionalTimeout(
+      request.uri.queryParameters['timeoutMs'],
+    );
+    var clientDisconnected = false;
+    var responseWritten = false;
+    Timer? disconnectHeartbeat;
+    void markClientDisconnected() {
+      if (responseWritten || clientDisconnected) {
+        return;
+      }
+
+      clientDisconnected = true;
+      disconnectHeartbeat?.cancel();
+      session.chat.cancelAgentWait();
+    }
+
+    request.response.done.whenComplete(() {
+      markClientDisconnected();
+    });
+
+    try {
+      final Future<AgentPollResult> poll = session.chat.waitForAgentMessage(
+        timeout: timeout,
+      );
+      request.response.headers.contentType = ContentType.json;
+      request.response.write('\n');
+      await request.response.flush();
+      disconnectHeartbeat = Timer.periodic(
+        const Duration(milliseconds: 50),
+        (_) {
+          unawaited(
+            (() async {
+              try {
+                request.response.write('\n');
+                await request.response.flush();
+              } catch (_) {
+                markClientDisconnected();
+              }
+            })(),
+          );
+        },
+      );
+
+      final AgentPollResult result = await poll;
+      disconnectHeartbeat.cancel();
+      if (clientDisconnected) {
+        return;
+      }
+
+      responseWritten = true;
+      request.response.write(jsonEncode(result.toJson()));
+      await request.response.close();
+    } on AgentPollAlreadyActive {
+      responseWritten = true;
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.conflict,
+        body: {'error': 'agent_poll_already_active'},
+      );
+    }
+  }
+
+  Duration? _parseOptionalTimeout(String? timeoutMs) {
+    if (timeoutMs == null || timeoutMs.isEmpty) {
+      return null;
+    }
+
+    final int? milliseconds = int.tryParse(timeoutMs);
+    if (milliseconds == null || milliseconds < 0) {
+      return null;
+    }
+
+    return Duration(milliseconds: milliseconds);
   }
 
   Future<void> _openDevice(HttpRequest request) async {

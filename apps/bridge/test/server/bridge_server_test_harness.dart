@@ -157,6 +157,43 @@ Future<String> createSession(
   return createBody['sessionId']! as String;
 }
 
+Future<String> readChatStatus(
+  HttpClient client,
+  Uri baseUri,
+  String sessionId,
+) async {
+  final request = await client.getUrl(
+    baseUri.resolve('/api/sessions/$sessionId/chat'),
+  );
+  final response = await request.close();
+  final body =
+      jsonDecode(await utf8.decodeStream(response)) as Map<String, Object?>;
+
+  return body['agentStatus']! as String;
+}
+
+Future<void> waitForChatStatus(
+  HttpClient client,
+  Uri baseUri,
+  String sessionId,
+  String status,
+) async {
+  final DateTime deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (DateTime.now().isBefore(deadline)) {
+    final String currentStatus = await readChatStatus(
+      client,
+      baseUri,
+      sessionId,
+    );
+    if (currentStatus == status) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+
+  throw StateError('Timed out waiting for Chat status $status.');
+}
+
 Stream<SseEvent> readSseEvents(HttpClientResponse response) async* {
   String? eventName;
   final dataLines = <String>[];

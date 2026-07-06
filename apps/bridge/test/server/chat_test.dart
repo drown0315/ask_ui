@@ -100,5 +100,70 @@ void main() {
         },
       });
     });
+
+    test('rejects a second active Agent poll request', () async {
+      final firstClient = HttpClient();
+      final secondClient = HttpClient();
+      addTearDown(firstClient.close);
+      addTearDown(secondClient.close);
+      final String sessionId =
+          await createSession(firstClient, fixture.baseUri);
+
+      final firstRequest = await firstClient.getUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/agent/poll'),
+      );
+      final Future<HttpClientResponse> firstResponse = firstRequest.close();
+      await waitForChatStatus(
+        secondClient,
+        fixture.baseUri,
+        sessionId,
+        'agent_ready',
+      );
+
+      final secondRequest = await secondClient.getUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/agent/poll'),
+      );
+      final secondResponse = await secondRequest.close();
+      final secondBody = jsonDecode(await utf8.decodeStream(secondResponse))
+          as Map<String, Object?>;
+
+      expect(secondResponse.statusCode, HttpStatus.conflict);
+      expect(secondBody, {'error': 'agent_poll_already_active'});
+
+      firstClient.close(force: true);
+      await firstResponse.then<void>(
+        (response) async {
+          await response.drain<void>().catchError((_) {});
+        },
+        onError: (_) {},
+      );
+    });
+
+    test('returns timeout for debug Agent poll requests', () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+      final String sessionId = await createSession(client, fixture.baseUri);
+
+      final request = await client.getUrl(
+        fixture.baseUri.resolve(
+          '/api/sessions/$sessionId/agent/poll?timeoutMs=1',
+        ),
+      );
+      final response = await request.close();
+      final body =
+          jsonDecode(await utf8.decodeStream(response)) as Map<String, Object?>;
+
+      expect(response.statusCode, HttpStatus.ok);
+      expect(body, {
+        'status': 'timeout',
+        'message': null,
+        'nextStep':
+            'Process this Chat message, write an agent reply or system error, then poll again.',
+      });
+      expect(
+        await readChatStatus(client, fixture.baseUri, sessionId),
+        'waiting_for_agent',
+      );
+    });
   });
 }
