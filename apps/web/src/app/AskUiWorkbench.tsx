@@ -8,13 +8,27 @@ import { useChatSession } from '../chat/useChatSession';
 import { getTargetDeviceDisplay } from '../session/targetDeviceDisplay';
 import { useLiveAppSurface } from '../live-app-surface/useLiveAppSurface';
 import { useBridgeSession } from '../session/useBridgeSession';
-import { getSelectedWidgetTarget } from '../selection-comments/selectionCommentState';
+import {
+  getInitialSelectionCommentState,
+  getLocatableWidgetIds,
+  getSelectedWidgetTarget,
+  getSelectionCommentAttachmentTokens,
+  getSelectionCommentOverlayMarkers,
+  type SelectionCommentAttachmentToken,
+} from '../selection-comments/selectionCommentState';
+import { selectWidgetById } from '../services/askUiBridgeClient';
 import { useWidgetTree } from '../widget-tree/useWidgetTree';
 import { useWorkbenchActions } from '../workbench-actions/useWorkbenchActions';
 import { usePanelResize } from './usePanelResize';
 
 export function AskUiWorkbench() {
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
+  const [activeSelectionCommentId, setActiveSelectionCommentId] = useState<
+    string | null
+  >(null);
+  const [selectionCommentState, setSelectionCommentState] = useState(
+    getInitialSelectionCommentState,
+  );
   const { bridgeSessionState, readySessionId } = useBridgeSession(
     window.location.href,
   );
@@ -48,9 +62,51 @@ export function AskUiWorkbench() {
 
     return getSelectedWidgetTarget(widgetTree.widgetTreeState.root, selectedWidgetId);
   }, [selectedWidgetId, widgetTree.widgetTreeState]);
+  const locatableWidgetIds = useMemo(() => {
+    if (widgetTree.widgetTreeState.status !== 'loaded') {
+      return new Set<string>();
+    }
+
+    return getLocatableWidgetIds(widgetTree.widgetTreeState.root);
+  }, [widgetTree.widgetTreeState]);
+  const attachmentTokens = useMemo(
+    () =>
+      getSelectionCommentAttachmentTokens(
+        selectionCommentState,
+        locatableWidgetIds,
+      ),
+    [locatableWidgetIds, selectionCommentState],
+  );
+  const overlayMarkers = useMemo(
+    () =>
+      getSelectionCommentOverlayMarkers({
+        isSelectWidgetActive: actions.topBarActionState.isSelectWidgetActive,
+        locatableWidgetIds,
+        state: selectionCommentState,
+      }),
+    [
+      actions.topBarActionState.isSelectWidgetActive,
+      locatableWidgetIds,
+      selectionCommentState,
+    ],
+  );
   const handleSelectedWidgetIdChange = useCallback((widgetId: string | null) => {
     setSelectedWidgetId(widgetId);
+    setActiveSelectionCommentId(null);
   }, []);
+  const handleAttachmentTokenClick = useCallback(
+    (token: SelectionCommentAttachmentToken) => {
+      setActiveSelectionCommentId(token.id);
+
+      if (!token.isLocatable || readySessionId === null) {
+        return;
+      }
+
+      setSelectedWidgetId(token.widgetId);
+      void selectWidgetById(readySessionId, token.widgetId).catch(() => undefined);
+    },
+    [readySessionId],
+  );
 
   return (
     <main className="ask-ui-workbench">
@@ -79,6 +135,7 @@ export function AskUiWorkbench() {
         <LiveAppSurface
           isSelectWidgetActive={actions.topBarActionState.isSelectWidgetActive}
           isInputDisabled={isReadOnly}
+          overlayMarkers={overlayMarkers}
           onDeviceControlMessage={liveAppSurface.sendDeviceControlMessage}
           onDeviceVideoRendererChange={liveAppSurface.setDeviceVideoRenderer}
           onRetry={liveAppSurface.retryLiveAppSurface}
@@ -86,9 +143,14 @@ export function AskUiWorkbench() {
           targetDeviceDisplay={targetDeviceDisplay}
         />
         <ChatPanel
+          activeSelectionCommentId={activeSelectionCommentId}
+          attachmentTokens={attachmentTokens}
           chatSessionState={chatSession}
           isSelectWidgetActive={actions.topBarActionState.isSelectWidgetActive}
+          onAttachmentTokenClick={handleAttachmentTokenClick}
+          onSelectionCommentStateChange={setSelectionCommentState}
           selectedWidget={selectedWidget}
+          selectionCommentState={selectionCommentState}
           sessionId={readySessionId}
           widgetTreeStatus={widgetTree.widgetTreeState.status}
         />

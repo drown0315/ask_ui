@@ -15,11 +15,29 @@ export type SelectionComment = {
   id: string;
   widgetId: string;
   widgetLabel: string;
+  sourceLocation?: string;
+  visibleText?: string;
+  semanticInfo?: string;
   text: string;
 };
 
 export type NumberedSelectionComment = SelectionComment & {
   number: number;
+};
+
+export type SelectionCommentAttachmentToken = {
+  id: string;
+  number: number;
+  widgetId: string;
+  widgetLabel: string;
+  isLocatable: boolean;
+};
+
+export type SelectionCommentOverlayMarker = {
+  id: string;
+  number: number;
+  widgetId: string;
+  widgetLabel: string;
 };
 
 export type SelectionCommentState = {
@@ -63,6 +81,27 @@ export function getSelectedWidgetTarget(
     visibleText: stringifyWidgetContextValue(node.visibleText),
     semanticInfo: stringifyWidgetContextValue(node.semanticInfo),
   };
+}
+
+export function getLocatableWidgetIds(root: WidgetTreeNode): Set<string> {
+  const locatableWidgetIds = new Set<string>();
+
+  collectLocatableWidgetIds(root, locatableWidgetIds);
+
+  return locatableWidgetIds;
+}
+
+function collectLocatableWidgetIds(
+  node: WidgetTreeNode,
+  locatableWidgetIds: Set<string>,
+) {
+  locatableWidgetIds.add(node.id);
+
+  const children = Array.isArray(node.children) ? node.children : [];
+
+  for (const child of children) {
+    collectLocatableWidgetIds(child, locatableWidgetIds);
+  }
 }
 
 function stringifyWidgetContextValue(value: unknown): string | undefined {
@@ -152,11 +191,27 @@ export function addSelectionComment(
         id: `selection-comment-${state.nextCommentId}`,
         widgetId: selectedWidget.id,
         widgetLabel: selectedWidget.displayLabel,
+        ...(selectedWidget.sourceLocation
+          ? { sourceLocation: selectedWidget.sourceLocation }
+          : {}),
+        ...(selectedWidget.visibleText
+          ? { visibleText: selectedWidget.visibleText }
+          : {}),
+        ...(selectedWidget.semanticInfo
+          ? { semanticInfo: selectedWidget.semanticInfo }
+          : {}),
         text: text.trim(),
       },
     ],
     nextCommentId: state.nextCommentId + 1,
   };
+}
+
+export function getSelectionCommentById(
+  state: SelectionCommentState,
+  commentId: string,
+): SelectionComment | null {
+  return state.comments.find((comment) => comment.id === commentId) ?? null;
 }
 
 export function getSelectionCommentsForSelectedWidget(
@@ -182,6 +237,42 @@ export function getNumberedSelectionComments(
       ...comment,
     }),
   );
+}
+
+export function getSelectionCommentAttachmentTokens(
+  state: SelectionCommentState,
+  locatableWidgetIds?: ReadonlySet<string>,
+): SelectionCommentAttachmentToken[] {
+  return state.comments.map((comment, index) => ({
+    id: comment.id,
+    number: index + 1,
+    widgetId: comment.widgetId,
+    widgetLabel: comment.widgetLabel,
+    isLocatable: locatableWidgetIds?.has(comment.widgetId) ?? true,
+  }));
+}
+
+export function getSelectionCommentOverlayMarkers({
+  isSelectWidgetActive,
+  locatableWidgetIds,
+  state,
+}: {
+  isSelectWidgetActive: boolean;
+  locatableWidgetIds: ReadonlySet<string>;
+  state: SelectionCommentState;
+}): SelectionCommentOverlayMarker[] {
+  if (!isSelectWidgetActive) {
+    return [];
+  }
+
+  return state.comments
+    .map((comment, index) => ({
+      id: comment.id,
+      number: index + 1,
+      widgetId: comment.widgetId,
+      widgetLabel: comment.widgetLabel,
+    }))
+    .filter((marker) => locatableWidgetIds.has(marker.widgetId));
 }
 
 export function updateSelectionCommentText(

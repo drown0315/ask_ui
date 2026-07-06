@@ -4,8 +4,12 @@ import test from 'node:test';
 import {
   addSelectionComment,
   deleteSelectionComment,
+  getLocatableWidgetIds,
   getDraftForSelectedWidget,
+  getSelectionCommentById,
   getNumberedSelectionComments,
+  getSelectionCommentAttachmentTokens,
+  getSelectionCommentOverlayMarkers,
   getSelectionCommentsForSelectedWidget,
   getSelectionCommentInputState,
   getSelectedWidgetTarget,
@@ -190,6 +194,110 @@ test('edits comment text and deletes comments with compact visible numbering', (
   ]);
 });
 
+test('renders Attachment Tokens with compact numbers and widget labels only', () => {
+  const otherTarget: SelectedWidgetTarget = {
+    id: 'widget-2',
+    displayLabel: 'SecondaryButton',
+  };
+  let state: SelectionCommentState = {
+    comments: [],
+    draftsByWidgetId: {},
+    nextCommentId: 1,
+  };
+
+  state = addSelectionComment(state, target, 'Do not show full text');
+  state = addSelectionComment(state, otherTarget, 'Also hidden');
+  state = deleteSelectionComment(state, 'selection-comment-1');
+
+  assert.deepEqual(getSelectionCommentAttachmentTokens(state), [
+    {
+      id: 'selection-comment-2',
+      number: 1,
+      widgetId: 'widget-2',
+      widgetLabel: 'SecondaryButton',
+      isLocatable: true,
+    },
+  ]);
+});
+
+test('keeps unavailable Attachment Tokens sendable while hiding stale overlay markers', () => {
+  const otherTarget: SelectedWidgetTarget = {
+    id: 'widget-2',
+    displayLabel: 'SecondaryButton',
+  };
+  let state: SelectionCommentState = {
+    comments: [],
+    draftsByWidgetId: {},
+    nextCommentId: 1,
+  };
+
+  state = addSelectionComment(state, target, 'Still here');
+  state = addSelectionComment(state, otherTarget, 'No stale marker');
+
+  assert.deepEqual(
+    getSelectionCommentAttachmentTokens(state, new Set(['widget-1'])),
+    [
+      {
+        id: 'selection-comment-1',
+        number: 1,
+        widgetId: 'widget-1',
+        widgetLabel: 'PrimaryButton',
+        isLocatable: true,
+      },
+      {
+        id: 'selection-comment-2',
+        number: 2,
+        widgetId: 'widget-2',
+        widgetLabel: 'SecondaryButton',
+        isLocatable: false,
+      },
+    ],
+  );
+  assert.deepEqual(
+    getSelectionCommentOverlayMarkers({
+      isSelectWidgetActive: true,
+      locatableWidgetIds: new Set(['widget-1']),
+      state,
+    }),
+    [
+      {
+        id: 'selection-comment-1',
+        number: 1,
+        widgetId: 'widget-1',
+        widgetLabel: 'PrimaryButton',
+      },
+    ],
+  );
+});
+
+test('hides overlay markers while Select Widget mode is off without clearing staged comments', () => {
+  let state: SelectionCommentState = {
+    comments: [],
+    draftsByWidgetId: {},
+    nextCommentId: 1,
+  };
+
+  state = addSelectionComment(state, target, 'Keep token');
+
+  assert.deepEqual(
+    getSelectionCommentOverlayMarkers({
+      isSelectWidgetActive: false,
+      locatableWidgetIds: new Set(['widget-1']),
+      state,
+    }),
+    [],
+  );
+  assert.deepEqual(getSelectionCommentAttachmentTokens(state), [
+    {
+      id: 'selection-comment-1',
+      number: 1,
+      widgetId: 'widget-1',
+      widgetLabel: 'PrimaryButton',
+      isLocatable: true,
+    },
+  ]);
+});
+
 test('keeps staged Selection Comments non-empty when editing', () => {
   let state: SelectionCommentState = {
     comments: [],
@@ -208,6 +316,33 @@ test('keeps staged Selection Comments non-empty when editing', () => {
       text: 'Keep this',
     },
   ]);
+});
+
+test('stores selected widget metadata with staged comments for later token navigation', () => {
+  const metadataTarget: SelectedWidgetTarget = {
+    id: 'widget-1',
+    displayLabel: 'PrimaryButton',
+    sourceLocation: 'lib/home.dart:12',
+    visibleText: 'Save',
+    semanticInfo: 'button',
+  };
+  let state: SelectionCommentState = {
+    comments: [],
+    draftsByWidgetId: {},
+    nextCommentId: 1,
+  };
+
+  state = addSelectionComment(state, metadataTarget, 'Make it clearer');
+
+  assert.deepEqual(getSelectionCommentById(state, 'selection-comment-1'), {
+    id: 'selection-comment-1',
+    widgetId: 'widget-1',
+    widgetLabel: 'PrimaryButton',
+    sourceLocation: 'lib/home.dart:12',
+    visibleText: 'Save',
+    semanticInfo: 'button',
+    text: 'Make it clearer',
+  });
 });
 
 test('builds Add comment targets from Widget Context Panel selections without ancestor path', () => {
@@ -233,6 +368,36 @@ test('builds Add comment targets from Widget Context Panel selections without an
     visibleText: 'Save',
     semanticInfo: 'button',
   });
+});
+
+test('collects locatable widget ids from the current Widget Tree', () => {
+  const root = {
+    id: 'root',
+    label: 'MaterialApp',
+    children: [
+      {
+        id: 'button',
+        label: 'PrimaryButton',
+        children: [],
+      },
+      {
+        id: 'column',
+        label: 'Column',
+        children: [
+          {
+            id: 'text',
+            label: 'Text',
+            children: [],
+          },
+        ],
+      },
+    ],
+  } satisfies WidgetTreeNode;
+
+  assert.deepEqual(
+    getLocatableWidgetIds(root),
+    new Set(['root', 'button', 'column', 'text']),
+  );
 });
 
 test('normalizes optional widget context fields before rendering', () => {

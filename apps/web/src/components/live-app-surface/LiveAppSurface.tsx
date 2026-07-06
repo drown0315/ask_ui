@@ -1,4 +1,5 @@
 import type { TargetDeviceDisplay } from '../../session/targetDeviceDisplay';
+import type { SelectionCommentOverlayMarker } from '../../selection-comments/selectionCommentState';
 import type { LiveAppSurfaceState } from '../../live-app-surface/liveAppSurfaceState';
 import type { DeviceControlMessage } from '../../live-app-surface/deviceControlProtocol';
 import type { DeviceVideoFrameRenderer } from '../../live-app-surface/deviceVideoFrameRenderer';
@@ -11,6 +12,7 @@ import {
 type LiveAppSurfaceProps = {
   isInputDisabled: boolean;
   isSelectWidgetActive: boolean;
+  overlayMarkers: SelectionCommentOverlayMarker[];
   onDeviceControlMessage: (message: DeviceControlMessage) => void;
   onDeviceVideoRendererChange: (
     renderer: DeviceVideoFrameRenderer | null,
@@ -23,6 +25,7 @@ type LiveAppSurfaceProps = {
 export function LiveAppSurface({
   isInputDisabled,
   isSelectWidgetActive,
+  overlayMarkers,
   onDeviceControlMessage,
   onDeviceVideoRendererChange,
   onRetry,
@@ -36,16 +39,35 @@ export function LiveAppSurface({
       }`}
     >
       {surfaceState.status === 'renderingVideo' ? (
-        <DeviceShell
-          isInputDisabled={isInputDisabled}
-          onDeviceControlMessage={onDeviceControlMessage}
-          onDeviceVideoRendererChange={onDeviceVideoRendererChange}
-          surfaceState={surfaceState}
-        />
+        <div className="live-app-device-stage">
+          <DeviceShell
+            isInputDisabled={isInputDisabled}
+            onDeviceControlMessage={onDeviceControlMessage}
+            onDeviceVideoRendererChange={onDeviceVideoRendererChange}
+            surfaceState={surfaceState}
+          />
+          {overlayMarkers.length > 0 ? (
+            <div
+              className="selection-marker-layer"
+              aria-label="Selection Comment markers"
+            >
+              {overlayMarkers.map((marker) => (
+                <div
+                  className="selection-marker"
+                  key={marker.id}
+                  title={marker.widgetLabel}
+                >
+                  {marker.number}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
       ) : surfaceState.status === 'waitingForVideo' ? (
         <div className="live-app-surface-waiting-stack">
           <div className="live-app-surface-hidden-device-shell" aria-hidden="true">
             <DeviceShell
+              isInputDisabled={isInputDisabled}
               onDeviceControlMessage={onDeviceControlMessage}
               onDeviceVideoRendererChange={onDeviceVideoRendererChange}
               surfaceState={surfaceState}

@@ -1,5 +1,8 @@
 import {
+  type Dispatch,
   useRef,
+  type SetStateAction,
+  useMemo,
   useState,
   type FormEvent,
   type KeyboardEvent,
@@ -20,37 +23,63 @@ import {
   addSelectionComment,
   deleteSelectionComment,
   getDraftForSelectedWidget,
-  getInitialSelectionCommentState,
+  getSelectionCommentById,
   getNumberedSelectionComments,
   getSelectionCommentInputState,
   SELECTION_COMMENT_TEXT_LIMIT,
   updateSelectionCommentDraft,
   updateSelectionCommentText,
+  type SelectionCommentAttachmentToken,
+  type SelectionCommentState,
   type SelectedWidgetTarget,
 } from '../../selection-comments/selectionCommentState';
 import { sendPlainTextChatMessage } from '../../services/askUiBridgeClient';
 
 export function ChatPanel({
+  activeSelectionCommentId,
+  attachmentTokens,
   chatSessionState,
   isSelectWidgetActive,
+  onAttachmentTokenClick,
+  onSelectionCommentStateChange,
   selectedWidget,
+  selectionCommentState,
   sessionId,
   widgetTreeStatus,
 }: {
+  activeSelectionCommentId: string | null;
+  attachmentTokens: SelectionCommentAttachmentToken[];
   chatSessionState: ChatSessionState;
   isSelectWidgetActive: boolean;
+  onAttachmentTokenClick: (token: SelectionCommentAttachmentToken) => void;
+  onSelectionCommentStateChange: Dispatch<SetStateAction<SelectionCommentState>>;
   selectedWidget: SelectedWidgetTarget | null;
+  selectionCommentState: SelectionCommentState;
   sessionId: string | null;
   widgetTreeStatus: 'loading' | 'loaded' | 'error';
 }) {
   const content = getInitialChatPanelState();
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
   const [composerText, setComposerText] = useState('');
-  const [selectionCommentState, setSelectionCommentState] = useState(
-    getInitialSelectionCommentState,
-  );
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const activeSelectionComment =
+    activeSelectionCommentId === null
+      ? null
+      : getSelectionCommentById(selectionCommentState, activeSelectionCommentId);
+  const displayedWidget = useMemo(() => {
+    if (activeSelectionComment === null) {
+      return selectedWidget;
+    }
+
+    return {
+      id: activeSelectionComment.widgetId,
+      displayLabel: activeSelectionComment.widgetLabel,
+      sourceLocation: activeSelectionComment.sourceLocation,
+      visibleText: activeSelectionComment.visibleText,
+      semanticInfo: activeSelectionComment.semanticInfo,
+    };
+  }, [activeSelectionComment, selectedWidget]);
   const agentStatusValue =
     chatSessionState.status === 'ready'
       ? getAgentStatusLabel(chatSessionState.agentStatus)
@@ -69,7 +98,7 @@ export function ChatPanel({
   );
   const selectedWidgetComments = getNumberedSelectionComments(
     selectionCommentState,
-    selectedWidget,
+    displayedWidget,
   );
   const selectionCommentInputState = getSelectionCommentInputState({
     isSelectWidgetActive,
@@ -84,7 +113,7 @@ export function ChatPanel({
       return;
     }
 
-    setSelectionCommentState((currentState) => {
+    onSelectionCommentStateChange((currentState) => {
       const nextState = addSelectionComment(
         currentState,
         selectedWidget,
@@ -145,29 +174,39 @@ export function ChatPanel({
         <div id="selected-widget-title" className="chat-section-title">
           {content.selectedWidgetTitle}
         </div>
-        {selectedWidget === null ? (
+        {displayedWidget === null ? (
           <p className="chat-empty-state">{content.selectedWidgetEmptyState}</p>
         ) : (
           <div className="selected-widget-content">
             <div className="selected-widget-summary">
               <div className="selected-widget-name">
-                {selectedWidget.displayLabel}
+                {displayedWidget?.displayLabel}
               </div>
-              {selectedWidget.sourceLocation ? (
+              {activeSelectionComment !== null ? (
                 <div className="selected-widget-meta">
-                  {selectedWidget.sourceLocation}
+                  From Attachment Token #
+                  {
+                    attachmentTokens.find(
+                      (token) => token.id === activeSelectionComment.id,
+                    )?.number
+                  }
                 </div>
               ) : null}
-              {selectedWidget.visibleText ? (
+              {displayedWidget?.sourceLocation ? (
+                <div className="selected-widget-meta">
+                  {displayedWidget.sourceLocation}
+                </div>
+              ) : null}
+              {displayedWidget?.visibleText ? (
                 <div className="selected-widget-detail">
                   <span>Text</span>
-                  <strong>{selectedWidget.visibleText}</strong>
+                  <strong>{displayedWidget.visibleText}</strong>
                 </div>
               ) : null}
-              {selectedWidget.semanticInfo ? (
+              {displayedWidget?.semanticInfo ? (
                 <div className="selected-widget-detail">
                   <span>Semantic</span>
-                  <strong>{selectedWidget.semanticInfo}</strong>
+                  <strong>{displayedWidget.semanticInfo}</strong>
                 </div>
               ) : null}
             </div>
@@ -188,7 +227,7 @@ export function ChatPanel({
                       onChange={(event) => {
                         const nextText = event.currentTarget.value;
 
-                        setSelectionCommentState((currentState) =>
+                        onSelectionCommentStateChange((currentState) =>
                           updateSelectionCommentText(
                             currentState,
                             comment.id,
@@ -203,7 +242,7 @@ export function ChatPanel({
                       aria-label={`Delete Selection Comment ${comment.number}`}
                       className="selection-comment-delete"
                       onClick={() =>
-                        setSelectionCommentState((currentState) =>
+                        onSelectionCommentStateChange((currentState) =>
                           deleteSelectionComment(currentState, comment.id),
                         )
                       }
@@ -220,11 +259,12 @@ export function ChatPanel({
               <textarea
                 aria-label="Selection Comment"
                 className="selection-comment-input"
+                disabled={selectedWidget === null}
                 maxLength={SELECTION_COMMENT_TEXT_LIMIT}
                 onChange={(event) => {
                   const nextText = event.currentTarget.value;
 
-                  setSelectionCommentState((currentState) =>
+                  onSelectionCommentStateChange((currentState) =>
                     updateSelectionCommentDraft(
                       currentState,
                       selectedWidget,
@@ -296,6 +336,24 @@ export function ChatPanel({
         aria-label="Chat composer"
         onSubmit={handleSubmit}
       >
+        {attachmentTokens.length > 0 ? (
+          <div className="attachment-token-list" aria-label="Selection Comment attachments">
+            {attachmentTokens.map((token) => (
+              <button
+                aria-label={`Open Selection Comment attachment ${token.number}`}
+                className={`attachment-token ${
+                  token.isLocatable ? '' : 'attachment-token-unavailable'
+                }`}
+                key={token.id}
+                onClick={() => onAttachmentTokenClick(token)}
+                type="button"
+              >
+                <span className="attachment-token-number">#{token.number}</span>
+                <span className="attachment-token-label">{token.widgetLabel}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
         <textarea
           aria-label="Message"
           className="chat-composer-input"
