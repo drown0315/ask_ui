@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   getVisibleChatHistoryMessages,
+  getInitialChatSessionStateWithQueuedEvents,
   getInitialChatSessionState,
   reduceChatSessionBridgeEvent,
   reduceChatSessionDisconnected,
@@ -75,6 +76,60 @@ test('applies Chat History and Agent Status bridge events', () => {
       text: 'Agent command failed.',
     },
   ]);
+});
+
+test('replays queued bridge events after loading the initial Chat snapshot', () => {
+  assert.deepEqual(
+    getInitialChatSessionStateWithQueuedEvents(
+      {
+        status: 'ok',
+        agentStatus: 'waiting_for_agent',
+        readOnly: false,
+        messages: [
+          {
+            id: 'message-1',
+            role: 'agent',
+            text: 'Older snapshot.',
+          },
+        ],
+      },
+      [
+        {
+          type: 'agent_status_changed',
+          sessionId: 'session-1',
+          payload: {
+            agentStatus: 'agent_working',
+          },
+        },
+        {
+          type: 'chat_history_changed',
+          sessionId: 'session-1',
+          payload: {
+            messages: [
+              {
+                id: 'message-2',
+                role: 'user',
+                text: 'Newer live update.',
+              },
+            ],
+          },
+        },
+      ],
+    ),
+    {
+      status: 'ready',
+      agentStatus: 'agent_working',
+      readOnly: false,
+      connectionWarning: null,
+      messages: [
+        {
+          id: 'message-2',
+          role: 'user',
+          text: 'Newer live update.',
+        },
+      ],
+    },
+  );
 });
 
 test('maps session event disconnect to Waiting for agent with a warning', () => {

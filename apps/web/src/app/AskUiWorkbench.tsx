@@ -20,6 +20,7 @@ import { selectWidgetById } from '../services/askUiBridgeClient';
 import { useWidgetTree } from '../widget-tree/useWidgetTree';
 import { useWorkbenchActions } from '../workbench-actions/useWorkbenchActions';
 import { usePanelResize } from './usePanelResize';
+import { getWorkbenchReadOnlyState } from './workbenchReadOnlyState';
 
 export function AskUiWorkbench() {
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
@@ -39,8 +40,7 @@ export function AskUiWorkbench() {
     clientId,
     sessionId: readySessionId,
   });
-  const isReadOnly =
-    chatSession.status === 'ready' ? chatSession.readOnly : false;
+  const isReadOnly = getWorkbenchReadOnlyState(bridgeSessionState, chatSession);
   const widgetTree = useWidgetTree(readySessionId);
   const actions = useWorkbenchActions({
     isReadOnly,

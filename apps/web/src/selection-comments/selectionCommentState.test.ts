@@ -10,6 +10,7 @@ import {
   getNumberedSelectionComments,
   getSelectionCommentAttachmentTokens,
   getSelectionCommentOverlayMarkers,
+  getSelectionCommentPanelTarget,
   getSelectionCommentsForSelectedWidget,
   getSelectionCommentInputState,
   getSelectedWidgetTarget,
@@ -267,6 +268,32 @@ test('keeps unavailable Attachment Tokens sendable while hiding stale overlay ma
         widgetLabel: 'PrimaryButton',
       },
     ],
+  );
+});
+
+test('uses active Attachment Token metadata as the panel target', () => {
+  let state: SelectionCommentState = {
+    comments: [],
+    draftsByWidgetId: {},
+    nextCommentId: 1,
+  };
+
+  state = addSelectionComment(state, target, 'Still here');
+
+  const activeComment = getSelectionCommentById(state, 'selection-comment-1');
+
+  assert.deepEqual(
+    getSelectionCommentPanelTarget(
+      {
+        id: 'widget-2',
+        displayLabel: 'SecondaryButton',
+      },
+      activeComment,
+    ),
+    {
+      id: 'widget-1',
+      displayLabel: 'PrimaryButton',
+    },
   );
 });
 

@@ -32,6 +32,16 @@ export function getInitialChatSessionState(
   };
 }
 
+export function getInitialChatSessionStateWithQueuedEvents(
+  snapshot: GetChatSessionResponse,
+  queuedEvents: BridgeSessionEvent[],
+): ChatSessionState {
+  return queuedEvents.reduce(
+    reduceChatSessionBridgeEvent,
+    getInitialChatSessionState(snapshot),
+  );
+}
+
 export function reduceChatSessionBridgeEvent(
   state: ChatSessionState,
   event: BridgeSessionEvent,

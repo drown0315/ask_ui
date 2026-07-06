@@ -214,6 +214,29 @@ export function getSelectionCommentById(
   return state.comments.find((comment) => comment.id === commentId) ?? null;
 }
 
+export function getSelectionCommentPanelTarget(
+  selectedWidget: SelectedWidgetTarget | null,
+  activeSelectionComment: SelectionComment | null,
+): SelectedWidgetTarget | null {
+  if (activeSelectionComment === null) {
+    return selectedWidget;
+  }
+
+  return {
+    id: activeSelectionComment.widgetId,
+    displayLabel: activeSelectionComment.widgetLabel,
+    ...(activeSelectionComment.sourceLocation
+      ? { sourceLocation: activeSelectionComment.sourceLocation }
+      : {}),
+    ...(activeSelectionComment.visibleText
+      ? { visibleText: activeSelectionComment.visibleText }
+      : {}),
+    ...(activeSelectionComment.semanticInfo
+      ? { semanticInfo: activeSelectionComment.semanticInfo }
+      : {}),
+  };
+}
+
 export function getSelectionCommentsForSelectedWidget(
   state: SelectionCommentState,
   selectedWidget: SelectedWidgetTarget | null,

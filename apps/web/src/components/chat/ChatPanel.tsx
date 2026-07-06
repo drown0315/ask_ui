@@ -24,6 +24,7 @@ import {
   deleteSelectionComment,
   getDraftForSelectedWidget,
   getSelectionCommentById,
+  getSelectionCommentPanelTarget,
   getNumberedSelectionComments,
   getSelectionCommentInputState,
   SELECTION_COMMENT_TEXT_LIMIT,
@@ -67,19 +68,10 @@ export function ChatPanel({
     activeSelectionCommentId === null
       ? null
       : getSelectionCommentById(selectionCommentState, activeSelectionCommentId);
-  const displayedWidget = useMemo(() => {
-    if (activeSelectionComment === null) {
-      return selectedWidget;
-    }
-
-    return {
-      id: activeSelectionComment.widgetId,
-      displayLabel: activeSelectionComment.widgetLabel,
-      sourceLocation: activeSelectionComment.sourceLocation,
-      visibleText: activeSelectionComment.visibleText,
-      semanticInfo: activeSelectionComment.semanticInfo,
-    };
-  }, [activeSelectionComment, selectedWidget]);
+  const panelTarget = useMemo(
+    () => getSelectionCommentPanelTarget(selectedWidget, activeSelectionComment),
+    [activeSelectionComment, selectedWidget],
+  );
   const agentStatusValue =
     chatSessionState.status === 'ready'
       ? getAgentStatusLabel(chatSessionState.agentStatus)
@@ -94,33 +86,33 @@ export function ChatPanel({
   const visibleMessages = getVisibleChatHistoryMessages(chatSessionState);
   const selectionCommentText = getDraftForSelectedWidget(
     selectionCommentState,
-    selectedWidget,
+    panelTarget,
   );
   const selectedWidgetComments = getNumberedSelectionComments(
     selectionCommentState,
-    displayedWidget,
+    panelTarget,
   );
   const selectionCommentInputState = getSelectionCommentInputState({
     isSelectWidgetActive,
-    selectedWidget,
+    selectedWidget: panelTarget,
     widgetTreeStatus,
     text: selectionCommentText,
     batchSize: selectionCommentState.comments.length,
   });
 
   function handleAddSelectionComment() {
-    if (!selectionCommentInputState.canAdd || selectedWidget === null) {
+    if (!selectionCommentInputState.canAdd || panelTarget === null) {
       return;
     }
 
     onSelectionCommentStateChange((currentState) => {
       const nextState = addSelectionComment(
         currentState,
-        selectedWidget,
+        panelTarget,
         selectionCommentText,
       );
 
-      return updateSelectionCommentDraft(nextState, selectedWidget, '');
+      return updateSelectionCommentDraft(nextState, panelTarget, '');
     });
     requestAnimationFrame(() => commentInputRef.current?.focus());
   }
@@ -174,13 +166,13 @@ export function ChatPanel({
         <div id="selected-widget-title" className="chat-section-title">
           {content.selectedWidgetTitle}
         </div>
-        {displayedWidget === null ? (
+        {panelTarget === null ? (
           <p className="chat-empty-state">{content.selectedWidgetEmptyState}</p>
         ) : (
           <div className="selected-widget-content">
             <div className="selected-widget-summary">
               <div className="selected-widget-name">
-                {displayedWidget?.displayLabel}
+                {panelTarget.displayLabel}
               </div>
               {activeSelectionComment !== null ? (
                 <div className="selected-widget-meta">
@@ -192,21 +184,21 @@ export function ChatPanel({
                   }
                 </div>
               ) : null}
-              {displayedWidget?.sourceLocation ? (
+              {panelTarget.sourceLocation ? (
                 <div className="selected-widget-meta">
-                  {displayedWidget.sourceLocation}
+                  {panelTarget.sourceLocation}
                 </div>
               ) : null}
-              {displayedWidget?.visibleText ? (
+              {panelTarget.visibleText ? (
                 <div className="selected-widget-detail">
                   <span>Text</span>
-                  <strong>{displayedWidget.visibleText}</strong>
+                  <strong>{panelTarget.visibleText}</strong>
                 </div>
               ) : null}
-              {displayedWidget?.semanticInfo ? (
+              {panelTarget.semanticInfo ? (
                 <div className="selected-widget-detail">
                   <span>Semantic</span>
-                  <strong>{displayedWidget.semanticInfo}</strong>
+                  <strong>{panelTarget.semanticInfo}</strong>
                 </div>
               ) : null}
             </div>
@@ -259,7 +251,7 @@ export function ChatPanel({
               <textarea
                 aria-label="Selection Comment"
                 className="selection-comment-input"
-                disabled={selectedWidget === null}
+                disabled={panelTarget === null}
                 maxLength={SELECTION_COMMENT_TEXT_LIMIT}
                 onChange={(event) => {
                   const nextText = event.currentTarget.value;

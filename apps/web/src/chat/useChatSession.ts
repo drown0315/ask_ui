@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import {
   getChatSession,
   subscribeToBridgeSessionEvents,
+  type BridgeSessionEvent,
 } from '../services/askUiBridgeClient';
 import {
-  getInitialChatSessionState,
+  getInitialChatSessionStateWithQueuedEvents,
   reduceChatSessionBridgeEvent,
   reduceChatSessionDisconnected,
   type ChatSessionState,
@@ -37,6 +38,9 @@ export function useChatSession({
     }
 
     let isCurrent = true;
+    let hasLoadedInitialSnapshot = false;
+    let latestReadyChatSessionState: ChatSessionState | null = null;
+    const queuedEvents: BridgeSessionEvent[] = [];
     setChatSessionState({
       status: 'loading',
     });
@@ -47,13 +51,17 @@ export function useChatSession({
           return;
         }
 
-        setChatSessionState(getInitialChatSessionState(snapshot));
+        latestReadyChatSessionState =
+          getInitialChatSessionStateWithQueuedEvents(snapshot, queuedEvents);
+        hasLoadedInitialSnapshot = true;
+        setChatSessionState(latestReadyChatSessionState);
       },
       (error: unknown) => {
         if (!isCurrent) {
           return;
         }
 
+        hasLoadedInitialSnapshot = true;
         setChatSessionState({
           status: 'error',
           message:
@@ -71,9 +79,24 @@ export function useChatSession({
           return;
         }
 
-        setChatSessionState((state) =>
-          reduceChatSessionBridgeEvent(state, event),
-        );
+        if (!hasLoadedInitialSnapshot) {
+          queuedEvents.push(event);
+          return;
+        }
+
+        setChatSessionState((state) => {
+          const currentState =
+            state.status === 'ready' ? state : latestReadyChatSessionState;
+
+          if (currentState === null) {
+            return state;
+          }
+
+          const nextState = reduceChatSessionBridgeEvent(currentState, event);
+          latestReadyChatSessionState = nextState;
+
+          return nextState;
+        });
       },
       {
         onDisconnect() {
