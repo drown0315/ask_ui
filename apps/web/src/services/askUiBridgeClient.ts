@@ -67,6 +67,11 @@ export type GetChatSessionResponse = {
   messages: ChatMessageResponse[];
 };
 
+export type SendPlainTextChatMessageResponse = {
+  status: 'ok';
+  message: ChatMessageResponse;
+};
+
 export type BridgeSessionEvent =
   | {
       type: 'select_widget_mode_snapshot' | 'select_widget_mode_changed';
@@ -337,6 +342,55 @@ export async function getChatSession(
     agentStatus: body.agentStatus,
     readOnly: body.readOnly === true,
     messages: body.messages,
+  };
+}
+
+/**
+ * Send one plain text Chat message to the active Agent Session poller.
+ *
+ * Args:
+ * - `sessionId`: Existing bridge session id.
+ * - `text`: Composer text. The caller is responsible for local empty-state and
+ *   length validation; the bridge repeats those checks before delivery.
+ *
+ * Returns:
+ * The stored user Chat History message when the active poller accepts it.
+ */
+export async function sendPlainTextChatMessage(
+  sessionId: string,
+  text: string,
+): Promise<SendPlainTextChatMessageResponse> {
+  const response = await fetch(
+    `${bridgeOrigin}/api/sessions/${encodeURIComponent(
+      sessionId,
+    )}/chat/messages`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ text }),
+    },
+  );
+
+  const body = await parseBridgeJsonResponse<
+    Partial<SendPlainTextChatMessageResponse>
+  >(response, 'Failed to send Chat message');
+
+  if (!response.ok) {
+    throw new BridgeRequestError(
+      body.message ?? body.error ?? 'Failed to send Chat message',
+      body.error,
+    );
+  }
+
+  if (body.status !== 'ok' || !body.message) {
+    throw new Error('Chat send response did not include the sent message');
+  }
+
+  return {
+    status: 'ok',
+    message: body.message,
   };
 }
 

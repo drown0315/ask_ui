@@ -125,6 +125,16 @@ class AskUiBridgeServer {
       return;
     }
 
+    if (request.method == 'POST' &&
+        request.uri.pathSegments.length == 5 &&
+        request.uri.pathSegments[0] == 'api' &&
+        request.uri.pathSegments[1] == 'sessions' &&
+        request.uri.pathSegments[3] == 'chat' &&
+        request.uri.pathSegments[4] == 'messages') {
+      await _sendChatMessage(request);
+      return;
+    }
+
     if (request.method == 'GET' &&
         request.uri.pathSegments.length == 5 &&
         request.uri.pathSegments[0] == 'api' &&
@@ -132,6 +142,32 @@ class AskUiBridgeServer {
         request.uri.pathSegments[3] == 'agent' &&
         request.uri.pathSegments[4] == 'poll') {
       await _pollAgent(request);
+      return;
+    }
+
+    if (request.method == 'POST' &&
+        request.uri.pathSegments.length == 5 &&
+        request.uri.pathSegments[0] == 'api' &&
+        request.uri.pathSegments[1] == 'sessions' &&
+        request.uri.pathSegments[3] == 'agent' &&
+        request.uri.pathSegments[4] == 'reply') {
+      await _writeAgentChatMessage(
+        request,
+        writeMessage: (chat, text) => chat.appendAgentReply(text),
+      );
+      return;
+    }
+
+    if (request.method == 'POST' &&
+        request.uri.pathSegments.length == 5 &&
+        request.uri.pathSegments[0] == 'api' &&
+        request.uri.pathSegments[1] == 'sessions' &&
+        request.uri.pathSegments[3] == 'agent' &&
+        request.uri.pathSegments[4] == 'error') {
+      await _writeAgentChatMessage(
+        request,
+        writeMessage: (chat, text) => chat.appendAgentError(text),
+      );
       return;
     }
 
@@ -365,6 +401,80 @@ class AskUiBridgeServer {
     );
   }
 
+  /// Send one plain text Chat message to the currently waiting Agent Session.
+  ///
+  /// This endpoint intentionally has no offline queue. If no Agent Session is
+  /// actively polling, the browser keeps its composer text and can try again
+  /// once Agent Status returns to `agent_ready`.
+  Future<void> _sendChatMessage(HttpRequest request) async {
+    final String sessionId = request.uri.pathSegments[2];
+    final BridgeSession? session = _sessionStore.find(sessionId);
+
+    if (session == null) {
+      _logger.info('chat send session=$sessionId session_not_found');
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notFound,
+        body: {'error': 'session_not_found'},
+      );
+      return;
+    }
+
+    late final Map<String, Object?> body;
+    try {
+      final String rawBody = await utf8.decodeStream(request);
+      final decoded = jsonDecode(rawBody);
+      if (decoded is! Map<String, Object?>) {
+        throw const FormatException('Expected JSON object');
+      }
+      body = decoded;
+    } on FormatException {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'invalid_json'},
+      );
+      return;
+    }
+
+    final text = body['text'];
+    if (text is! String || text.trim().isEmpty) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'empty_chat_message'},
+      );
+      return;
+    }
+
+    if (text.length > 4000) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'chat_message_too_long'},
+      );
+      return;
+    }
+
+    final ChatMessage? message = session.chat.sendUserTextMessage(text);
+    if (message == null) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.conflict,
+        body: {'error': 'agent_not_ready'},
+      );
+      return;
+    }
+
+    await _writeJson(
+      request.response,
+      body: {
+        'status': 'ok',
+        'message': message.toJson(),
+      },
+    );
+  }
+
   /// Wait for the next Chat message for the launching Agent Session.
   ///
   /// The normal agent loop leaves `timeoutMs` unset and waits indefinitely.
@@ -456,6 +566,73 @@ class AskUiBridgeServer {
     }
 
     return Duration(milliseconds: milliseconds);
+  }
+
+  /// Store one agent-authored Chat History message.
+  ///
+  /// The caller chooses whether the message is a normal `agent` reply or a
+  /// command-level `system` error. Both share the same plain text body contract.
+  Future<void> _writeAgentChatMessage(
+    HttpRequest request, {
+    required ChatMessage Function(ChatSession chat, String text) writeMessage,
+  }) async {
+    final String sessionId = request.uri.pathSegments[2];
+    final BridgeSession? session = _sessionStore.find(sessionId);
+
+    if (session == null) {
+      _logger.info('agent write session=$sessionId session_not_found');
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notFound,
+        body: {'error': 'session_not_found'},
+      );
+      return;
+    }
+
+    late final Map<String, Object?> body;
+    try {
+      final String rawBody = await utf8.decodeStream(request);
+      final decoded = jsonDecode(rawBody);
+      if (decoded is! Map<String, Object?>) {
+        throw const FormatException('Expected JSON object');
+      }
+      body = decoded;
+    } on FormatException {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'invalid_json'},
+      );
+      return;
+    }
+
+    final text = body['text'];
+    if (text is! String || text.trim().isEmpty) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'empty_chat_message'},
+      );
+      return;
+    }
+
+    if (text.length > 4000) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'chat_message_too_long'},
+      );
+      return;
+    }
+
+    final ChatMessage message = writeMessage(session.chat, text);
+    await _writeJson(
+      request.response,
+      body: {
+        'status': 'ok',
+        'message': message.toJson(),
+      },
+    );
   }
 
   Future<void> _openDevice(HttpRequest request) async {

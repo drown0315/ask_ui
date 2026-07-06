@@ -1,23 +1,75 @@
+import { useState, type FormEvent, type KeyboardEvent } from 'react';
 import { getInitialChatPanelState } from './chatPanelContent';
 import {
+  CHAT_COMPOSER_TEXT_LIMIT,
+  getChatComposerState,
+  getComposerTextAfterSendResult,
+  shouldSubmitChatComposerKey,
+} from '../../chat/chatComposerState';
+import {
   getAgentStatusLabel,
+  getVisibleChatHistoryMessages,
   type ChatSessionState,
 } from '../../chat/chatSessionState';
+import { sendPlainTextChatMessage } from '../../services/askUiBridgeClient';
 
 export function ChatPanel({
   chatSessionState,
+  sessionId,
 }: {
   chatSessionState: ChatSessionState;
+  sessionId: string | null;
 }) {
   const content = getInitialChatPanelState();
+  const [composerText, setComposerText] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const agentStatusValue =
     chatSessionState.status === 'ready'
       ? getAgentStatusLabel(chatSessionState.agentStatus)
       : content.agentStatusValue;
+  const composerState = getChatComposerState(
+    chatSessionState,
+    composerText,
+    isSending,
+  );
   const composerDisabledReason =
-    chatSessionState.status === 'ready' && chatSessionState.readOnly
-      ? 'Read-only browser tabs cannot send Chat messages.'
-      : content.composerDisabledReason;
+    composerState.disabledReason ?? content.composerDisabledReason;
+  const visibleMessages = getVisibleChatHistoryMessages(chatSessionState);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!composerState.canSend || sessionId === null) {
+      return;
+    }
+
+    setIsSending(true);
+    setSendError(null);
+    try {
+      await sendPlainTextChatMessage(sessionId, composerText);
+      setComposerText((currentText) =>
+        getComposerTextAfterSendResult(currentText, true),
+      );
+    } catch (error) {
+      setComposerText((currentText) =>
+        getComposerTextAfterSendResult(currentText, false),
+      );
+      setSendError(
+        error instanceof Error ? error.message : 'Failed to send Chat message.',
+      );
+    } finally {
+      setIsSending(false);
+    }
+  }
+
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (!shouldSubmitChatComposerKey(event.key, event.shiftKey)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
+  }
 
   return (
     <aside className="workbench-panel chat-panel" aria-label={content.title}>
@@ -48,10 +100,17 @@ export function ChatPanel({
           </div>
         ) : null}
         {chatSessionState.status === 'ready' &&
-        chatSessionState.messages.length > 0 ? (
+        visibleMessages.length > 0 ? (
           <ol className="chat-history-list">
-            {chatSessionState.messages.map((message) => (
-              <li className="chat-history-message" key={message.id}>
+            {visibleMessages.map((message) => (
+              <li
+                className={
+                  message.id === 'agent-working-placeholder'
+                    ? 'chat-history-message chat-history-message-working'
+                    : 'chat-history-message'
+                }
+                key={message.id}
+              >
                 <div className="chat-history-message-role">{message.role}</div>
                 <div className="chat-history-message-text">{message.text}</div>
               </li>
@@ -66,19 +125,34 @@ export function ChatPanel({
         )}
       </section>
 
-      <form className="chat-composer" aria-label="Chat composer">
+      <form
+        className="chat-composer"
+        aria-label="Chat composer"
+        onSubmit={handleSubmit}
+      >
         <textarea
           aria-label="Message"
           className="chat-composer-input"
-          disabled
+          disabled={chatSessionState.status === 'ready' && chatSessionState.readOnly}
+          maxLength={CHAT_COMPOSER_TEXT_LIMIT}
+          onChange={(event) => {
+            setComposerText(event.target.value);
+            setSendError(null);
+          }}
+          onKeyDown={handleComposerKeyDown}
           placeholder={content.composerPlaceholder}
           rows={3}
+          value={composerText}
         />
         <div className="chat-composer-footer">
           <span className="chat-composer-disabled-reason">
-            {composerDisabledReason}
+            {sendError ?? composerDisabledReason}
           </span>
-          <button className="chat-send-button" disabled type="submit">
+          <button
+            className="chat-send-button"
+            disabled={!composerState.canSend || sessionId === null}
+            type="submit"
+          >
             Send
           </button>
         </div>

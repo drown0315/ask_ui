@@ -1,0 +1,87 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import {
+  CHAT_COMPOSER_TEXT_LIMIT,
+  getChatComposerState,
+  getComposerTextAfterSendResult,
+  shouldSubmitChatComposerKey,
+} from './chatComposerState.ts';
+import { getInitialChatSessionState } from './chatSessionState.ts';
+
+test('enables Chat send only while the Agent is ready with text', () => {
+  const state = getInitialChatSessionState({
+    status: 'ok',
+    agentStatus: 'agent_ready',
+    readOnly: false,
+    messages: [],
+  });
+
+  assert.deepEqual(getChatComposerState(state, 'Make it primary.'), {
+    canSend: true,
+    disabledReason: null,
+    isTooLong: false,
+  });
+});
+
+test('treats whitespace-only composer text as no typed message', () => {
+  const state = getInitialChatSessionState({
+    status: 'ok',
+    agentStatus: 'agent_ready',
+    readOnly: false,
+    messages: [],
+  });
+
+  assert.deepEqual(getChatComposerState(state, ' \n\t '), {
+    canSend: false,
+    disabledReason: 'Type a message to send.',
+    isTooLong: false,
+  });
+});
+
+test('disables Chat send when Agent Status is not ready', () => {
+  const state = getInitialChatSessionState({
+    status: 'ok',
+    agentStatus: 'agent_working',
+    readOnly: false,
+    messages: [],
+  });
+
+  assert.deepEqual(getChatComposerState(state, 'Make it primary.'), {
+    canSend: false,
+    disabledReason: 'Agent Status is Agent working.',
+    isTooLong: false,
+  });
+});
+
+test('limits typed composer text to 4000 characters', () => {
+  const state = getInitialChatSessionState({
+    status: 'ok',
+    agentStatus: 'agent_ready',
+    readOnly: false,
+    messages: [],
+  });
+
+  assert.deepEqual(getChatComposerState(state, 'x'.repeat(4001)), {
+    canSend: false,
+    disabledReason: `Message must be ${CHAT_COMPOSER_TEXT_LIMIT} characters or fewer.`,
+    isTooLong: true,
+  });
+});
+
+test('Enter submits the Chat composer while Shift+Enter inserts a newline', () => {
+  assert.equal(shouldSubmitChatComposerKey('Enter', false), true);
+  assert.equal(shouldSubmitChatComposerKey('Enter', true), false);
+  assert.equal(shouldSubmitChatComposerKey('a', false), false);
+});
+
+test('clears composer text only after successful send', () => {
+  assert.equal(
+    getComposerTextAfterSendResult('Make it primary.', true),
+    '',
+  );
+  assert.equal(
+    getComposerTextAfterSendResult('Make it primary.', false),
+    'Make it primary.',
+  );
+});
