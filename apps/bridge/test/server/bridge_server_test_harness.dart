@@ -9,12 +9,16 @@ import 'package:ask_ui_bridge/logging/bridge_logger.dart';
 import 'package:ask_ui_bridge/server/ask_ui_bridge_server.dart';
 import 'package:ask_ui_bridge/sessions/flutter_device_checker.dart';
 import 'package:ask_ui_bridge/sessions/session_store.dart';
+import 'package:ask_ui_bridge/snapshots/snapshot_capture.dart';
 import 'package:ask_ui_bridge/widget_tree/widget_tree_snapshot.dart';
+export 'package:ask_ui_bridge/snapshots/snapshot_capture.dart'
+    show SnapshotCaptureResult;
 
 class BridgeServerFixture {
   late AskUiBridgeServer server;
   late RecordingFlutterInspectorClient inspectorClient;
   late RecordingFlutterAppController appController;
+  late RecordingSnapshotCapture snapshotCapture;
   late List<String> logs;
   late Uri baseUri;
 
@@ -23,15 +27,19 @@ class BridgeServerFixture {
       {'19271FDF6007TY', 'device-1', 'device-2'},
     ),
     DeviceStreamFactory deviceStreamFactory = const ShellDeviceStreamFactory(),
+    RecordingSnapshotCapture? snapshotCapture,
     bool Function(String projectRoot) projectRootExists = _projectRootExists,
     Duration sessionEventsHeartbeatInterval = const Duration(seconds: 15),
   }) async {
     inspectorClient = RecordingFlutterInspectorClient();
     appController = RecordingFlutterAppController();
+    this.snapshotCapture =
+        snapshotCapture ?? RecordingSnapshotCapture.unavailable();
     logs = <String>[];
     await _startServer(
       flutterDeviceChecker: flutterDeviceChecker,
       deviceStreamFactory: deviceStreamFactory,
+      snapshotCapture: this.snapshotCapture,
       projectRootExists: projectRootExists,
       sessionEventsHeartbeatInterval: sessionEventsHeartbeatInterval,
     );
@@ -44,6 +52,7 @@ class BridgeServerFixture {
     await _startServer(
       flutterDeviceChecker: flutterDeviceChecker,
       deviceStreamFactory: const ShellDeviceStreamFactory(),
+      snapshotCapture: snapshotCapture,
       projectRootExists: _projectRootExists,
       sessionEventsHeartbeatInterval: const Duration(seconds: 15),
     );
@@ -58,6 +67,7 @@ class BridgeServerFixture {
         {'19271FDF6007TY', 'device-1', 'device-2'},
       ),
       deviceStreamFactory: deviceStreamFactory,
+      snapshotCapture: snapshotCapture,
       projectRootExists: _projectRootExists,
       sessionEventsHeartbeatInterval: const Duration(seconds: 15),
     );
@@ -70,6 +80,7 @@ class BridgeServerFixture {
   Future<void> _startServer({
     required FlutterDeviceChecker flutterDeviceChecker,
     required DeviceStreamFactory deviceStreamFactory,
+    required RecordingSnapshotCapture snapshotCapture,
     required bool Function(String projectRoot) projectRootExists,
     required Duration sessionEventsHeartbeatInterval,
   }) async {
@@ -79,6 +90,7 @@ class BridgeServerFixture {
       appController: appController,
       flutterDeviceChecker: flutterDeviceChecker,
       deviceStreamFactory: deviceStreamFactory,
+      snapshotCapture: snapshotCapture,
       projectRootExists: projectRootExists,
       sessionEventsHeartbeatInterval: sessionEventsHeartbeatInterval,
       logger: BridgeLogger(write: logs.add),
@@ -89,6 +101,52 @@ class BridgeServerFixture {
     );
     baseUri = Uri.parse('http://${InternetAddress.loopbackIPv4.host}:$port');
   }
+}
+
+class RecordingSnapshotCapture implements SnapshotCapture {
+  RecordingSnapshotCapture({
+    required this.result,
+  });
+
+  RecordingSnapshotCapture.unavailable()
+      : result = const SnapshotCaptureResult.unavailable();
+
+  SnapshotCaptureResult result;
+  final requests = <RecordedSnapshotCaptureRequest>[];
+
+  @override
+  Future<SnapshotCaptureResult> capture(SnapshotCaptureRequest request) async {
+    requests.add(RecordedSnapshotCaptureRequest(
+      sessionId: request.session.id,
+      commentId: request.commentId,
+      maxSizeBytes: request.maxSizeBytes,
+    ));
+
+    return result;
+  }
+}
+
+class RecordedSnapshotCaptureRequest {
+  const RecordedSnapshotCaptureRequest({
+    required this.sessionId,
+    required this.commentId,
+    required this.maxSizeBytes,
+  });
+
+  final String sessionId;
+  final String commentId;
+  final int maxSizeBytes;
+
+  @override
+  bool operator ==(Object other) {
+    return other is RecordedSnapshotCaptureRequest &&
+        other.sessionId == sessionId &&
+        other.commentId == commentId &&
+        other.maxSizeBytes == maxSizeBytes;
+  }
+
+  @override
+  int get hashCode => Object.hash(sessionId, commentId, maxSizeBytes);
 }
 
 bool _projectRootExists(String projectRoot) => true;

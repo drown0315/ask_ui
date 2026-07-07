@@ -28,13 +28,24 @@ import {
   getNumberedSelectionComments,
   getSelectionCommentInputState,
   SELECTION_COMMENT_TEXT_LIMIT,
+  updateSelectionCommentSnapshot,
   updateSelectionCommentDraft,
   updateSelectionCommentText,
   type SelectionCommentAttachmentToken,
   type SelectionCommentState,
   type SelectedWidgetTarget,
 } from '../../selection-comments/selectionCommentState';
-import { sendPlainTextChatMessage } from '../../services/askUiBridgeClient';
+import {
+  captureSelectionCommentSnapshot,
+  sendPlainTextChatMessage,
+} from '../../services/askUiBridgeClient';
+import {
+  startSelectionCommentSnapshotCapture,
+  waitForSelectionCommentSnapshots,
+  type PendingSelectionCommentSnapshots,
+} from '../../selection-comments/selectionCommentSnapshots';
+
+const SNAPSHOT_SEND_WAIT_MS = 5000;
 
 export function ChatPanel({
   activeSelectionCommentId,
@@ -61,9 +72,15 @@ export function ChatPanel({
 }) {
   const content = getInitialChatPanelState();
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
+  const pendingSnapshotsRef = useRef<PendingSelectionCommentSnapshots>(
+    new Map(),
+  );
+  const selectionCommentStateRef = useRef(selectionCommentState);
   const [composerText, setComposerText] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [isFinishingSnapshots, setIsFinishingSnapshots] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  selectionCommentStateRef.current = selectionCommentState;
   const activeSelectionComment =
     activeSelectionCommentId === null
       ? null
@@ -82,7 +99,9 @@ export function ChatPanel({
     isSending,
   );
   const composerDisabledReason =
-    composerState.disabledReason ?? content.composerDisabledReason;
+    isFinishingSnapshots
+      ? 'Finishing snapshots...'
+      : composerState.disabledReason ?? content.composerDisabledReason;
   const visibleMessages = getVisibleChatHistoryMessages(chatSessionState);
   const selectionCommentText = getDraftForSelectedWidget(
     selectionCommentState,
@@ -105,6 +124,8 @@ export function ChatPanel({
       return;
     }
 
+    const commentId = `selection-comment-${selectionCommentState.nextCommentId}`;
+
     onSelectionCommentStateChange((currentState) => {
       const nextState = addSelectionComment(
         currentState,
@@ -114,6 +135,21 @@ export function ChatPanel({
 
       return updateSelectionCommentDraft(nextState, panelTarget, '');
     });
+    if (sessionId === null) {
+      onSelectionCommentStateChange((currentState) =>
+        updateSelectionCommentSnapshot(currentState, commentId, {
+          status: 'unavailable',
+        }),
+      );
+    } else {
+      startSelectionCommentSnapshotCapture({
+        captureSnapshot: captureSelectionCommentSnapshot,
+        commentId,
+        pendingSnapshots: pendingSnapshotsRef.current,
+        sessionId,
+        updateState: onSelectionCommentStateChange,
+      });
+    }
     requestAnimationFrame(() => commentInputRef.current?.focus());
   }
 
@@ -126,6 +162,20 @@ export function ChatPanel({
     setIsSending(true);
     setSendError(null);
     try {
+      if (
+        selectionCommentStateRef.current.comments.some(
+          (comment) => comment.snapshot.status === 'capturing',
+        )
+      ) {
+        setIsFinishingSnapshots(true);
+        await waitForSelectionCommentSnapshots({
+          getState: () => selectionCommentStateRef.current,
+          pendingSnapshots: pendingSnapshotsRef.current,
+          timeoutMs: SNAPSHOT_SEND_WAIT_MS,
+          updateState: onSelectionCommentStateChange,
+        });
+        setIsFinishingSnapshots(false);
+      }
       await sendPlainTextChatMessage(sessionId, composerText);
       setComposerText((currentText) =>
         getComposerTextAfterSendResult(currentText, true),
@@ -138,6 +188,7 @@ export function ChatPanel({
         error instanceof Error ? error.message : 'Failed to send Chat message.',
       );
     } finally {
+      setIsFinishingSnapshots(false);
       setIsSending(false);
     }
   }

@@ -11,6 +11,7 @@ import '../inspector/flutter_inspector_client.dart';
 import '../logging/bridge_logger.dart';
 import '../sessions/flutter_device_checker.dart';
 import '../sessions/session_store.dart';
+import '../snapshots/snapshot_capture.dart';
 
 class AskUiBridgeServer {
   AskUiBridgeServer({
@@ -19,6 +20,7 @@ class AskUiBridgeServer {
     required FlutterAppController appController,
     FlutterDeviceChecker? flutterDeviceChecker,
     DeviceStreamFactory? deviceStreamFactory,
+    SnapshotCapture? snapshotCapture,
     bool Function(String projectRoot)? projectRootExists,
     Duration sessionEventsHeartbeatInterval = const Duration(seconds: 15),
     BridgeLogger? logger,
@@ -29,6 +31,8 @@ class AskUiBridgeServer {
             flutterDeviceChecker ?? const FlutterDevicesCommandChecker(),
         _deviceStreamFactory =
             deviceStreamFactory ?? ScrcpyDeviceStreamFactory(),
+        _snapshotCapture =
+            snapshotCapture ?? const UnavailableSnapshotCapture(),
         _projectRootExists = projectRootExists ??
             ((projectRoot) => Directory(projectRoot).existsSync()),
         _sessionEventsHeartbeatInterval = sessionEventsHeartbeatInterval,
@@ -39,6 +43,7 @@ class AskUiBridgeServer {
   final FlutterAppController _appController;
   final FlutterDeviceChecker _flutterDeviceChecker;
   final DeviceStreamFactory _deviceStreamFactory;
+  final SnapshotCapture _snapshotCapture;
   final bool Function(String projectRoot) _projectRootExists;
   final Duration _sessionEventsHeartbeatInterval;
   final BridgeLogger _logger;
@@ -122,6 +127,15 @@ class AskUiBridgeServer {
         request.uri.pathSegments[1] == 'sessions' &&
         request.uri.pathSegments[3] == 'chat') {
       await _getChat(request);
+      return;
+    }
+
+    if (request.method == 'POST' &&
+        request.uri.pathSegments.length == 4 &&
+        request.uri.pathSegments[0] == 'api' &&
+        request.uri.pathSegments[1] == 'sessions' &&
+        request.uri.pathSegments[3] == 'snapshots') {
+      await _captureSnapshot(request);
       return;
     }
 
@@ -477,6 +491,91 @@ class AskUiBridgeServer {
       body: {
         'status': 'ok',
         'message': message.toJson(),
+      },
+    );
+  }
+
+  Future<void> _captureSnapshot(HttpRequest request) async {
+    final String sessionId = request.uri.pathSegments[2];
+    final BridgeSession? session = _sessionStore.find(sessionId);
+
+    if (session == null) {
+      _logger.info('snapshot capture session=$sessionId session_not_found');
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notFound,
+        body: {'error': 'session_not_found'},
+      );
+      return;
+    }
+
+    late final Map<String, Object?> body;
+    try {
+      final String rawBody = await utf8.decodeStream(request);
+      final decoded = jsonDecode(rawBody);
+      if (decoded is! Map<String, Object?>) {
+        throw const FormatException('Expected JSON object');
+      }
+      body = decoded;
+    } on FormatException {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'invalid_json'},
+      );
+      return;
+    }
+
+    final commentId = body['commentId'];
+    final format = body['format'];
+    final scope = body['scope'];
+    final maxSizeBytes = body['maxSizeBytes'];
+
+    if (commentId is! String || commentId.trim().isEmpty) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'missing_comment_id'},
+      );
+      return;
+    }
+
+    if (format != 'jpeg' || scope != 'full_device' || maxSizeBytes is! int) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'invalid_snapshot_request'},
+      );
+      return;
+    }
+
+    final SnapshotCaptureResult result = await _snapshotCapture.capture(
+      SnapshotCaptureRequest(
+        session: session,
+        commentId: commentId.trim(),
+        maxSizeBytes: maxSizeBytes,
+      ),
+    );
+
+    if (!result.isAvailable ||
+        result.mimeType != 'image/jpeg' ||
+        result.sizeBytes > maxSizeBytes) {
+      await _writeJson(
+        request.response,
+        body: {'status': 'unavailable'},
+      );
+      return;
+    }
+
+    await _writeJson(
+      request.response,
+      body: {
+        'status': 'ok',
+        'snapshot': {
+          'path': result.path,
+          'mimeType': result.mimeType,
+          'sizeBytes': result.sizeBytes,
+        },
       },
     );
   }
