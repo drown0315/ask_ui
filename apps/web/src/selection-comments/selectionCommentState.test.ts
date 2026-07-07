@@ -5,7 +5,9 @@ import {
   addSelectionComment,
   deleteSelectionComment,
   getDraftForSelectedWidget,
+  getInitialSelectionCommentState,
   getSelectionCommentById,
+  getSelectionCommentStateAfterSendResult,
   getSelectionCommentsForSelectedWidget,
   updateSelectionCommentDraft,
   updateSelectionCommentSnapshot,
@@ -215,4 +217,23 @@ test('stores selected widget metadata with staged comments for later token navig
     text: 'Make it clearer',
     snapshot: capturingSnapshot,
   });
+});
+
+test('clears staged comments and drafts only after successful Chat send', () => {
+  const state = updateSelectionCommentDraft(
+    addSelectionComment(
+      getInitialSelectionCommentState(),
+      target,
+      'Make this primary.',
+    ),
+    target,
+    'Unadded draft.',
+  );
+
+  assert.deepEqual(getSelectionCommentStateAfterSendResult(state, true), {
+    comments: [],
+    draftsByWidgetId: {},
+    nextCommentId: 1,
+  });
+  assert.equal(getSelectionCommentStateAfterSendResult(state, false), state);
 });

@@ -85,6 +85,7 @@ export function useBridgeSession(locationHref: string): {
         setBridgeSessionState({
           status: 'ready',
           sessionId,
+          projectRoot: bootstrap.projectRoot,
           targetDeviceId: bootstrap.deviceId,
           targetDeviceDisplayName:
             targetDevice?.displayName?.trim() || undefined,

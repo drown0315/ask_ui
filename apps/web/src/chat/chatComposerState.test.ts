@@ -9,7 +9,7 @@ import {
 } from './chatComposerState.ts';
 import { getInitialChatSessionState } from './chatSessionState.ts';
 
-test('enables Chat send only while the Agent is ready with text', () => {
+test('enables Chat send only while the Agent is ready with text or attachments', () => {
   const state = getInitialChatSessionState({
     status: 'ok',
     agentStatus: 'agent_ready',
@@ -18,6 +18,11 @@ test('enables Chat send only while the Agent is ready with text', () => {
   });
 
   assert.deepEqual(getChatComposerState(state, 'Make it primary.'), {
+    canSend: true,
+    disabledReason: null,
+    isTooLong: false,
+  });
+  assert.deepEqual(getChatComposerState(state, ' \n\t ', false, 1), {
     canSend: true,
     disabledReason: null,
     isTooLong: false,

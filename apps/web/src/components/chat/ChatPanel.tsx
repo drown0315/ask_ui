@@ -27,6 +27,7 @@ export function ChatPanel({
   isSelectWidgetActive,
   onAttachmentTokenClick,
   onSelectionCommentStateChange,
+  projectRoot,
   selectedWidget,
   selectionCommentState,
   sessionId,
@@ -41,6 +42,7 @@ export function ChatPanel({
   selectedWidget: SelectedWidgetTarget | null;
   selectionCommentState: SelectionCommentState;
   sessionId: string | null;
+  projectRoot: string | null;
   widgetTreeStatus: 'loading' | 'loaded' | 'error';
 }) {
   const content = getInitialChatPanelState();
@@ -57,7 +59,10 @@ export function ChatPanel({
   const composer = useChatComposerFlow({
     chatSessionState,
     defaultDisabledReason: content.composerDisabledReason,
+    getSelectionCommentsForSend: selectionComments.getSelectionCommentsForSend,
     hasCapturingSnapshots: selectionComments.hasCapturingSnapshots,
+    onSelectionCommentStateChange,
+    projectRoot,
     sessionId,
     snapshotWaitMs: SNAPSHOT_SEND_WAIT_MS,
     waitForPendingSnapshots: selectionComments.waitForPendingSnapshots,

@@ -22,6 +22,7 @@ export function getChatComposerState(
   chatSessionState: ChatSessionState,
   text: string,
   isSending = false,
+  attachmentCount = 0,
 ): ChatComposerState {
   const isTooLong = text.length > CHAT_COMPOSER_TEXT_LIMIT;
 
@@ -59,7 +60,7 @@ export function getChatComposerState(
     };
   }
 
-  if (text.trim().length === 0) {
+  if (text.trim().length === 0 && attachmentCount === 0) {
     return {
       canSend: false,
       disabledReason: 'Type a message to send.',

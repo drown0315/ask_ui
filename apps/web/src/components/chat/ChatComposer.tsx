@@ -54,6 +54,7 @@ export function ChatComposer({
         }}
         onKeyDown={composer.handleComposerKeyDown}
         placeholder={placeholder}
+        ref={composer.composerInputRef}
         rows={3}
         value={composer.composerText}
       />

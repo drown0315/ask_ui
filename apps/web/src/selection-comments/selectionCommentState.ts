@@ -18,6 +18,13 @@ export function getInitialSelectionCommentState(): SelectionCommentState {
   };
 }
 
+export function getSelectionCommentStateAfterSendResult(
+  currentState: SelectionCommentState,
+  succeeded: boolean,
+): SelectionCommentState {
+  return succeeded ? getInitialSelectionCommentState() : currentState;
+}
+
 export function getDraftForSelectedWidget(
   state: SelectionCommentState,
   selectedWidget: SelectedWidgetTarget | null,

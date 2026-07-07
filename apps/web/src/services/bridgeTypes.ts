@@ -79,6 +79,43 @@ export type SendPlainTextChatMessageResponse = {
   message: ChatMessageResponse;
 };
 
+export type ChatMessageSelectionCommentAttachment = {
+  id: string;
+  commentText: string;
+  selectedWidget: {
+    id: string;
+    displayLabel: string;
+    sourceLocation?: string;
+    visibleText?: string;
+    semanticInfo?: string;
+  };
+  snapshot:
+    | {
+        status: 'available';
+        path: string;
+      }
+    | {
+        status: 'unavailable';
+      };
+};
+
+export type ChatMessageRequestPart =
+  | {
+      type: 'selection_comment';
+      attachment: ChatMessageSelectionCommentAttachment;
+    }
+  | {
+      type: 'text';
+      text: string;
+    };
+
+export type SendChatMessageRequest = {
+  context: {
+    projectRoot: string;
+  };
+  parts: ChatMessageRequestPart[];
+};
+
 export type SelectionCommentSnapshotCaptureResult =
   | {
       status: 'available';
