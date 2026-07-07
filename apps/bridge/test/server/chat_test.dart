@@ -570,6 +570,76 @@ void main() {
       expect(repeatedTextPartsBody, {'error': 'invalid_chat_parts'});
     });
 
+    test('rejects over-limit Selection Comment metadata strings', () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+      final String sessionId = await createSession(client, fixture.baseUri);
+      final longMetadata = List.filled(1001, 'x').join();
+
+      Future<Map<String, Object?>> sendAttachment(
+        Map<String, Object?> attachment,
+      ) async {
+        final request = await client.postUrl(
+          fixture.baseUri.resolve('/api/sessions/$sessionId/chat/messages'),
+        );
+        request.headers.contentType = ContentType.json;
+        request.write(
+          jsonEncode({
+            'parts': [
+              {
+                'type': 'selection_comment',
+                'attachment': attachment,
+              },
+            ],
+          }),
+        );
+        final response = await request.close();
+        final responseBody = jsonDecode(await utf8.decodeStream(response))
+            as Map<String, Object?>;
+
+        expect(response.statusCode, HttpStatus.badRequest);
+        return responseBody;
+      }
+
+      Map<String, Object?> attachmentWith({
+        Object? id = 'selection-comment-1',
+        Object? widgetId = 'widget-1',
+        Object? displayLabel = 'PrimaryButton',
+        Object? snapshotPath = '/tmp/selection-comment-1.png',
+      }) {
+        return {
+          'id': id,
+          'commentText': 'Make this button primary.',
+          'selectedWidget': {
+            'id': widgetId,
+            'displayLabel': displayLabel,
+          },
+          'snapshot': {
+            'status': 'available',
+            'path': snapshotPath,
+          },
+        };
+      }
+
+      final longAttachmentIdBody = await sendAttachment(
+        attachmentWith(id: longMetadata),
+      );
+      final longWidgetIdBody = await sendAttachment(
+        attachmentWith(widgetId: longMetadata),
+      );
+      final longDisplayLabelBody = await sendAttachment(
+        attachmentWith(displayLabel: longMetadata),
+      );
+      final longSnapshotPathBody = await sendAttachment(
+        attachmentWith(snapshotPath: longMetadata),
+      );
+
+      expect(longAttachmentIdBody, {'error': 'invalid_chat_parts'});
+      expect(longWidgetIdBody, {'error': 'invalid_chat_parts'});
+      expect(longDisplayLabelBody, {'error': 'invalid_chat_parts'});
+      expect(longSnapshotPathBody, {'error': 'invalid_chat_parts'});
+    });
+
     test('writes an Agent reply and allows the Agent to poll again', () async {
       final browserClient = HttpClient();
       final agentClient = HttpClient();

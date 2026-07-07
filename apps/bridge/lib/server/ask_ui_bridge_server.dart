@@ -15,6 +15,7 @@ import '../snapshots/snapshot_capture.dart';
 
 const int _chatMessageTextLimit = 4000;
 const int _selectionCommentTextLimit = 1000;
+const int _selectionCommentMetadataLimit = 1000;
 const int _selectionCommentBatchLimit = 20;
 
 class AskUiBridgeServer {
@@ -620,11 +621,8 @@ class AskUiBridgeServer {
     final commentText = attachment['commentText'];
     final selectedWidget = _normalizeJsonObject(attachment['selectedWidget']);
     final snapshot = _normalizeJsonObject(attachment['snapshot']);
-    if (id is! String ||
-        id.trim().isEmpty ||
-        commentText is! String ||
-        commentText.trim().isEmpty ||
-        commentText.length > _selectionCommentTextLimit ||
+    if (!_isBoundedNonBlankString(id, _selectionCommentMetadataLimit) ||
+        !_isBoundedNonBlankString(commentText, _selectionCommentTextLimit) ||
         selectedWidget == null ||
         snapshot == null) {
       return null;
@@ -647,10 +645,11 @@ class AskUiBridgeServer {
   Map<String, Object?>? _parseSelectedWidget(Map<String, Object?> widget) {
     final id = widget['id'];
     final displayLabel = widget['displayLabel'];
-    if (id is! String ||
-        id.trim().isEmpty ||
-        displayLabel is! String ||
-        displayLabel.trim().isEmpty) {
+    if (!_isBoundedNonBlankString(id, _selectionCommentMetadataLimit) ||
+        !_isBoundedNonBlankString(
+          displayLabel,
+          _selectionCommentMetadataLimit,
+        )) {
       return null;
     }
 
@@ -661,7 +660,7 @@ class AskUiBridgeServer {
     for (final key in ['sourceLocation', 'visibleText', 'semanticInfo']) {
       final value = widget[key];
       if (value != null) {
-        if (value is! String || value.length > _selectionCommentTextLimit) {
+        if (!_isBoundedString(value, _selectionCommentTextLimit)) {
           return null;
         }
         normalized[key] = value;
@@ -676,7 +675,7 @@ class AskUiBridgeServer {
     switch (snapshot['status']) {
       case 'available':
         final path = snapshot['path'];
-        if (path is! String || path.trim().isEmpty) {
+        if (!_isBoundedNonBlankString(path, _selectionCommentMetadataLimit)) {
           return null;
         }
         return {
@@ -688,6 +687,17 @@ class AskUiBridgeServer {
     }
 
     return null;
+  }
+
+  bool _isBoundedNonBlankString(Object? value, int limit) {
+    if (value is! String) {
+      return false;
+    }
+    return value.trim().isNotEmpty && value.length <= limit;
+  }
+
+  bool _isBoundedString(Object? value, int limit) {
+    return value is String && value.length <= limit;
   }
 
   Map<String, Object?>? _normalizeJsonObject(Object? value) {
