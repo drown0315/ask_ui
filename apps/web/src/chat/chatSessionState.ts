@@ -140,6 +140,16 @@ export type ChatHistorySelectionCommentSummary = {
   text: string;
 };
 
+export type ChatHistoryMessageContentItem =
+  | {
+      type: 'selection_comment';
+      summary: ChatHistorySelectionCommentSummary;
+    }
+  | {
+      type: 'text';
+      text: string;
+    };
+
 export function getChatHistorySelectionCommentSummaries(
   message: ChatMessageResponse,
 ): ChatHistorySelectionCommentSummary[] {
@@ -151,4 +161,27 @@ export function getChatHistorySelectionCommentSummaries(
       widgetLabel: part.attachment.selectedWidget.displayLabel,
       text: part.attachment.commentText,
     }));
+}
+
+export function getChatHistoryMessageContentItems(
+  message: ChatMessageResponse,
+): ChatHistoryMessageContentItem[] {
+  const attachmentItems = getChatHistorySelectionCommentSummaries(message).map(
+    (summary) => ({
+      type: 'selection_comment' as const,
+      summary,
+    }),
+  );
+
+  if (message.text.trim().length === 0) {
+    return attachmentItems;
+  }
+
+  return [
+    ...attachmentItems,
+    {
+      type: 'text',
+      text: message.text,
+    },
+  ];
 }

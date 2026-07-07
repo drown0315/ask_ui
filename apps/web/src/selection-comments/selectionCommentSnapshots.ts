@@ -91,10 +91,15 @@ export async function waitForSelectionCommentSnapshots({
     return {};
   }
 
+  const completedSnapshots: CompletedSelectionCommentSnapshots = {};
   let timedOut = false;
-  const settledSnapshots = await Promise.race([
+  await Promise.race([
     Promise.allSettled(
-      pendingForCurrentComments.map((pending) => pending.capture),
+      pendingForCurrentComments.map((pending) =>
+        pending.capture.then((snapshot) => {
+          completedSnapshots[pending.commentId] = snapshot;
+        }),
+      ),
     ),
     new Promise<void>((resolve) => {
       setTimeout(() => {
@@ -105,24 +110,19 @@ export async function waitForSelectionCommentSnapshots({
   ]);
 
   if (!timedOut) {
-    return Object.fromEntries(
-      pendingForCurrentComments.flatMap((pending, index) => {
-        const result = settledSnapshots?.[index];
-        return result?.status === 'fulfilled'
-          ? [[pending.commentId, result.value]]
-          : [];
-      }),
-    );
+    return completedSnapshots;
   }
 
+  const timedOutCommentIds = new Set(
+    pendingForCurrentComments
+      .filter((pending) => completedSnapshots[pending.commentId] === undefined)
+      .map((pending) => pending.commentId),
+  );
   const timedOutSnapshots = Object.fromEntries(
-    pendingForCurrentComments.map((pending) => [
-      pending.commentId,
+    [...timedOutCommentIds].map((commentId) => [
+      commentId,
       { status: 'unavailable' as const },
     ]),
-  );
-  const timedOutCommentIds = new Set(
-    pendingForCurrentComments.map((pending) => pending.commentId),
   );
   updateState((state) => ({
     ...state,
@@ -138,5 +138,8 @@ export async function waitForSelectionCommentSnapshots({
         : comment,
     ),
   }));
-  return timedOutSnapshots;
+  return {
+    ...completedSnapshots,
+    ...timedOutSnapshots,
+  };
 }

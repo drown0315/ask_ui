@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  getChatHistoryMessageContentItems,
   getChatHistorySelectionCommentSummaries,
   getVisibleChatHistoryMessages,
   getInitialChatSessionStateWithQueuedEvents,
@@ -232,6 +233,51 @@ test('summarizes Selection Comment attachments for Chat History rows', () => {
         number: 2,
         widgetLabel: 'Subtitle',
         text: 'Use friendlier copy.',
+      },
+    ],
+  );
+});
+
+test('orders Chat History attachments before typed text', () => {
+  assert.deepEqual(
+    getChatHistoryMessageContentItems({
+      id: 'message-1',
+      role: 'user',
+      text: 'Also update spacing.',
+      parts: [
+        {
+          type: 'selection_comment',
+          attachment: {
+            id: 'selection-comment-1',
+            commentText: 'Make this primary.',
+            selectedWidget: {
+              id: 'widget-1',
+              displayLabel: 'PrimaryButton',
+            },
+            snapshot: {
+              status: 'unavailable',
+            },
+          },
+        },
+        {
+          type: 'text',
+          text: 'Also update spacing.',
+        },
+      ],
+    }),
+    [
+      {
+        type: 'selection_comment',
+        summary: {
+          id: 'selection-comment-1',
+          number: 1,
+          widgetLabel: 'PrimaryButton',
+          text: 'Make this primary.',
+        },
+      },
+      {
+        type: 'text',
+        text: 'Also update spacing.',
       },
     ],
   );

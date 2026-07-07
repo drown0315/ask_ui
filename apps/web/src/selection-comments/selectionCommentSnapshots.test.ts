@@ -269,6 +269,87 @@ test('snapshot wait timeout only degrades captures pending when wait started', a
   );
 });
 
+test('snapshot wait timeout preserves captures completed before timeout', async () => {
+  let resolveFirstCapture:
+    | ((snapshot: SelectionCommentSnapshot) => void)
+    | undefined;
+  let state: SelectionCommentState = addSelectionComment(
+    addSelectionComment(
+      getInitialSelectionCommentState(),
+      target,
+      'Resolved before timeout',
+    ),
+    target,
+    'Still pending at timeout',
+  );
+  const pendingSnapshots: PendingSelectionCommentSnapshots = new Map();
+
+  startSelectionCommentSnapshotCapture({
+    captureSnapshot: () =>
+      new Promise<SelectionCommentSnapshot>((resolve) => {
+        resolveFirstCapture = resolve;
+      }),
+    commentId: 'selection-comment-1',
+    pendingSnapshots,
+    sessionId: 'session-1',
+    updateState(update) {
+      state = update(state);
+    },
+  });
+  startSelectionCommentSnapshotCapture({
+    captureSnapshot: () => new Promise<SelectionCommentSnapshot>(() => {}),
+    commentId: 'selection-comment-2',
+    pendingSnapshots,
+    sessionId: 'session-1',
+    updateState(update) {
+      state = update(state);
+    },
+  });
+
+  const waitPromise = waitForSelectionCommentSnapshots({
+    getState: () => state,
+    pendingSnapshots,
+    timeoutMs: 1,
+    updateState(update) {
+      state = update(state);
+    },
+  });
+
+  resolveFirstCapture?.({
+    status: 'available',
+    path: '/tmp/ask-ui/session-1/snapshots/selection-comment-1.png',
+    mimeType: 'image/png',
+    sizeBytes: 120_000,
+  });
+
+  assert.deepEqual(await waitPromise, {
+    'selection-comment-1': {
+      status: 'available',
+      path: '/tmp/ask-ui/session-1/snapshots/selection-comment-1.png',
+      mimeType: 'image/png',
+      sizeBytes: 120_000,
+    },
+    'selection-comment-2': {
+      status: 'unavailable',
+    },
+  });
+  assert.deepEqual(
+    getSelectionCommentById(state, 'selection-comment-1')?.snapshot,
+    {
+      status: 'available',
+      path: '/tmp/ask-ui/session-1/snapshots/selection-comment-1.png',
+      mimeType: 'image/png',
+      sizeBytes: 120_000,
+    },
+  );
+  assert.deepEqual(
+    getSelectionCommentById(state, 'selection-comment-2')?.snapshot,
+    {
+      status: 'unavailable',
+    },
+  );
+});
+
 test('returns completed snapshots from Send wait without requiring a state read', async () => {
   let resolveCapture:
     | ((snapshot: SelectionCommentSnapshot) => void)

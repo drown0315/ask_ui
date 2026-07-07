@@ -1,5 +1,5 @@
 import {
-  getChatHistorySelectionCommentSummaries,
+  getChatHistoryMessageContentItems,
   type ChatSessionState,
 } from '../../chat/chatSessionState';
 import type { ChatMessageResponse } from '../../services/bridgeTypes';
@@ -58,35 +58,38 @@ function ChatHistoryMessageContent({
 }: {
   message: ChatMessageResponse;
 }) {
-  const selectionCommentSummaries =
-    getChatHistorySelectionCommentSummaries(message);
+  const contentItems = getChatHistoryMessageContentItems(message);
+  const selectionCommentItems = contentItems.filter(
+    (item) => item.type === 'selection_comment',
+  );
+  const textItem = contentItems.find((item) => item.type === 'text');
 
   return (
     <>
-      {message.text.trim().length > 0 ? (
-        <div className="chat-history-message-text">{message.text}</div>
-      ) : null}
-      {selectionCommentSummaries.length > 0 ? (
+      {selectionCommentItems.length > 0 ? (
         <ol
           aria-label="Selection Comment attachments"
           className="chat-history-attachment-list"
         >
-          {selectionCommentSummaries.map((summary) => (
-            <li className="chat-history-attachment" key={summary.id}>
+          {selectionCommentItems.map((item) => (
+            <li className="chat-history-attachment" key={item.summary.id}>
               <div className="chat-history-attachment-heading">
                 <span className="chat-history-attachment-number">
-                  #{summary.number}
+                  #{item.summary.number}
                 </span>
                 <span className="chat-history-attachment-widget">
-                  {summary.widgetLabel}
+                  {item.summary.widgetLabel}
                 </span>
               </div>
               <div className="chat-history-attachment-text">
-                {summary.text}
+                {item.summary.text}
               </div>
             </li>
           ))}
         </ol>
+      ) : null}
+      {textItem ? (
+        <div className="chat-history-message-text">{textItem.text}</div>
       ) : null}
     </>
   );
