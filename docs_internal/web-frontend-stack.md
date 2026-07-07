@@ -240,6 +240,59 @@ Start with plain CSS or CSS Modules.
 
 Do not add a large UI component framework in the static UI phase. The workbench needs custom layout, device viewport sizing, and overlay positioning, so direct CSS control is more useful than a generic component kit.
 
+## React Component Boundaries
+
+React page and panel components should stay readable as the workbench gains
+bridge, device, inspector, Selection Comment, and Agent Session behavior.
+
+Use this default shape for non-trivial UI:
+
+```text
+FeaturePanel.tsx          # compose hooks and section components
+useFeatureFlow.ts         # workflow state, refs, async effects, handlers
+FeatureSection.tsx        # one focused UI region
+featureState.ts           # pure rules, selectors, state transitions
+featureState.test.ts      # focused rule tests
+```
+
+This is a default boundary, not a requirement to split tiny components. A
+component can stay inline while it has one clear responsibility and simple JSX.
+
+Extract a custom hook when a component starts to own workflow behavior such as:
+
+- multiple related `useState` or `useRef` values
+- async bridge calls, timers, polling, or request state
+- event handlers that coordinate several domain state updates
+- derived state that is needed by several render sections
+- send, retry, capture, sync, or selection workflows
+
+Extract a section component when JSX grows into distinct UI regions such as:
+
+- header/status
+- selected target summary
+- editable list
+- history/log
+- composer/footer controls
+
+Keep business rules out of JSX. Prefer pure functions for validation,
+selectors, numbering, status messages, and state transitions. Keep those rules
+in domain files such as `selection-comments/*` or `chat/*`, with focused tests
+when behavior matters.
+
+Review guardrail:
+
+- If a React component exceeds roughly 150-200 lines and mixes large JSX with
+  multiple state/ref values or async behavior, do not keep adding to it.
+- If a second business workflow enters a component, extract a flow hook in the
+  same change.
+- If a render branch contains inline state transitions or complex handlers,
+  move that handler behind a named hook function.
+
+The `ChatPanel` refactor is the local example. The panel now composes
+`useSelectionCommentPanelFlow`, `useChatComposerFlow`, `ChatPanelHeader`,
+`SelectedWidgetSection`, `ChatHistorySection`, and `ChatComposer` instead of
+owning Selection Comment capture, send flow, and all JSX in one file.
+
 ## State Management
 
 Start with local React state and props.

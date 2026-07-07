@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:ask_ui_bridge/sessions/session_store.dart';
+import 'package:file_testkit/file_testkit.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -85,6 +88,28 @@ void main() {
         throwsA(isA<DeviceMismatchForSession>()),
       );
       expect(store.sessionCount, 1);
+    });
+
+    test('destroys managed local session files', () async {
+      await FileTestkit.runZoned(() async {
+        final store = SessionStore();
+        final session = store.createSession(
+          vmServiceUri: 'ws://127.0.0.1:12345/ws',
+          projectRoot: '/Users/example/app',
+          deviceId: 'device-1',
+        );
+        final directory = Directory('/ask-ui-session-store-test');
+        await directory.create();
+        final snapshotFile = File('${directory.path}/selection-comment-1.png');
+        await snapshotFile.writeAsBytes([1, 2, 3]);
+        session.manageLocalPath(directory.path);
+
+        await store.destroyAll();
+
+        expect(store.sessionCount, 0);
+        expect(await directory.exists(), isFalse);
+        expect(store.find(session.id), isNull);
+      });
     });
   });
 }

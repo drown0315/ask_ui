@@ -9,4 +9,5 @@ dependencies:
   vm_service: 14.3.1
 
 dev_dependencies:
+  file_testkit: 1.0.0
   test: 1.25.8

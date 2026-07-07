@@ -1,17 +1,9 @@
-# ADR 0003: Agent Chat Long Poll
+# Agent Chat Long-Poll
 
-Ask UI will route Chat messages through the existing Bridge Session instead of opening a separate Chat WebSocket. The Bridge Session already owns the local Flutter app target, Target Device binding, session events stream, and browser read-only boundary, so Chat state belongs beside that session state.
+Ask UI will connect Chat to the launching Agent Session through a local queued-message model and an agent-side long-poll command. The web app records user chat messages and selected-widget context into the local workbench session; the Codex, Claude Code, or similar skill that launched the workbench keeps polling for those messages, applies the requested changes with its normal tools, and posts agent replies back into the same Chat.
 
-Chat History and Agent Status are in-memory Bridge Session state. Restarting the bridge backend or destroying the Bridge Session clears Chat History and resets Agent Status. This avoids implying durable project history before Ask UI has an explicit persistence model.
+This avoids making the browser call a coding-agent runtime directly and keeps code editing authority inside the original Agent Session. It also matches the review-loop shape proven by Lavish Editor: queued browser feedback is durable, polling can be restarted without losing messages, and agent replies can be synchronized back to Chat History.
 
-The browser loads an initial Chat snapshot with `GET /api/sessions/:sessionId/chat`, then receives `chat_snapshot`, `agent_status_changed`, and `chat_history_changed` events through the existing `/api/sessions/:sessionId/events` Server-Sent Events stream. The same stream continues to carry Select Widget mode events.
+The first version uses the poller as the readiness boundary: Chat can send only while one Agent Session poller is actively waiting for the Bridge Session, and a Bridge Session rejects additional concurrent pollers. Ask UI does not provide an offline message queue; if delivery to the active poller fails during send, the Web composer keeps the unsent content and the developer can retry after the Agent Session is ready again.
 
-The launching Agent Session waits for work with `GET /api/sessions/:sessionId/agent/poll`. Polling is indefinite by default. A `timeoutMs` query parameter exists only for tests and debugging clients. One Bridge Session allows only one active Agent Session poller; a second active poll returns `agent_poll_already_active`.
-
-Agent Status is `waiting_for_agent` when no poller is ready, `agent_ready` while the poller waits, and `agent_working` after a browser user message has been handed to the poller. If the poller disconnects before receiving a message, Agent Status returns to `waiting_for_agent`.
-
-The browser sends plain text through `POST /api/sessions/:sessionId/chat/messages`. The bridge validates non-empty text and a 4000-character limit, then delivers the message only when an active poller accepts it. There is no offline queue; `agent_not_ready` leaves the browser composer draft intact for manual retry.
-
-Agent-authored output uses `POST /api/sessions/:sessionId/agent/reply` for normal agent replies and `POST /api/sessions/:sessionId/agent/error` for command-level system messages. Both store plain text messages in Chat History and return Agent Status to `waiting_for_agent`.
-
-Selection Comments are not part of the Chat message payload in the current slice. Attachment payloads, snapshots, sent attachment summaries, reply correlation, and combined reply-then-poll command ergonomics remain later Selection Chat work.
+Agent replies are written back through Ask UI commands, with the standard skill loop shaped as poll, process, reply, and poll again. A combined command such as `poll --agent-reply "..."` can write the reply and immediately wait for the next message; command-level failures use a separate error path that writes a system message rather than pretending to be an agent reply.

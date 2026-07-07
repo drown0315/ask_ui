@@ -89,6 +89,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "7.0.1"
+  file_testkit:
+    dependency: "direct dev"
+    description:
+      name: file_testkit
+      sha256: "3b169f3c0217d352cc09cebf895f676500816c409790367e0e54ab54b9dd7f25"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.0"
   frontend_server_client:
     dependency: transitive
     description:
