@@ -178,8 +178,8 @@ export function useSelectionCommentPanelFlow({
     () => selectionCommentStateRef.current.comments,
     [],
   );
-  const getSelectionCommentDraftWidgetIdsForSend = useCallback(
-    () => Object.keys(selectionCommentStateRef.current.draftsByWidgetId),
+  const getSelectionCommentDraftsByWidgetIdForSend = useCallback(
+    () => selectionCommentStateRef.current.draftsByWidgetId,
     [],
   );
 
@@ -192,7 +192,7 @@ export function useSelectionCommentPanelFlow({
     handleSelectionCommentDraftChange,
     handleSelectionCommentTextChange,
     hasCapturingSnapshots,
-    getSelectionCommentDraftWidgetIdsForSend,
+    getSelectionCommentDraftsByWidgetIdForSend,
     getSelectionCommentsForSend,
     panelTarget,
     selectedWidgetComments,

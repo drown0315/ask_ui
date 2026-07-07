@@ -22,7 +22,7 @@ import { useChatSendFlow } from './useChatSendFlow';
 type UseChatComposerFlowOptions = {
   chatSessionState: ChatSessionState;
   defaultDisabledReason: string;
-  getSelectionCommentDraftWidgetIdsForSend: () => string[];
+  getSelectionCommentDraftsByWidgetIdForSend: () => Record<string, string>;
   getSelectionCommentsForSend: () => SelectionComment[];
   hasCapturingSnapshots: () => boolean;
   onSelectionCommentStateChange: Dispatch<SetStateAction<SelectionCommentState>>;
@@ -35,7 +35,7 @@ type UseChatComposerFlowOptions = {
 export function useChatComposerFlow({
   chatSessionState,
   defaultDisabledReason,
-  getSelectionCommentDraftWidgetIdsForSend,
+  getSelectionCommentDraftsByWidgetIdForSend,
   getSelectionCommentsForSend,
   hasCapturingSnapshots,
   onSelectionCommentStateChange,
@@ -47,7 +47,7 @@ export function useChatComposerFlow({
   const [composerText, setComposerText] = useState('');
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
   const sendFlow = useChatSendFlow({
-    getSelectionCommentDraftWidgetIdsForSend,
+    getSelectionCommentDraftsByWidgetIdForSend,
     getSelectionCommentsForSend,
     hasCapturingSnapshots,
     onComposerTextAfterSend(succeeded) {

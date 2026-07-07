@@ -22,27 +22,70 @@ export function getInitialSelectionCommentState(): SelectionCommentState {
 export function getSelectionCommentStateAfterSendResult(
   currentState: SelectionCommentState,
   succeeded: boolean,
-  sentCommentIds: string[],
-  sentDraftWidgetIds: string[] = [],
+  sentComments: SelectionComment[],
+  sentDraftsByWidgetId: Record<string, string> = {},
 ): SelectionCommentState {
   if (!succeeded) {
     return currentState;
   }
 
-  const sentCommentIdSet = new Set(sentCommentIds);
-  const sentDraftWidgetIdSet = new Set(sentDraftWidgetIds);
+  const sentCommentsById = new Map(
+    sentComments.map((comment) => [comment.id, comment]),
+  );
+  const sentDraftEntries = Object.entries(sentDraftsByWidgetId);
 
   return {
     ...currentState,
     comments: currentState.comments.filter(
-      (comment) => !sentCommentIdSet.has(comment.id),
+      (comment) =>
+        !isSameSelectionComment(comment, sentCommentsById.get(comment.id)),
     ),
     draftsByWidgetId: Object.fromEntries(
-      Object.entries(currentState.draftsByWidgetId).filter(
-        ([widgetId]) => !sentDraftWidgetIdSet.has(widgetId),
+      Object.entries(currentState.draftsByWidgetId).filter(([widgetId, text]) =>
+        sentDraftEntries.every(
+          ([sentWidgetId, sentText]) =>
+            sentWidgetId !== widgetId || sentText !== text,
+        ),
       ),
     ),
   };
+}
+
+function isSameSelectionComment(
+  currentComment: SelectionComment,
+  sentComment: SelectionComment | undefined,
+): boolean {
+  return (
+    sentComment !== undefined &&
+    currentComment.id === sentComment.id &&
+    currentComment.widgetId === sentComment.widgetId &&
+    currentComment.widgetLabel === sentComment.widgetLabel &&
+    currentComment.sourceLocation === sentComment.sourceLocation &&
+    currentComment.visibleText === sentComment.visibleText &&
+    currentComment.semanticInfo === sentComment.semanticInfo &&
+    currentComment.text === sentComment.text &&
+    isSameSelectionCommentSnapshot(currentComment.snapshot, sentComment.snapshot)
+  );
+}
+
+function isSameSelectionCommentSnapshot(
+  currentSnapshot: SelectionCommentSnapshot,
+  sentSnapshot: SelectionCommentSnapshot,
+): boolean {
+  if (currentSnapshot.status !== sentSnapshot.status) {
+    return false;
+  }
+
+  if (currentSnapshot.status === 'available') {
+    return (
+      sentSnapshot.status === 'available' &&
+      currentSnapshot.path === sentSnapshot.path &&
+      currentSnapshot.mimeType === sentSnapshot.mimeType &&
+      currentSnapshot.sizeBytes === sentSnapshot.sizeBytes
+    );
+  }
+
+  return true;
 }
 
 export function getSelectionCommentsAfterSnapshotWait(

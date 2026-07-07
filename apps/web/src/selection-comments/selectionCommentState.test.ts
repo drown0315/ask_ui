@@ -264,10 +264,10 @@ test('clears submitted Selection Comments and submit-time drafts after successfu
     target,
     'Make this primary.',
   );
-  const submittedCommentIds = state.comments.map((comment) => comment.id);
-  const submittedDraftWidgetIds = ['widget-1'];
+  state = updateSelectionCommentDraft(state, target, 'Submitted draft.');
+  const submittedComments = state.comments;
+  const submittedDraftsByWidgetId = state.draftsByWidgetId;
 
-  state = updateSelectionCommentDraft(state, target, 'Unadded draft.');
   state = updateSelectionCommentDraft(
     addSelectionComment(state, target, 'Added during send.'),
     {
@@ -281,8 +281,8 @@ test('clears submitted Selection Comments and submit-time drafts after successfu
     getSelectionCommentStateAfterSendResult(
       state,
       true,
-      submittedCommentIds,
-      submittedDraftWidgetIds,
+      submittedComments,
+      submittedDraftsByWidgetId,
     ),
     {
       comments: [
@@ -304,8 +304,8 @@ test('clears submitted Selection Comments and submit-time drafts after successfu
     getSelectionCommentStateAfterSendResult(
       state,
       true,
-      ['selection-comment-1', 'selection-comment-2'],
-      submittedDraftWidgetIds,
+      state.comments,
+      submittedDraftsByWidgetId,
     ),
     {
       comments: [],
@@ -316,8 +316,51 @@ test('clears submitted Selection Comments and submit-time drafts after successfu
     },
   );
   assert.equal(
-    getSelectionCommentStateAfterSendResult(state, false, submittedCommentIds),
+    getSelectionCommentStateAfterSendResult(state, false, submittedComments),
     state,
+  );
+});
+
+test('preserves submitted Selection Comments and drafts edited during Chat send', () => {
+  let state = addSelectionComment(
+    getInitialSelectionCommentState(),
+    target,
+    'Make this primary.',
+  );
+  state = updateSelectionCommentDraft(state, target, 'Submitted draft.');
+
+  const submittedComments = state.comments;
+  const submittedDraftsByWidgetId = state.draftsByWidgetId;
+
+  state = updateSelectionCommentText(
+    state,
+    'selection-comment-1',
+    'Edited during send.',
+  );
+  state = updateSelectionCommentDraft(state, target, 'Draft edited during send.');
+
+  assert.deepEqual(
+    getSelectionCommentStateAfterSendResult(
+      state,
+      true,
+      submittedComments,
+      submittedDraftsByWidgetId,
+    ),
+    {
+      comments: [
+        {
+          id: 'selection-comment-1',
+          widgetId: 'widget-1',
+          widgetLabel: 'PrimaryButton',
+          text: 'Edited during send.',
+          snapshot: capturingSnapshot,
+        },
+      ],
+      draftsByWidgetId: {
+        'widget-1': 'Draft edited during send.',
+      },
+      nextCommentId: 2,
+    },
   );
 });
 
@@ -329,12 +372,10 @@ test('keeps id allocation stable after clearing all submitted comments', () => {
   );
 
   assert.deepEqual(
-    getSelectionCommentStateAfterSendResult(state, true, [
-      'selection-comment-1',
-    ]),
+    getSelectionCommentStateAfterSendResult(state, true, state.comments),
     {
-    comments: [],
-    draftsByWidgetId: {},
+      comments: [],
+      draftsByWidgetId: {},
       nextCommentId: 2,
     },
   );

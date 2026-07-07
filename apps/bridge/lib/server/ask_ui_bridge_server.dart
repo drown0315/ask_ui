@@ -13,6 +13,10 @@ import '../sessions/flutter_device_checker.dart';
 import '../sessions/session_store.dart';
 import '../snapshots/snapshot_capture.dart';
 
+const int _chatMessageTextLimit = 4000;
+const int _selectionCommentTextLimit = 1000;
+const int _selectionCommentBatchLimit = 20;
+
 class AskUiBridgeServer {
   AskUiBridgeServer({
     required SessionStore sessionStore,
@@ -472,7 +476,16 @@ class AskUiBridgeServer {
       return;
     }
 
-    if (parsedMessage.text.length > 4000) {
+    if (parsedMessage.error != null) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': parsedMessage.error},
+      );
+      return;
+    }
+
+    if (parsedMessage.text.length > _chatMessageTextLimit) {
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badRequest,
@@ -521,24 +534,39 @@ class AskUiBridgeServer {
     if (rawParts is! List<Object?> || rawParts.isEmpty) {
       return null;
     }
+    if (rawParts.length > _selectionCommentBatchLimit + 1) {
+      return const _ParsedChatMessageRequest.invalid('invalid_chat_parts');
+    }
 
     final List<Map<String, Object?>> parts = <Map<String, Object?>>[];
     String typedText = '';
+    int selectionCommentCount = 0;
+    int textPartCount = 0;
     for (final rawPart in rawParts) {
       final Map<String, Object?>? part = _normalizeJsonObject(rawPart);
       if (part == null) {
-        return null;
+        return const _ParsedChatMessageRequest.invalid('invalid_chat_parts');
       }
 
-      if (part['type'] == 'text') {
-        final partText = part['text'];
-        if (partText is! String) {
-          return null;
-        }
-        typedText = partText;
+      final normalizedPart = _parseChatMessagePart(part);
+      if (normalizedPart == null) {
+        return const _ParsedChatMessageRequest.invalid('invalid_chat_parts');
       }
 
-      parts.add(part);
+      if (normalizedPart['type'] == 'text') {
+        textPartCount += 1;
+        typedText = normalizedPart['text'] as String;
+      } else {
+        selectionCommentCount += 1;
+      }
+
+      parts.add(normalizedPart);
+    }
+
+    if (typedText.length > _chatMessageTextLimit ||
+        textPartCount > 1 ||
+        selectionCommentCount > _selectionCommentBatchLimit) {
+      return const _ParsedChatMessageRequest.invalid('invalid_chat_parts');
     }
 
     final bool hasAttachment = parts.any(
@@ -553,6 +581,113 @@ class AskUiBridgeServer {
       context: {'projectRoot': projectRoot},
       parts: parts,
     );
+  }
+
+  Map<String, Object?>? _parseChatMessagePart(Map<String, Object?> part) {
+    switch (part['type']) {
+      case 'text':
+        final text = part['text'];
+        if (text is! String) {
+          return null;
+        }
+        return {
+          'type': 'text',
+          'text': text,
+        };
+      case 'selection_comment':
+        final attachment = _normalizeJsonObject(part['attachment']);
+        if (attachment == null) {
+          return null;
+        }
+        final normalizedAttachment =
+            _parseSelectionCommentAttachment(attachment);
+        if (normalizedAttachment == null) {
+          return null;
+        }
+        return {
+          'type': 'selection_comment',
+          'attachment': normalizedAttachment,
+        };
+    }
+
+    return null;
+  }
+
+  Map<String, Object?>? _parseSelectionCommentAttachment(
+    Map<String, Object?> attachment,
+  ) {
+    final id = attachment['id'];
+    final commentText = attachment['commentText'];
+    final selectedWidget = _normalizeJsonObject(attachment['selectedWidget']);
+    final snapshot = _normalizeJsonObject(attachment['snapshot']);
+    if (id is! String ||
+        id.trim().isEmpty ||
+        commentText is! String ||
+        commentText.trim().isEmpty ||
+        commentText.length > _selectionCommentTextLimit ||
+        selectedWidget == null ||
+        snapshot == null) {
+      return null;
+    }
+
+    final normalizedSelectedWidget = _parseSelectedWidget(selectedWidget);
+    final normalizedSnapshot = _parseSelectionCommentSnapshot(snapshot);
+    if (normalizedSelectedWidget == null || normalizedSnapshot == null) {
+      return null;
+    }
+
+    return {
+      'id': id,
+      'commentText': commentText,
+      'selectedWidget': normalizedSelectedWidget,
+      'snapshot': normalizedSnapshot,
+    };
+  }
+
+  Map<String, Object?>? _parseSelectedWidget(Map<String, Object?> widget) {
+    final id = widget['id'];
+    final displayLabel = widget['displayLabel'];
+    if (id is! String ||
+        id.trim().isEmpty ||
+        displayLabel is! String ||
+        displayLabel.trim().isEmpty) {
+      return null;
+    }
+
+    final normalized = <String, Object?>{
+      'id': id,
+      'displayLabel': displayLabel,
+    };
+    for (final key in ['sourceLocation', 'visibleText', 'semanticInfo']) {
+      final value = widget[key];
+      if (value != null) {
+        if (value is! String || value.length > _selectionCommentTextLimit) {
+          return null;
+        }
+        normalized[key] = value;
+      }
+    }
+    return normalized;
+  }
+
+  Map<String, Object?>? _parseSelectionCommentSnapshot(
+    Map<String, Object?> snapshot,
+  ) {
+    switch (snapshot['status']) {
+      case 'available':
+        final path = snapshot['path'];
+        if (path is! String || path.trim().isEmpty) {
+          return null;
+        }
+        return {
+          'status': 'available',
+          'path': path,
+        };
+      case 'unavailable':
+        return {'status': 'unavailable'};
+    }
+
+    return null;
   }
 
   Map<String, Object?>? _normalizeJsonObject(Object? value) {
@@ -1574,11 +1709,19 @@ class _ParsedChatMessageRequest {
     required this.text,
     this.context = const <String, Object?>{},
     this.parts = const <Map<String, Object?>>[],
+    this.error,
   });
+
+  const _ParsedChatMessageRequest.invalid(String error)
+      : text = '',
+        context = const <String, Object?>{},
+        parts = const <Map<String, Object?>>[],
+        error = error;
 
   final String text;
   final Map<String, Object?> context;
   final List<Map<String, Object?>> parts;
+  final String? error;
 }
 
 /// Single-frame Annex B H.264 byte fixture for the Device WebSocket shell.

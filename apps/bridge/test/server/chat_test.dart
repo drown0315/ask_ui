@@ -489,6 +489,87 @@ void main() {
       expect(pollBody['message'], expectedMessage);
     });
 
+    test('rejects malformed and over-limit Selection Comment attachment parts',
+        () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+      final String sessionId = await createSession(client, fixture.baseUri);
+
+      Future<Map<String, Object?>> sendBody(
+        Map<String, Object?> body,
+      ) async {
+        final request = await client.postUrl(
+          fixture.baseUri.resolve('/api/sessions/$sessionId/chat/messages'),
+        );
+        request.headers.contentType = ContentType.json;
+        request.write(jsonEncode(body));
+        final response = await request.close();
+        final responseBody = jsonDecode(await utf8.decodeStream(response))
+            as Map<String, Object?>;
+
+        expect(response.statusCode, HttpStatus.badRequest);
+        return responseBody;
+      }
+
+      final malformedBody = await sendBody({
+        'parts': [
+          {
+            'type': 'selection_comment',
+            'attachment': {
+              'id': 'selection-comment-1',
+              'commentText': 'Make this button primary.',
+              'selectedWidget': {'id': 'widget-1'},
+              'snapshot': {'status': 'unavailable'},
+            },
+          },
+        ],
+      });
+      final longTextBody = await sendBody({
+        'parts': [
+          {
+            'type': 'selection_comment',
+            'attachment': {
+              'id': 'selection-comment-1',
+              'commentText': List.filled(1001, 'x').join(),
+              'selectedWidget': {
+                'id': 'widget-1',
+                'displayLabel': 'PrimaryButton',
+              },
+              'snapshot': {'status': 'unavailable'},
+            },
+          },
+        ],
+      });
+      final tooManyPartsBody = await sendBody({
+        'parts': List<Object?>.generate(
+          21,
+          (index) => {
+            'type': 'selection_comment',
+            'attachment': {
+              'id': 'selection-comment-$index',
+              'commentText': 'Comment $index',
+              'selectedWidget': {
+                'id': 'widget-$index',
+                'displayLabel': 'Widget$index',
+              },
+              'snapshot': {'status': 'unavailable'},
+            },
+          },
+        ),
+      });
+      final repeatedTextPartsBody = await sendBody({
+        'parts': [
+          {'type': 'text', 'text': 'First.'},
+          {'type': 'text', 'text': 'Second.'},
+        ],
+      });
+
+      expect(malformedBody, {'error': 'invalid_chat_parts'});
+      expect(longTextBody, {'error': 'invalid_chat_parts'});
+      expect(tooManyPartsBody, {'error': 'invalid_chat_parts'});
+      expect(repeatedTextPartsBody, {'error': 'invalid_chat_parts'});
+    });
+
     test('writes an Agent reply and allows the Agent to poll again', () async {
       final browserClient = HttpClient();
       final agentClient = HttpClient();
