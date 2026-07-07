@@ -115,8 +115,8 @@ test('updates snapshot capture results without recapturing edited text', () => {
   state = addSelectionComment(state, target, 'Before edit');
   state = updateSelectionCommentSnapshot(state, 'selection-comment-1', {
     status: 'available',
-    path: '/tmp/ask-ui/session-1/snapshots/selection-comment-1.jpg',
-    mimeType: 'image/jpeg',
+    path: '/tmp/ask-ui/session-1/snapshots/selection-comment-1.png',
+    mimeType: 'image/png',
     sizeBytes: 120_000,
   });
   state = updateSelectionCommentText(state, 'selection-comment-1', 'After edit');
@@ -128,8 +128,8 @@ test('updates snapshot capture results without recapturing edited text', () => {
     text: 'After edit',
     snapshot: {
       status: 'available',
-      path: '/tmp/ask-ui/session-1/snapshots/selection-comment-1.jpg',
-      mimeType: 'image/jpeg',
+      path: '/tmp/ask-ui/session-1/snapshots/selection-comment-1.png',
+      mimeType: 'image/png',
       sizeBytes: 120_000,
     },
   });
@@ -150,8 +150,8 @@ test('marks failed and late deleted snapshot captures unavailable without blocki
   });
   state = updateSelectionCommentSnapshot(state, 'selection-comment-2', {
     status: 'available',
-    path: '/tmp/ask-ui/session-1/snapshots/deleted.jpg',
-    mimeType: 'image/jpeg',
+    path: '/tmp/ask-ui/session-1/snapshots/deleted.png',
+    mimeType: 'image/png',
     sizeBytes: 120_000,
   });
 

@@ -222,11 +222,10 @@ can delete and recreate the Selection Comment if a fresh capture is needed.
 
 Each snapshot file should be no larger than 1.2 MB. The Bridge Session may
 compress or downscale the captured image to meet that limit while keeping Ask
-UI overlays out of the image. Snapshot files should prefer JPEG output because
-device screenshots do not need alpha and JPEG quality can be adjusted to stay
-within the size limit. If the captured image still cannot fit within 1.2 MB
-after compression or downscaling, the Selection Comment remains stageable and
-the snapshot is marked unavailable.
+UI overlays out of the image. Snapshot files should prefer PNG output because
+the Android explicit screenshot path already returns PNG bytes. If the captured
+image still cannot fit within 1.2 MB after compression or downscaling, the
+Selection Comment remains stageable and the snapshot is marked unavailable.
 
 Captured snapshot bytes are stored as local files managed by the Bridge Session.
 Chat History and Selection Comment records keep local snapshot file paths and

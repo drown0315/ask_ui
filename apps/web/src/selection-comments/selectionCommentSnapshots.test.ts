@@ -34,8 +34,8 @@ test('starts Selection Comment snapshot capture in the background', async () => 
       calls.push({ sessionId, commentId });
       return {
         status: 'available',
-        path: '/tmp/ask-ui/session-1/snapshots/selection-comment-1.jpg',
-        mimeType: 'image/jpeg',
+        path: '/tmp/ask-ui/session-1/snapshots/selection-comment-1.png',
+        mimeType: 'image/png',
         sizeBytes: 120_000,
       };
     },
@@ -64,8 +64,8 @@ test('starts Selection Comment snapshot capture in the background', async () => 
     getSelectionCommentById(state, 'selection-comment-1')?.snapshot,
     {
       status: 'available',
-      path: '/tmp/ask-ui/session-1/snapshots/selection-comment-1.jpg',
-      mimeType: 'image/jpeg',
+      path: '/tmp/ask-ui/session-1/snapshots/selection-comment-1.png',
+      mimeType: 'image/png',
       sizeBytes: 120_000,
     },
   );
@@ -128,8 +128,8 @@ test('discarding a staged Selection Comment ignores later snapshot results', asy
 
   resolveCapture?.({
     status: 'available',
-    path: '/tmp/ask-ui/session-1/snapshots/deleted.jpg',
-    mimeType: 'image/jpeg',
+    path: '/tmp/ask-ui/session-1/snapshots/deleted.png',
+    mimeType: 'image/png',
     sizeBytes: 120_000,
   });
   await pendingSnapshots.get('selection-comment-1');
@@ -179,8 +179,8 @@ test('waits for in-progress snapshots before Send and times out incomplete captu
 
   resolveCapture?.({
     status: 'available',
-    path: '/tmp/ask-ui/session-1/snapshots/late.jpg',
-    mimeType: 'image/jpeg',
+    path: '/tmp/ask-ui/session-1/snapshots/late.png',
+    mimeType: 'image/png',
     sizeBytes: 120_000,
   });
   await pendingSnapshots.get('selection-comment-1');

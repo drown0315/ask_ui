@@ -34,12 +34,12 @@ export type SelectedWidgetTarget = {
  * Snapshot state stored on one staged Selection Comment.
  *
  * `capturing` means background capture is still running. `available` carries a
- * Bridge Session local JPEG file path and size. `unavailable` means capture,
+ * Bridge Session local PNG file path and size. `unavailable` means capture,
  * compression, timeout, or file lookup could not provide a sendable snapshot.
  *
  * Example:
  * A comment starts as `capturing`, may become `available` with a local
- * `/tmp/ask-ui/.../selection-comment-1.jpg` path, or may become `unavailable`
+ * `/tmp/ask-ui/.../selection-comment-1.png` path, or may become `unavailable`
  * without blocking Send.
  */
 export type SelectionCommentSnapshot =
@@ -54,8 +54,8 @@ export type SelectionCommentSnapshot =
       /** Local file path passed later to the Agent Session payload. */
       path: string;
 
-      /** Snapshot file type. Prototype C stores sendable snapshots as JPEG. */
-      mimeType: 'image/jpeg';
+      /** Snapshot file type. Prototype C stores sendable snapshots as PNG. */
+      mimeType: 'image/png';
 
       /** Snapshot file size in bytes after bridge compression or downscaling. */
       sizeBytes: number;

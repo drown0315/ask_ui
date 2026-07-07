@@ -83,7 +83,7 @@ export type SelectionCommentSnapshotCaptureResult =
   | {
       status: 'available';
       path: string;
-      mimeType: 'image/jpeg';
+      mimeType: 'image/png';
       sizeBytes: number;
     }
   | {
@@ -443,7 +443,7 @@ export async function captureSelectionCommentSnapshot(
       },
       body: JSON.stringify({
         commentId,
-        format: 'jpeg',
+        format: 'png',
         maxSizeBytes: 1_258_291,
         scope: 'full_device',
       }),
@@ -467,7 +467,7 @@ export async function captureSelectionCommentSnapshot(
 
   if (
     body.status === 'ok' &&
-    body.snapshot?.mimeType === 'image/jpeg' &&
+    body.snapshot?.mimeType === 'image/png' &&
     typeof body.snapshot.path === 'string' &&
     typeof body.snapshot.sizeBytes === 'number'
   ) {

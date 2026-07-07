@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import '../chat/chat_session.dart';
 
 /// One Ask UI workbench session for a Flutter app target.
@@ -33,6 +35,13 @@ class BridgeSession {
   final String? primaryClientId;
   final ChatSession chat;
 
+  /// Local files or directories that should be deleted with this session.
+  ///
+  /// This is lifecycle bookkeeping for bridge-owned temporary artifacts such as
+  /// Selection Comment snapshots. It is not user-visible session state and is
+  /// deliberately kept separate from Chat History.
+  final Set<String> _managedLocalPaths = {};
+
   /// Return whether a browser client should be read-only for this session.
   ///
   /// Args:
@@ -49,6 +58,26 @@ class BridgeSession {
     }
 
     return primaryClientId != clientId;
+  }
+
+  void manageLocalPath(String path) {
+    final trimmedPath = path.trim();
+    if (trimmedPath.isNotEmpty) {
+      _managedLocalPaths.add(trimmedPath);
+    }
+  }
+
+  Future<void> destroy() async {
+    for (final path in _managedLocalPaths) {
+      final type = FileSystemEntity.typeSync(path);
+      if (type == FileSystemEntityType.directory) {
+        await Directory(path).delete(recursive: true);
+      } else if (type == FileSystemEntityType.file ||
+          type == FileSystemEntityType.link) {
+        await File(path).delete();
+      }
+    }
+    _managedLocalPaths.clear();
   }
 }
 
@@ -164,6 +193,16 @@ class SessionStore {
   }
 
   BridgeSession? find(String id) => _sessions[id];
+
+  Future<void> destroyAll() async {
+    final sessions = List<BridgeSession>.from(_sessions.values);
+    _sessions.clear();
+    _sessionIdsByTarget.clear();
+
+    for (final session in sessions) {
+      await session.destroy();
+    }
+  }
 
   String? _normalizeOptionalClientId(String? clientId) {
     final String? trimmedClientId = clientId?.trim();

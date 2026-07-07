@@ -14,8 +14,8 @@ void main() {
       await fixture.start(
         snapshotCapture: RecordingSnapshotCapture(
           result: const SnapshotCaptureResult.available(
-            path: '/tmp/ask-ui/session-1/snapshots/selection-comment-1.jpg',
-            mimeType: 'image/jpeg',
+            path: '/tmp/ask-ui/session-1/snapshots/selection-comment-1.png',
+            mimeType: 'image/png',
             sizeBytes: 120000,
           ),
         ),
@@ -26,11 +26,18 @@ void main() {
       await fixture.close();
     });
 
-    test('captures a session-scoped JPEG snapshot for a Selection Comment',
+    test('captures a session-scoped PNG snapshot for a Selection Comment',
         () async {
       final client = HttpClient();
       addTearDown(client.close);
       final String sessionId = await createSession(client, fixture.baseUri);
+      const snapshotPath = '/ask-ui-selection-comment-1.png';
+      fixture.existingSnapshotPaths.add(snapshotPath);
+      fixture.snapshotCapture.result = const SnapshotCaptureResult.available(
+        path: snapshotPath,
+        mimeType: 'image/png',
+        sizeBytes: 120000,
+      );
 
       final request = await client.postUrl(
         fixture.baseUri.resolve('/api/sessions/$sessionId/snapshots'),
@@ -38,7 +45,7 @@ void main() {
       request.headers.contentType = ContentType.json;
       request.write(jsonEncode({
         'commentId': 'selection-comment-1',
-        'format': 'jpeg',
+        'format': 'png',
         'maxSizeBytes': 1258291,
         'scope': 'full_device',
       }));
@@ -51,8 +58,8 @@ void main() {
       expect(body, {
         'status': 'ok',
         'snapshot': {
-          'path': '/tmp/ask-ui/session-1/snapshots/selection-comment-1.jpg',
-          'mimeType': 'image/jpeg',
+          'path': snapshotPath,
+          'mimeType': 'image/png',
           'sizeBytes': 120000,
         },
       });
@@ -79,7 +86,39 @@ void main() {
       request.headers.contentType = ContentType.json;
       request.write(jsonEncode({
         'commentId': 'selection-comment-1',
-        'format': 'jpeg',
+        'format': 'png',
+        'maxSizeBytes': 1258291,
+        'scope': 'full_device',
+      }));
+
+      final response = await request.close();
+      final body =
+          jsonDecode(await utf8.decodeStream(response)) as Map<String, Object?>;
+
+      expect(response.statusCode, HttpStatus.ok);
+      expect(body, {
+        'status': 'unavailable',
+      });
+    });
+
+    test('reports unavailable when capture returns a missing snapshot file',
+        () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+      final String sessionId = await createSession(client, fixture.baseUri);
+      fixture.snapshotCapture.result = const SnapshotCaptureResult.available(
+        path: '/tmp/ask-ui/session-1/snapshots/missing.png',
+        mimeType: 'image/png',
+        sizeBytes: 120000,
+      );
+
+      final request = await client.postUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/snapshots'),
+      );
+      request.headers.contentType = ContentType.json;
+      request.write(jsonEncode({
+        'commentId': 'selection-comment-1',
+        'format': 'png',
         'maxSizeBytes': 1258291,
         'scope': 'full_device',
       }));

@@ -108,7 +108,7 @@ Selection Comments capture explicit screenshot or Snapshot context at Add commen
 - Use the existing explicit screenshot or Snapshot capability. Do not derive snapshots from decoded video frames.
 - Capture full app/device visual context rather than widget-bounds crops.
 - Exclude Ask UI overlays from snapshots.
-- Prefer JPEG snapshot files, with a per-file size limit of 1.2 MB.
+- Prefer PNG snapshot files, with a per-file size limit of 1.2 MB.
 - If snapshot capture, compression, or file lookup fails, mark snapshot unavailable and continue.
 - Store snapshot bytes as local Bridge Session files. Store local paths and availability metadata in Chat state.
 - Clean up snapshot files when the Dart Bridge Session is destroyed or stopped.

@@ -19,6 +19,7 @@ class BridgeServerFixture {
   late RecordingFlutterInspectorClient inspectorClient;
   late RecordingFlutterAppController appController;
   late RecordingSnapshotCapture snapshotCapture;
+  late Set<String> existingSnapshotPaths;
   late List<String> logs;
   late Uri baseUri;
 
@@ -35,11 +36,13 @@ class BridgeServerFixture {
     appController = RecordingFlutterAppController();
     this.snapshotCapture =
         snapshotCapture ?? RecordingSnapshotCapture.unavailable();
+    existingSnapshotPaths = <String>{};
     logs = <String>[];
     await _startServer(
       flutterDeviceChecker: flutterDeviceChecker,
       deviceStreamFactory: deviceStreamFactory,
       snapshotCapture: this.snapshotCapture,
+      snapshotFileExists: existingSnapshotPaths.contains,
       projectRootExists: projectRootExists,
       sessionEventsHeartbeatInterval: sessionEventsHeartbeatInterval,
     );
@@ -53,6 +56,7 @@ class BridgeServerFixture {
       flutterDeviceChecker: flutterDeviceChecker,
       deviceStreamFactory: const ShellDeviceStreamFactory(),
       snapshotCapture: snapshotCapture,
+      snapshotFileExists: existingSnapshotPaths.contains,
       projectRootExists: _projectRootExists,
       sessionEventsHeartbeatInterval: const Duration(seconds: 15),
     );
@@ -68,6 +72,7 @@ class BridgeServerFixture {
       ),
       deviceStreamFactory: deviceStreamFactory,
       snapshotCapture: snapshotCapture,
+      snapshotFileExists: existingSnapshotPaths.contains,
       projectRootExists: _projectRootExists,
       sessionEventsHeartbeatInterval: const Duration(seconds: 15),
     );
@@ -81,6 +86,7 @@ class BridgeServerFixture {
     required FlutterDeviceChecker flutterDeviceChecker,
     required DeviceStreamFactory deviceStreamFactory,
     required RecordingSnapshotCapture snapshotCapture,
+    required bool Function(String path) snapshotFileExists,
     required bool Function(String projectRoot) projectRootExists,
     required Duration sessionEventsHeartbeatInterval,
   }) async {
@@ -90,7 +96,8 @@ class BridgeServerFixture {
       appController: appController,
       flutterDeviceChecker: flutterDeviceChecker,
       deviceStreamFactory: deviceStreamFactory,
-      snapshotCapture: snapshotCapture,
+      snapshotCapture: snapshotCapture.capture,
+      snapshotFileExists: snapshotFileExists,
       projectRootExists: projectRootExists,
       sessionEventsHeartbeatInterval: sessionEventsHeartbeatInterval,
       logger: BridgeLogger(write: logs.add),
@@ -103,7 +110,7 @@ class BridgeServerFixture {
   }
 }
 
-class RecordingSnapshotCapture implements SnapshotCapture {
+class RecordingSnapshotCapture {
   RecordingSnapshotCapture({
     required this.result,
   });
@@ -114,7 +121,6 @@ class RecordingSnapshotCapture implements SnapshotCapture {
   SnapshotCaptureResult result;
   final requests = <RecordedSnapshotCaptureRequest>[];
 
-  @override
   Future<SnapshotCaptureResult> capture(SnapshotCaptureRequest request) async {
     requests.add(RecordedSnapshotCaptureRequest(
       sessionId: request.session.id,

@@ -21,6 +21,7 @@ class AskUiBridgeServer {
     FlutterDeviceChecker? flutterDeviceChecker,
     DeviceStreamFactory? deviceStreamFactory,
     SnapshotCapture? snapshotCapture,
+    bool Function(String path)? snapshotFileExists,
     bool Function(String projectRoot)? projectRootExists,
     Duration sessionEventsHeartbeatInterval = const Duration(seconds: 15),
     BridgeLogger? logger,
@@ -31,8 +32,9 @@ class AskUiBridgeServer {
             flutterDeviceChecker ?? const FlutterDevicesCommandChecker(),
         _deviceStreamFactory =
             deviceStreamFactory ?? ScrcpyDeviceStreamFactory(),
-        _snapshotCapture =
-            snapshotCapture ?? const UnavailableSnapshotCapture(),
+        _snapshotCapture = snapshotCapture ?? AdbSnapshotCapture().capture,
+        _snapshotFileExists =
+            snapshotFileExists ?? ((path) => File(path).existsSync()),
         _projectRootExists = projectRootExists ??
             ((projectRoot) => Directory(projectRoot).existsSync()),
         _sessionEventsHeartbeatInterval = sessionEventsHeartbeatInterval,
@@ -44,6 +46,7 @@ class AskUiBridgeServer {
   final FlutterDeviceChecker _flutterDeviceChecker;
   final DeviceStreamFactory _deviceStreamFactory;
   final SnapshotCapture _snapshotCapture;
+  final bool Function(String path) _snapshotFileExists;
   final bool Function(String projectRoot) _projectRootExists;
   final Duration _sessionEventsHeartbeatInterval;
   final BridgeLogger _logger;
@@ -60,6 +63,7 @@ class AskUiBridgeServer {
   Future<void> close() async {
     await _server?.close(force: true);
     _server = null;
+    await _sessionStore.destroyAll();
   }
 
   Future<void> _handleRequest(HttpRequest request) async {
@@ -540,7 +544,7 @@ class AskUiBridgeServer {
       return;
     }
 
-    if (format != 'jpeg' || scope != 'full_device' || maxSizeBytes is! int) {
+    if (format != 'png' || scope != 'full_device' || maxSizeBytes is! int) {
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badRequest,
@@ -549,7 +553,7 @@ class AskUiBridgeServer {
       return;
     }
 
-    final SnapshotCaptureResult result = await _snapshotCapture.capture(
+    final SnapshotCaptureResult result = await _snapshotCapture(
       SnapshotCaptureRequest(
         session: session,
         commentId: commentId.trim(),
@@ -558,8 +562,9 @@ class AskUiBridgeServer {
     );
 
     if (!result.isAvailable ||
-        result.mimeType != 'image/jpeg' ||
-        result.sizeBytes > maxSizeBytes) {
+        result.mimeType != 'image/png' ||
+        result.sizeBytes > maxSizeBytes ||
+        !_snapshotFileExists(result.path)) {
       await _writeJson(
         request.response,
         body: {'status': 'unavailable'},
