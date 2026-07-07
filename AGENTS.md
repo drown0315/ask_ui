@@ -13,6 +13,22 @@ Current web frontend lives in `apps/web` and uses Vite + React + TypeScript.
 - Do not commit generated or local-only artifacts such as `node_modules/`, `dist/`, `.npm-cache/`, `.DS_Store`, or build info files.
 - When changing the web app, verify with `npm run build` from `apps/web` before claiming completion when practical.
 
+## React Component Boundaries
+
+For non-trivial React UI, keep components separated by responsibility:
+
+- Page and panel components compose hooks and section components.
+- Custom hooks own workflow state, refs, async effects, and event handlers.
+- Section components render focused UI regions.
+- Pure domain rules live outside JSX and should have focused tests.
+
+Do not keep adding behavior to a component that already mixes large JSX,
+multiple state/ref values, async calls, and business workflows. Extract a hook
+or section component in the same change.
+
+For detailed guidance, see
+`docs_internal/web-frontend-stack.md#react-component-boundaries`.
+
 ## Commit Message Constraint
 
 Commit messages must use one of these prefixes:
