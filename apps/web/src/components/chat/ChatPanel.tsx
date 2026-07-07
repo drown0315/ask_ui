@@ -59,6 +59,8 @@ export function ChatPanel({
   const composer = useChatComposerFlow({
     chatSessionState,
     defaultDisabledReason: content.composerDisabledReason,
+    getSelectionCommentDraftWidgetIdsForSend:
+      selectionComments.getSelectionCommentDraftWidgetIdsForSend,
     getSelectionCommentsForSend: selectionComments.getSelectionCommentsForSend,
     hasCapturingSnapshots: selectionComments.hasCapturingSnapshots,
     onSelectionCommentStateChange,

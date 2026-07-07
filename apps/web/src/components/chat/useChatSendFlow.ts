@@ -14,6 +14,7 @@ import {
 } from '../../selection-comments/selectionCommentState';
 
 type UseChatSendFlowOptions = {
+  getSelectionCommentDraftWidgetIdsForSend: () => string[];
   getSelectionCommentsForSend: () => SelectionComment[];
   hasCapturingSnapshots: () => boolean;
   onComposerTextAfterSend: (succeeded: boolean) => void;
@@ -25,6 +26,7 @@ type UseChatSendFlowOptions = {
 };
 
 export function useChatSendFlow({
+  getSelectionCommentDraftWidgetIdsForSend,
   getSelectionCommentsForSend,
   hasCapturingSnapshots,
   onComposerTextAfterSend,
@@ -55,6 +57,8 @@ export function useChatSendFlow({
     const submittedSelectionCommentIds = submittedSelectionComments.map(
       (comment) => comment.id,
     );
+    const submittedSelectionCommentDraftWidgetIds =
+      getSelectionCommentDraftWidgetIdsForSend();
     try {
       if (hasCapturingSnapshots()) {
         setIsFinishingSnapshots(true);
@@ -81,6 +85,7 @@ export function useChatSendFlow({
           currentState,
           true,
           submittedSelectionCommentIds,
+          submittedSelectionCommentDraftWidgetIds,
         ),
       );
       requestAnimationFrame(() => composerInputRef.current?.focus());

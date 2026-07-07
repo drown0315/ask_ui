@@ -23,17 +23,24 @@ export function getSelectionCommentStateAfterSendResult(
   currentState: SelectionCommentState,
   succeeded: boolean,
   sentCommentIds: string[],
+  sentDraftWidgetIds: string[] = [],
 ): SelectionCommentState {
   if (!succeeded) {
     return currentState;
   }
 
   const sentCommentIdSet = new Set(sentCommentIds);
+  const sentDraftWidgetIdSet = new Set(sentDraftWidgetIds);
 
   return {
     ...currentState,
     comments: currentState.comments.filter(
       (comment) => !sentCommentIdSet.has(comment.id),
+    ),
+    draftsByWidgetId: Object.fromEntries(
+      Object.entries(currentState.draftsByWidgetId).filter(
+        ([widgetId]) => !sentDraftWidgetIdSet.has(widgetId),
+      ),
     ),
   };
 }

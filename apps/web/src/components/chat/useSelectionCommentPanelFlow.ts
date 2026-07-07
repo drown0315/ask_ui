@@ -178,6 +178,10 @@ export function useSelectionCommentPanelFlow({
     () => selectionCommentStateRef.current.comments,
     [],
   );
+  const getSelectionCommentDraftWidgetIdsForSend = useCallback(
+    () => Object.keys(selectionCommentStateRef.current.draftsByWidgetId),
+    [],
+  );
 
   return {
     activeAttachmentNumber,
@@ -188,6 +192,7 @@ export function useSelectionCommentPanelFlow({
     handleSelectionCommentDraftChange,
     handleSelectionCommentTextChange,
     hasCapturingSnapshots,
+    getSelectionCommentDraftWidgetIdsForSend,
     getSelectionCommentsForSend,
     panelTarget,
     selectedWidgetComments,

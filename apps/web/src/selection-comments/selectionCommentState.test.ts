@@ -258,22 +258,32 @@ test('updates sent Selection Comment snapshots without changing submitted text',
   );
 });
 
-test('clears only submitted Selection Comments after successful Chat send', () => {
+test('clears submitted Selection Comments and submit-time drafts after successful Chat send', () => {
   let state = addSelectionComment(
     getInitialSelectionCommentState(),
     target,
     'Make this primary.',
   );
   const submittedCommentIds = state.comments.map((comment) => comment.id);
+  const submittedDraftWidgetIds = ['widget-1'];
 
+  state = updateSelectionCommentDraft(state, target, 'Unadded draft.');
   state = updateSelectionCommentDraft(
     addSelectionComment(state, target, 'Added during send.'),
-    target,
-    'Unadded draft.',
+    {
+      id: 'widget-2',
+      displayLabel: 'SecondaryButton',
+    },
+    'Draft added during send.',
   );
 
   assert.deepEqual(
-    getSelectionCommentStateAfterSendResult(state, true, submittedCommentIds),
+    getSelectionCommentStateAfterSendResult(
+      state,
+      true,
+      submittedCommentIds,
+      submittedDraftWidgetIds,
+    ),
     {
       comments: [
         {
@@ -285,20 +295,22 @@ test('clears only submitted Selection Comments after successful Chat send', () =
         },
       ],
       draftsByWidgetId: {
-        'widget-1': 'Unadded draft.',
+        'widget-2': 'Draft added during send.',
       },
       nextCommentId: 3,
     },
   );
   assert.deepEqual(
-    getSelectionCommentStateAfterSendResult(state, true, [
-      'selection-comment-1',
-      'selection-comment-2',
-    ]),
+    getSelectionCommentStateAfterSendResult(
+      state,
+      true,
+      ['selection-comment-1', 'selection-comment-2'],
+      submittedDraftWidgetIds,
+    ),
     {
       comments: [],
       draftsByWidgetId: {
-        'widget-1': 'Unadded draft.',
+        'widget-2': 'Draft added during send.',
       },
       nextCommentId: 3,
     },
