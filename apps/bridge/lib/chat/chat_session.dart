@@ -34,24 +34,31 @@ enum ChatMessageRole {
 /// One message in Bridge Session Chat History.
 ///
 /// It carries the stable message id, the role displayed by the web Chat
-/// History, and plain text content. Selection Comment attachments are added to
-/// message payloads in a later Selection Chat slice.
+/// History, plain text content, and optional ordered payload parts sent to the
+/// Agent Session. Attachment parts are kept before the typed text part so the
+/// poller receives the same order the developer sent.
 class ChatMessage {
   const ChatMessage({
     required this.id,
     required this.role,
     required this.text,
+    this.context = const <String, Object?>{},
+    this.parts = const <Map<String, Object?>>[],
   });
 
   final String id;
   final ChatMessageRole role;
   final String text;
+  final Map<String, Object?> context;
+  final List<Map<String, Object?>> parts;
 
   Map<String, Object?> toJson() {
     return {
       'id': id,
       'role': role.wireName,
       'text': text,
+      if (context.isNotEmpty) 'context': context,
+      if (parts.isNotEmpty) 'parts': parts,
     };
   }
 }
@@ -208,10 +215,24 @@ class ChatSession {
   /// Returns `null` when no Agent Session is ready. The message is appended to
   /// Chat History only after the active poller has accepted the handoff.
   ChatMessage? sendUserTextMessage(String text) {
+    return sendUserMessage(text: text);
+  }
+
+  /// Create and deliver one user Chat message with optional ordered parts.
+  ///
+  /// `parts` is the current Agent Session payload. When present, it can contain
+  /// Selection Comment attachments followed by an optional typed text part.
+  ChatMessage? sendUserMessage({
+    required String text,
+    Map<String, Object?> context = const <String, Object?>{},
+    List<Map<String, Object?>> parts = const <Map<String, Object?>>[],
+  }) {
     final ChatMessage message = ChatMessage(
       id: _createMessageId(),
       role: ChatMessageRole.user,
       text: text,
+      context: context,
+      parts: parts,
     );
 
     if (!deliverMessageToAgent(message)) {

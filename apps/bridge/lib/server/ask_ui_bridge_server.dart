@@ -461,8 +461,9 @@ class AskUiBridgeServer {
       return;
     }
 
-    final text = body['text'];
-    if (text is! String || text.trim().isEmpty) {
+    final _ParsedChatMessageRequest? parsedMessage =
+        _parseChatMessageRequest(body, session.projectRoot);
+    if (parsedMessage == null) {
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badRequest,
@@ -471,7 +472,7 @@ class AskUiBridgeServer {
       return;
     }
 
-    if (text.length > 4000) {
+    if (parsedMessage.text.length > 4000) {
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badRequest,
@@ -480,7 +481,11 @@ class AskUiBridgeServer {
       return;
     }
 
-    final ChatMessage? message = session.chat.sendUserTextMessage(text);
+    final ChatMessage? message = session.chat.sendUserMessage(
+      text: parsedMessage.text,
+      context: parsedMessage.context,
+      parts: parsedMessage.parts,
+    );
     if (message == null) {
       await _writeJson(
         request.response,
@@ -497,6 +502,92 @@ class AskUiBridgeServer {
         'message': message.toJson(),
       },
     );
+  }
+
+  _ParsedChatMessageRequest? _parseChatMessageRequest(
+    Map<String, Object?> body,
+    String projectRoot,
+  ) {
+    final Object? text = body['text'];
+    if (text is String) {
+      if (text.trim().isEmpty) {
+        return null;
+      }
+
+      return _ParsedChatMessageRequest(text: text);
+    }
+
+    final Object? rawParts = body['parts'];
+    if (rawParts is! List<Object?> || rawParts.isEmpty) {
+      return null;
+    }
+
+    final List<Map<String, Object?>> parts = <Map<String, Object?>>[];
+    String typedText = '';
+    for (final rawPart in rawParts) {
+      final Map<String, Object?>? part = _normalizeJsonObject(rawPart);
+      if (part == null) {
+        return null;
+      }
+
+      if (part['type'] == 'text') {
+        final partText = part['text'];
+        if (partText is! String) {
+          return null;
+        }
+        typedText = partText;
+      }
+
+      parts.add(part);
+    }
+
+    final bool hasAttachment = parts.any(
+      (part) => part['type'] == 'selection_comment',
+    );
+    if (!hasAttachment && typedText.trim().isEmpty) {
+      return null;
+    }
+
+    return _ParsedChatMessageRequest(
+      text: typedText,
+      context: {'projectRoot': projectRoot},
+      parts: parts,
+    );
+  }
+
+  Map<String, Object?>? _normalizeJsonObject(Object? value) {
+    if (value is! Map) {
+      return null;
+    }
+
+    final Map<String, Object?> normalized = <String, Object?>{};
+    for (final entry in value.entries) {
+      final key = entry.key;
+      if (key is! String) {
+        return null;
+      }
+      normalized[key] = _normalizeJsonValue(entry.value);
+    }
+    return normalized;
+  }
+
+  Object? _normalizeJsonValue(Object? value) {
+    if (value is Map) {
+      final Map<String, Object?> normalized = <String, Object?>{};
+      for (final entry in value.entries) {
+        final key = entry.key;
+        if (key is String) {
+          normalized[key] = _normalizeJsonValue(entry.value);
+        }
+      }
+      return normalized;
+    }
+
+    if (value is List) {
+      return value.map(_normalizeJsonValue).toList();
+    }
+
+    return value;
   }
 
   Future<void> _captureSnapshot(HttpRequest request) async {
@@ -1476,6 +1567,18 @@ class _WebSocketDeviceStreamSink implements DeviceStreamSink {
   Future<void> close() async {
     await socket.close();
   }
+}
+
+class _ParsedChatMessageRequest {
+  const _ParsedChatMessageRequest({
+    required this.text,
+    this.context = const <String, Object?>{},
+    this.parts = const <Map<String, Object?>>[],
+  });
+
+  final String text;
+  final Map<String, Object?> context;
+  final List<Map<String, Object?>> parts;
 }
 
 /// Single-frame Annex B H.264 byte fixture for the Device WebSocket shell.
