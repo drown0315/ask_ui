@@ -29,6 +29,10 @@ export function getSelectionCommentStateAfterSendResult(
     return currentState;
   }
 
+  if (sentComments.length === 0) {
+    return currentState;
+  }
+
   const sentCommentsById = new Map(
     sentComments.map((comment) => [comment.id, comment]),
   );

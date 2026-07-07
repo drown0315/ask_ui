@@ -364,6 +364,24 @@ test('preserves submitted Selection Comments and drafts edited during Chat send'
   );
 });
 
+test('preserves drafts after successful Chat send without Selection Comments', () => {
+  const state = updateSelectionCommentDraft(
+    getInitialSelectionCommentState(),
+    target,
+    'Keep this for later.',
+  );
+
+  assert.equal(
+    getSelectionCommentStateAfterSendResult(
+      state,
+      true,
+      [],
+      state.draftsByWidgetId,
+    ),
+    state,
+  );
+});
+
 test('keeps id allocation stable after clearing all submitted comments', () => {
   const state = addSelectionComment(
     getInitialSelectionCommentState(),
