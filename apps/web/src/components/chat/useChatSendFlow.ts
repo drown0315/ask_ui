@@ -10,6 +10,7 @@ import {
   getSelectionCommentsAfterSnapshotWait,
   getSelectionCommentStateAfterSendResult,
   type SelectionComment,
+  type SelectionCommentSnapshot,
   type SelectionCommentState,
 } from '../../selection-comments/selectionCommentState';
 
@@ -22,7 +23,9 @@ type UseChatSendFlowOptions = {
   projectRoot: string | null;
   sessionId: string | null;
   snapshotWaitMs: number;
-  waitForPendingSnapshots: (timeoutMs: number) => Promise<void>;
+  waitForPendingSnapshots: (
+    timeoutMs: number,
+  ) => Promise<Record<string, SelectionCommentSnapshot>>;
 };
 
 export function useChatSendFlow({
@@ -57,15 +60,17 @@ export function useChatSendFlow({
     const submittedSelectionCommentDraftsByWidgetId =
       getSelectionCommentDraftsByWidgetIdForSend();
     try {
+      let completedSnapshots: Record<string, SelectionCommentSnapshot> = {};
       if (hasCapturingSnapshots()) {
         setIsFinishingSnapshots(true);
-        await waitForPendingSnapshots(snapshotWaitMs);
+        completedSnapshots = await waitForPendingSnapshots(snapshotWaitMs);
         setIsFinishingSnapshots(false);
       }
 
       const selectionComments = getSelectionCommentsAfterSnapshotWait(
         submittedSelectionComments,
         getSelectionCommentsForSend(),
+        completedSnapshots,
       );
 
       await sendChatMessage(

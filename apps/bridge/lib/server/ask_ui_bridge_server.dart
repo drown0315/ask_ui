@@ -467,7 +467,7 @@ class AskUiBridgeServer {
     }
 
     final _ParsedChatMessageRequest? parsedMessage =
-        _parseChatMessageRequest(body, session.projectRoot);
+        _parseChatMessageRequest(body, session);
     if (parsedMessage == null) {
       await _writeJson(
         request.response,
@@ -520,7 +520,7 @@ class AskUiBridgeServer {
 
   _ParsedChatMessageRequest? _parseChatMessageRequest(
     Map<String, Object?> body,
-    String projectRoot,
+    BridgeSession session,
   ) {
     final Object? text = body['text'];
     if (text is String) {
@@ -549,7 +549,7 @@ class AskUiBridgeServer {
         return const _ParsedChatMessageRequest.invalid('invalid_chat_parts');
       }
 
-      final normalizedPart = _parseChatMessagePart(part);
+      final normalizedPart = _parseChatMessagePart(part, session);
       if (normalizedPart == null) {
         return const _ParsedChatMessageRequest.invalid('invalid_chat_parts');
       }
@@ -579,12 +579,15 @@ class AskUiBridgeServer {
 
     return _ParsedChatMessageRequest(
       text: typedText,
-      context: {'projectRoot': projectRoot},
+      context: {'projectRoot': session.projectRoot},
       parts: parts,
     );
   }
 
-  Map<String, Object?>? _parseChatMessagePart(Map<String, Object?> part) {
+  Map<String, Object?>? _parseChatMessagePart(
+    Map<String, Object?> part,
+    BridgeSession session,
+  ) {
     switch (part['type']) {
       case 'text':
         final text = part['text'];
@@ -601,7 +604,7 @@ class AskUiBridgeServer {
           return null;
         }
         final normalizedAttachment =
-            _parseSelectionCommentAttachment(attachment);
+            _parseSelectionCommentAttachment(attachment, session);
         if (normalizedAttachment == null) {
           return null;
         }
@@ -616,6 +619,7 @@ class AskUiBridgeServer {
 
   Map<String, Object?>? _parseSelectionCommentAttachment(
     Map<String, Object?> attachment,
+    BridgeSession session,
   ) {
     final id = attachment['id'];
     final commentText = attachment['commentText'];
@@ -629,7 +633,10 @@ class AskUiBridgeServer {
     }
 
     final normalizedSelectedWidget = _parseSelectedWidget(selectedWidget);
-    final normalizedSnapshot = _parseSelectionCommentSnapshot(snapshot);
+    final normalizedSnapshot = _parseSelectionCommentSnapshot(
+      snapshot,
+      session,
+    );
     if (normalizedSelectedWidget == null || normalizedSnapshot == null) {
       return null;
     }
@@ -671,11 +678,14 @@ class AskUiBridgeServer {
 
   Map<String, Object?>? _parseSelectionCommentSnapshot(
     Map<String, Object?> snapshot,
+    BridgeSession session,
   ) {
     switch (snapshot['status']) {
       case 'available':
         final path = snapshot['path'];
-        if (!_isBoundedNonBlankString(path, _selectionCommentMetadataLimit)) {
+        if (!_isBoundedNonBlankString(path, _selectionCommentMetadataLimit) ||
+            !_snapshotFileExists(path as String) ||
+            !session.ownsManagedLocalPath(path)) {
           return null;
         }
         return {
@@ -807,6 +817,8 @@ class AskUiBridgeServer {
       );
       return;
     }
+
+    session.manageLocalPath(File(result.path).parent.path);
 
     await _writeJson(
       request.response,

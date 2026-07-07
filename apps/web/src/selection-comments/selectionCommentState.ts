@@ -95,6 +95,7 @@ function isSameSelectionCommentSnapshot(
 export function getSelectionCommentsAfterSnapshotWait(
   submittedComments: SelectionComment[],
   currentComments: SelectionComment[],
+  completedSnapshots: Record<string, SelectionCommentSnapshot> = {},
 ): SelectionComment[] {
   const currentCommentsById = new Map(
     currentComments.map((comment) => [comment.id, comment]),
@@ -105,7 +106,10 @@ export function getSelectionCommentsAfterSnapshotWait(
 
     return {
       ...submittedComment,
-      snapshot: currentComment?.snapshot ?? submittedComment.snapshot,
+      snapshot:
+        completedSnapshots[submittedComment.id] ??
+        currentComment?.snapshot ??
+        submittedComment.snapshot,
     };
   });
 }

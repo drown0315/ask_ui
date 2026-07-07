@@ -15,6 +15,7 @@ import {
 import type { ChatSessionState } from '../../chat/chatSessionState';
 import {
   type SelectionComment,
+  type SelectionCommentSnapshot,
   type SelectionCommentState,
 } from '../../selection-comments/selectionCommentState';
 import { useChatSendFlow } from './useChatSendFlow';
@@ -29,7 +30,9 @@ type UseChatComposerFlowOptions = {
   projectRoot: string | null;
   sessionId: string | null;
   snapshotWaitMs: number;
-  waitForPendingSnapshots: (timeoutMs: number) => Promise<void>;
+  waitForPendingSnapshots: (
+    timeoutMs: number,
+  ) => Promise<Record<string, SelectionCommentSnapshot>>;
 };
 
 export function useChatComposerFlow({

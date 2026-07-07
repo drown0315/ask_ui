@@ -111,5 +111,35 @@ void main() {
         expect(store.find(session.id), isNull);
       });
     });
+
+    test('matches managed local paths by normalized path segment', () {
+      final store = SessionStore();
+      final session = store.createSession(
+        vmServiceUri: 'ws://127.0.0.1:12345/ws',
+        projectRoot: '/Users/example/app',
+        deviceId: 'device-1',
+      );
+
+      session.manageLocalPath('/tmp/ask-ui-snapshots/session-1');
+
+      expect(
+        session.ownsManagedLocalPath(
+          '/tmp/ask-ui-snapshots/session-1/snapshots/comment.png',
+        ),
+        isTrue,
+      );
+      expect(
+        session.ownsManagedLocalPath(
+          '/tmp/ask-ui-snapshots/session-1/../session-2/snapshot.png',
+        ),
+        isFalse,
+      );
+      expect(
+        session.ownsManagedLocalPath(
+          '/tmp/ask-ui-snapshots/session-10/snapshot.png',
+        ),
+        isFalse,
+      );
+    });
   });
 }

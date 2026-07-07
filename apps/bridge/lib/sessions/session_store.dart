@@ -67,6 +67,40 @@ class BridgeSession {
     }
   }
 
+  bool ownsManagedLocalPath(String path) {
+    final normalizedPath = _normalizeLocalPath(path);
+    return _managedLocalPaths.any((managedPath) {
+      final normalizedManagedPath = _normalizeLocalPath(managedPath);
+      return normalizedPath == normalizedManagedPath ||
+          normalizedPath.startsWith(
+            '$normalizedManagedPath${Platform.pathSeparator}',
+          );
+    });
+  }
+
+  String _normalizeLocalPath(String path) {
+    final absolutePath = File(path).absolute.path;
+    final segments = <String>[];
+    for (final segment in absolutePath.split(RegExp(r'[\\/]'))) {
+      if (segment.isEmpty || segment == '.') {
+        continue;
+      }
+      if (segment == '..') {
+        if (segments.isNotEmpty) {
+          segments.removeLast();
+        }
+        continue;
+      }
+      segments.add(segment);
+    }
+
+    if (absolutePath.startsWith(RegExp(r'^[A-Za-z]:'))) {
+      return segments.join(Platform.pathSeparator);
+    }
+
+    return '${Platform.pathSeparator}${segments.join(Platform.pathSeparator)}';
+  }
+
   Future<void> destroy() async {
     for (final path in _managedLocalPaths) {
       final type = FileSystemEntity.typeSync(path);

@@ -192,3 +192,61 @@ test('waits for in-progress snapshots before Send and times out incomplete captu
     },
   );
 });
+
+test('returns completed snapshots from Send wait without requiring a state read', async () => {
+  let resolveCapture:
+    | ((snapshot: SelectionCommentSnapshot) => void)
+    | undefined;
+  let state: SelectionCommentState = addSelectionComment(
+    getInitialSelectionCommentState(),
+    target,
+    'Wait for this',
+  );
+  const pendingSnapshots: PendingSelectionCommentSnapshots = new Map();
+
+  startSelectionCommentSnapshotCapture({
+    captureSnapshot: () =>
+      new Promise<SelectionCommentSnapshot>((resolve) => {
+        resolveCapture = resolve;
+      }),
+    commentId: 'selection-comment-1',
+    pendingSnapshots,
+    sessionId: 'session-1',
+    updateState(update) {
+      setTimeout(() => {
+        state = update(state);
+      }, 0);
+    },
+  });
+
+  const waitPromise = waitForSelectionCommentSnapshots({
+    getState: () => state,
+    pendingSnapshots,
+    timeoutMs: 100,
+    updateState(update) {
+      setTimeout(() => {
+        state = update(state);
+      }, 0);
+    },
+  });
+
+  resolveCapture?.({
+    status: 'available',
+    path: '/tmp/ask-ui/session-1/snapshots/selection-comment-1.png',
+    mimeType: 'image/png',
+    sizeBytes: 120_000,
+  });
+
+  assert.deepEqual(await waitPromise, {
+    'selection-comment-1': {
+      status: 'available',
+      path: '/tmp/ask-ui/session-1/snapshots/selection-comment-1.png',
+      mimeType: 'image/png',
+      sizeBytes: 120_000,
+    },
+  });
+  assert.equal(
+    getSelectionCommentById(state, 'selection-comment-1')?.snapshot.status,
+    'capturing',
+  );
+});

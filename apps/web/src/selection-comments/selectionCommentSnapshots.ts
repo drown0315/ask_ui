@@ -4,7 +4,15 @@ import {
   type SelectionCommentState,
 } from './selectionCommentState.ts';
 
-export type PendingSelectionCommentSnapshots = Map<string, Promise<void>>;
+export type CompletedSelectionCommentSnapshots = Record<
+  string,
+  SelectionCommentSnapshot
+>;
+
+export type PendingSelectionCommentSnapshots = Map<
+  string,
+  Promise<SelectionCommentSnapshot>
+>;
 
 export type CaptureSelectionCommentSnapshot = (
   sessionId: string,
@@ -42,6 +50,7 @@ export function startSelectionCommentSnapshotCapture({
 
         return updateSelectionCommentSnapshot(state, commentId, snapshot);
       });
+      return snapshot;
     })
     .finally(() => {
       pendingSnapshots.delete(commentId);
@@ -62,19 +71,31 @@ export async function waitForSelectionCommentSnapshots({
   updateState: (
     update: (state: SelectionCommentState) => SelectionCommentState,
   ) => void;
-}) {
+}): Promise<CompletedSelectionCommentSnapshots> {
   const pendingForCurrentComments = getState().comments
     .filter((comment) => comment.snapshot.status === 'capturing')
-    .map((comment) => pendingSnapshots.get(comment.id))
-    .filter((capture): capture is Promise<void> => capture !== undefined);
+    .map((comment) => ({
+      commentId: comment.id,
+      capture: pendingSnapshots.get(comment.id),
+    }))
+    .filter(
+      (
+        pending,
+      ): pending is {
+        commentId: string;
+        capture: Promise<SelectionCommentSnapshot>;
+      } => pending.capture !== undefined,
+    );
 
   if (pendingForCurrentComments.length === 0) {
-    return;
+    return {};
   }
 
   let timedOut = false;
-  await Promise.race([
-    Promise.allSettled(pendingForCurrentComments),
+  const settledSnapshots = await Promise.race([
+    Promise.allSettled(
+      pendingForCurrentComments.map((pending) => pending.capture),
+    ),
     new Promise<void>((resolve) => {
       setTimeout(() => {
         timedOut = true;
@@ -84,9 +105,22 @@ export async function waitForSelectionCommentSnapshots({
   ]);
 
   if (!timedOut) {
-    return;
+    return Object.fromEntries(
+      pendingForCurrentComments.flatMap((pending, index) => {
+        const result = settledSnapshots?.[index];
+        return result?.status === 'fulfilled'
+          ? [[pending.commentId, result.value]]
+          : [];
+      }),
+    );
   }
 
+  const timedOutSnapshots = Object.fromEntries(
+    pendingForCurrentComments.map((pending) => [
+      pending.commentId,
+      { status: 'unavailable' as const },
+    ]),
+  );
   updateState((state) => ({
     ...state,
     comments: state.comments.map((comment) =>
@@ -100,4 +134,5 @@ export async function waitForSelectionCommentSnapshots({
         : comment,
     ),
   }));
+  return timedOutSnapshots;
 }
