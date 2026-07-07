@@ -7,6 +7,7 @@ import {
 import { buildChatMessagePayload } from '../../chat/chatMessagePayload';
 import { sendChatMessage } from '../../services/askUiBridgeClient';
 import {
+  getSelectionCommentsAfterSnapshotWait,
   getSelectionCommentStateAfterSendResult,
   type SelectionComment,
   type SelectionCommentState,
@@ -50,6 +51,10 @@ export function useChatSendFlow({
 
     setIsSending(true);
     setSendError(null);
+    const submittedSelectionComments = getSelectionCommentsForSend();
+    const submittedSelectionCommentIds = submittedSelectionComments.map(
+      (comment) => comment.id,
+    );
     try {
       if (hasCapturingSnapshots()) {
         setIsFinishingSnapshots(true);
@@ -57,17 +62,26 @@ export function useChatSendFlow({
         setIsFinishingSnapshots(false);
       }
 
+      const selectionComments = getSelectionCommentsAfterSnapshotWait(
+        submittedSelectionComments,
+        getSelectionCommentsForSend(),
+      );
+
       await sendChatMessage(
         sessionId,
         buildChatMessagePayload({
           projectRoot,
-          selectionComments: getSelectionCommentsForSend(),
+          selectionComments,
           text,
         }),
       );
       onComposerTextAfterSend(true);
       onSelectionCommentStateChange((currentState) =>
-        getSelectionCommentStateAfterSendResult(currentState, true),
+        getSelectionCommentStateAfterSendResult(
+          currentState,
+          true,
+          submittedSelectionCommentIds,
+        ),
       );
       requestAnimationFrame(() => composerInputRef.current?.focus());
     } catch (error) {

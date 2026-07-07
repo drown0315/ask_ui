@@ -1,5 +1,6 @@
 import type {
   SelectedWidgetTarget,
+  SelectionComment,
   SelectionCommentSnapshot,
   SelectionCommentState,
 } from './selectionCommentTypes.ts';
@@ -21,8 +22,38 @@ export function getInitialSelectionCommentState(): SelectionCommentState {
 export function getSelectionCommentStateAfterSendResult(
   currentState: SelectionCommentState,
   succeeded: boolean,
+  sentCommentIds: string[],
 ): SelectionCommentState {
-  return succeeded ? getInitialSelectionCommentState() : currentState;
+  if (!succeeded) {
+    return currentState;
+  }
+
+  const sentCommentIdSet = new Set(sentCommentIds);
+
+  return {
+    ...currentState,
+    comments: currentState.comments.filter(
+      (comment) => !sentCommentIdSet.has(comment.id),
+    ),
+  };
+}
+
+export function getSelectionCommentsAfterSnapshotWait(
+  submittedComments: SelectionComment[],
+  currentComments: SelectionComment[],
+): SelectionComment[] {
+  const currentCommentsById = new Map(
+    currentComments.map((comment) => [comment.id, comment]),
+  );
+
+  return submittedComments.map((submittedComment) => {
+    const currentComment = currentCommentsById.get(submittedComment.id);
+
+    return {
+      ...submittedComment,
+      snapshot: currentComment?.snapshot ?? submittedComment.snapshot,
+    };
+  });
 }
 
 export function getDraftForSelectedWidget(
