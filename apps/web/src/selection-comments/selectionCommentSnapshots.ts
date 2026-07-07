@@ -121,9 +121,13 @@ export async function waitForSelectionCommentSnapshots({
       { status: 'unavailable' as const },
     ]),
   );
+  const timedOutCommentIds = new Set(
+    pendingForCurrentComments.map((pending) => pending.commentId),
+  );
   updateState((state) => ({
     ...state,
     comments: state.comments.map((comment) =>
+      timedOutCommentIds.has(comment.id) &&
       comment.snapshot.status === 'capturing'
         ? {
             ...comment,
