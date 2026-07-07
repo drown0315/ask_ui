@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  getChatHistorySelectionCommentSummaries,
   getVisibleChatHistoryMessages,
   getInitialChatSessionStateWithQueuedEvents,
   getInitialChatSessionState,
@@ -175,4 +176,63 @@ test('adds a temporary Agent working placeholder to visible Chat History', () =>
       text: 'Agent working...',
     },
   ]);
+});
+
+test('summarizes Selection Comment attachments for Chat History rows', () => {
+  assert.deepEqual(
+    getChatHistorySelectionCommentSummaries({
+      id: 'message-1',
+      role: 'user',
+      text: '',
+      parts: [
+        {
+          type: 'selection_comment',
+          attachment: {
+            id: 'selection-comment-1',
+            commentText: 'Make this primary.',
+            selectedWidget: {
+              id: 'widget-1',
+              displayLabel: 'PrimaryButton',
+            },
+            snapshot: {
+              status: 'unavailable',
+            },
+          },
+        },
+        {
+          type: 'text',
+          text: 'Also update spacing.',
+        },
+        {
+          type: 'selection_comment',
+          attachment: {
+            id: 'selection-comment-2',
+            commentText: 'Use friendlier copy.',
+            selectedWidget: {
+              id: 'widget-2',
+              displayLabel: 'Subtitle',
+            },
+            snapshot: {
+              status: 'available',
+              path: '/tmp/selection-comment-2.png',
+            },
+          },
+        },
+      ],
+    }),
+    [
+      {
+        id: 'selection-comment-1',
+        number: 1,
+        widgetLabel: 'PrimaryButton',
+        text: 'Make this primary.',
+      },
+      {
+        id: 'selection-comment-2',
+        number: 2,
+        widgetLabel: 'Subtitle',
+        text: 'Use friendlier copy.',
+      },
+    ],
+  );
 });

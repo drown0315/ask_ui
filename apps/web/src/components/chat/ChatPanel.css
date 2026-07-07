@@ -299,6 +299,54 @@
   white-space: pre-wrap;
 }
 
+.chat-history-attachment-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-history-attachment {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid rgba(66, 184, 131, 0.18);
+  border-radius: 7px;
+  background: #f8fbfa;
+}
+
+.chat-history-attachment-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  color: var(--vue-ink);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.chat-history-attachment-number {
+  color: var(--vue-green-dark);
+}
+
+.chat-history-attachment-widget {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-history-attachment-text {
+  color: var(--vue-ink);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .chat-history-message-working {
   border-style: dashed;
   background: #f8fbfa;

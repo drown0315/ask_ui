@@ -132,3 +132,23 @@ export function getVisibleChatHistoryMessages(
     },
   ];
 }
+
+export type ChatHistorySelectionCommentSummary = {
+  id: string;
+  number: number;
+  widgetLabel: string;
+  text: string;
+};
+
+export function getChatHistorySelectionCommentSummaries(
+  message: ChatMessageResponse,
+): ChatHistorySelectionCommentSummary[] {
+  return (message.parts ?? [])
+    .filter((part) => part.type === 'selection_comment')
+    .map((part, index) => ({
+      id: part.attachment.id,
+      number: index + 1,
+      widgetLabel: part.attachment.selectedWidget.displayLabel,
+      text: part.attachment.commentText,
+    }));
+}

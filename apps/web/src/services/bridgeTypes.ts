@@ -65,6 +65,7 @@ export type ChatMessageResponse = {
   id: string;
   role: 'user' | 'agent' | 'system';
   text: string;
+  parts?: ChatMessageRequestPart[];
 };
 
 export type GetChatSessionResponse = {
