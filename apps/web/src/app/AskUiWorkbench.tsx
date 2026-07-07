@@ -12,6 +12,7 @@ import { useWorkbenchActions } from '../workbench-actions/useWorkbenchActions';
 import { usePanelResize } from './usePanelResize';
 import { useWorkbenchSelectionComments } from './useWorkbenchSelectionComments';
 import { getWorkbenchReadOnlyState } from './workbenchReadOnlyState';
+import './AskUiWorkbench.css';
 
 export function AskUiWorkbench() {
   const { bridgeSessionState, readySessionId } = useBridgeSession(

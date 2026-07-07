@@ -16,6 +16,7 @@ import {
 } from '../../selection-comments/selectionCommentState';
 import { useChatComposerFlow } from './useChatComposerFlow';
 import { useSelectionCommentPanelFlow } from './useSelectionCommentPanelFlow';
+import './ChatPanel.css';
 
 const SNAPSHOT_SEND_WAIT_MS = 5000;
 

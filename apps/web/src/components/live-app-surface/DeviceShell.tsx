@@ -17,6 +17,7 @@ import {
   type DeviceVideoCanvasBinding,
   type DeviceVideoFrameRenderer,
 } from '../../live-app-surface/deviceVideoFrameRenderer';
+import './DeviceShell.css';
 
 type DeviceShellProps = {
   isInputDisabled: boolean;

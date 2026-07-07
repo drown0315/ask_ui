@@ -8,6 +8,7 @@ import {
   getLiveAppSurfacePhoneStateContent,
   type LiveAppSurfacePhoneStateContent,
 } from './liveAppSurfaceContent';
+import './LiveAppSurface.css';
 
 type LiveAppSurfaceProps = {
   isInputDisabled: boolean;

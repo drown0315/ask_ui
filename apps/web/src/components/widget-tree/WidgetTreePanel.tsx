@@ -21,6 +21,7 @@ import {
   getNextMatchIndex,
   getPreviousMatchIndex,
 } from './widgetTreeSearch';
+import './WidgetTreePanel.css';
 
 type WidgetTreeIconKind =
   | 'app'

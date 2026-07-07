@@ -1,5 +1,6 @@
 import type { WorkbenchActionState } from './topBarActions';
 import type { TargetDeviceDisplay } from '../../session/targetDeviceDisplay';
+import './TopBar.css';
 
 type TopBarProps = {
   isSelectWidgetActive: boolean;
