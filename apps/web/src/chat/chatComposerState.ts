@@ -105,6 +105,7 @@ export function shouldSubmitChatComposerKey(
 export function getComposerTextAfterSendResult(
   currentText: string,
   succeeded: boolean,
+  submittedText = currentText,
 ): string {
-  return succeeded ? '' : currentText;
+  return succeeded && currentText === submittedText ? '' : currentText;
 }

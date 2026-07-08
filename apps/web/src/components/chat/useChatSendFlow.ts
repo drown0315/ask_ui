@@ -18,7 +18,7 @@ type UseChatSendFlowOptions = {
   getSelectionCommentDraftsByWidgetIdForSend: () => Record<string, string>;
   getSelectionCommentsForSend: () => SelectionComment[];
   hasCapturingSnapshots: () => boolean;
-  onComposerTextAfterSend: (succeeded: boolean) => void;
+  onComposerTextAfterSend: (succeeded: boolean, submittedText: string) => void;
   onSelectionCommentStateChange: Dispatch<SetStateAction<SelectionCommentState>>;
   projectRoot: string | null;
   sessionId: string | null;
@@ -81,7 +81,7 @@ export function useChatSendFlow({
           text,
         }),
       );
-      onComposerTextAfterSend(true);
+      onComposerTextAfterSend(true, text);
       onSelectionCommentStateChange((currentState) =>
         getSelectionCommentStateAfterSendResult(
           currentState,
@@ -92,7 +92,7 @@ export function useChatSendFlow({
       );
       requestAnimationFrame(() => composerInputRef.current?.focus());
     } catch (error) {
-      onComposerTextAfterSend(false);
+      onComposerTextAfterSend(false, text);
       setSendError(
         error instanceof Error ? error.message : 'Failed to send Chat message.',
       );

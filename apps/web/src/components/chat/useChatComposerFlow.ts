@@ -53,9 +53,9 @@ export function useChatComposerFlow({
     getSelectionCommentDraftsByWidgetIdForSend,
     getSelectionCommentsForSend,
     hasCapturingSnapshots,
-    onComposerTextAfterSend(succeeded) {
+    onComposerTextAfterSend(succeeded, submittedText) {
       setComposerText((currentText) =>
-        getComposerTextAfterSendResult(currentText, succeeded),
+        getComposerTextAfterSendResult(currentText, succeeded, submittedText),
       );
     },
     onSelectionCommentStateChange,

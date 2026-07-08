@@ -90,3 +90,14 @@ test('clears composer text only after successful send', () => {
     'Make it primary.',
   );
 });
+
+test('preserves composer text edited while a send is in flight', () => {
+  assert.equal(
+    getComposerTextAfterSendResult(
+      'Make it primary and add contrast.',
+      true,
+      'Make it primary.',
+    ),
+    'Make it primary and add contrast.',
+  );
+});
