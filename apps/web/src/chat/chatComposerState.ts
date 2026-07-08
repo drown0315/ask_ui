@@ -12,10 +12,10 @@ export type ChatComposerState = {
 };
 
 /**
- * Derive the plain text Chat composer sendability from Chat session state.
+ * Derive Chat composer sendability from Chat session state and attachments.
  *
  * The function keeps UI components small and makes the product rules around
- * Agent Status, read-only browser tabs, empty text, and text length directly
+ * Agent Status, read-only browser tabs, empty sends, and text length directly
  * testable.
  */
 export function getChatComposerState(

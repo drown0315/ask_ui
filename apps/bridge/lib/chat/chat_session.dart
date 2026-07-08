@@ -3,9 +3,8 @@ import 'dart:async';
 /// Agent availability shown in the Chat panel.
 ///
 /// The status belongs to one Bridge Session and starts as
-/// `waitingForAgent`. Later issues move it to `agentReady` when an Agent
-/// Session poller is waiting and `agentWorking` while the agent handles a
-/// delivered Chat message.
+/// `waitingForAgent`. It moves to `agentReady` when an Agent Session poller is
+/// waiting and `agentWorking` while the agent handles a delivered Chat message.
 enum AgentStatus {
   waitingForAgent('waiting_for_agent'),
   agentReady('agent_ready'),
@@ -319,8 +318,8 @@ class ChatSession {
 
   /// Deliver one Chat message to the currently waiting Agent Session.
   ///
-  /// Returns `false` when no Agent Session is ready, allowing the later Send API
-  /// to reject the browser request without creating an offline queue.
+  /// Returns `false` when no Agent Session is ready, allowing the browser Send
+  /// endpoint to reject the request without creating an offline queue.
   bool deliverMessageToAgent(ChatMessage message) {
     final Completer<AgentPollResult>? poll = _activePoll;
     if (poll == null || poll.isCompleted) {

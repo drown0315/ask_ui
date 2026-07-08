@@ -430,7 +430,10 @@ class AskUiBridgeServer {
     );
   }
 
-  /// Send one plain text Chat message to the currently waiting Agent Session.
+  /// Send one Chat message to the currently waiting Agent Session.
+  ///
+  /// The request can be a plain `text` message or ordered `parts` containing
+  /// Selection Comment attachments followed by an optional typed text part.
   ///
   /// This endpoint intentionally has no offline queue. If no Agent Session is
   /// actively polling, the browser keeps its composer text and can try again

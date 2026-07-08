@@ -59,13 +59,15 @@ Surface Controls operate the Target Device but are not part of the Device View c
 
 The right-side workbench panel where the developer reviews the current selected widget, stages Selection Comments, sees Chat History, and sends Chat messages to the waiting Agent Session.
 
-The Chat Panel owns the visible Attachment Tokens for unsent Selection Comments, but staged Selection Comments remain local browser state until a later send slice attaches them to a Chat message.
+The Chat Panel owns the visible Attachment Tokens for unsent Selection Comments. On Send, staged Selection Comments become ordered Chat message parts delivered to the waiting Agent Session.
 
 ## Selection Comment
 
 A user-authored comment attached to a selected Flutter widget target.
 
 Selection Comments are staged locally before send. A staged comment can appear as an Attachment Token in the Chat composer and as a numbered marker on the Live App Surface while Select Widget mode is enabled and the widget target is currently locatable.
+
+When sent, a Selection Comment becomes a Chat attachment part with comment text, selected-widget metadata, and local snapshot path or unavailable state.
 
 ## Attachment Token
 
