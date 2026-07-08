@@ -697,6 +697,8 @@ void main() {
 
     test('accepts Selection Comment snapshots captured for the same session',
         () async {
+      fixture.snapshotCapture.managedLocalPath =
+          '/tmp/ask-ui-snapshots/session-1';
       fixture.snapshotCapture.result = const SnapshotCaptureResult.available(
         path: '/tmp/ask-ui-snapshots/session-1/snapshots/comment.png',
         mimeType: 'image/png',

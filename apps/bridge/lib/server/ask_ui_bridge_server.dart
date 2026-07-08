@@ -810,15 +810,14 @@ class AskUiBridgeServer {
     if (!result.isAvailable ||
         result.mimeType != 'image/png' ||
         result.sizeBytes > maxSizeBytes ||
-        !_snapshotFileExists(result.path)) {
+        !_snapshotFileExists(result.path) ||
+        !session.ownsManagedLocalPath(result.path)) {
       await _writeJson(
         request.response,
         body: {'status': 'unavailable'},
       );
       return;
     }
-
-    session.manageLocalPath(File(result.path).parent.path);
 
     await _writeJson(
       request.response,
