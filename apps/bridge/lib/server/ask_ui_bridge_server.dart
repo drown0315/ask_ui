@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../app_controller/flutter_app_controller.dart';
+import '../chat/chat_ingress.dart';
 import '../chat/chat_session.dart';
 import '../device/device_stream.dart';
 import '../device/scrcpy_device_stream.dart';
@@ -13,10 +14,7 @@ import '../sessions/flutter_device_checker.dart';
 import '../sessions/session_store.dart';
 import '../snapshots/snapshot_capture.dart';
 
-const int _chatMessageTextLimit = 4000;
-const int _selectionCommentTextLimit = 1000;
-const int _selectionCommentMetadataLimit = 1000;
-const int _selectionCommentBatchLimit = 20;
+const int _agentChatMessageTextLimit = 4000;
 
 class AskUiBridgeServer {
   AskUiBridgeServer({
@@ -40,6 +38,10 @@ class AskUiBridgeServer {
         _snapshotCapture = snapshotCapture ?? AdbSnapshotCapture().capture,
         _snapshotFileExists =
             snapshotFileExists ?? ((path) => File(path).existsSync()),
+        _chatIngress = ChatIngress(
+          snapshotFileExists:
+              snapshotFileExists ?? ((path) => File(path).existsSync()),
+        ),
         _projectRootExists = projectRootExists ??
             ((projectRoot) => Directory(projectRoot).existsSync()),
         _sessionEventsHeartbeatInterval = sessionEventsHeartbeatInterval,
@@ -52,6 +54,7 @@ class AskUiBridgeServer {
   final DeviceStreamFactory _deviceStreamFactory;
   final SnapshotCapture _snapshotCapture;
   final bool Function(String path) _snapshotFileExists;
+  final ChatIngress _chatIngress;
   final bool Function(String projectRoot) _projectRootExists;
   final Duration _sessionEventsHeartbeatInterval;
   final BridgeLogger _logger;
@@ -479,18 +482,9 @@ class AskUiBridgeServer {
       return;
     }
 
-    final _ParsedChatMessageRequest? parsedMessage =
-        _parseChatMessageRequest(body, session);
-    if (parsedMessage == null) {
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.badRequest,
-        body: {'error': 'empty_chat_message'},
-      );
-      return;
-    }
-
-    if (parsedMessage.error != null) {
+    final ChatIngressMessage parsedMessage =
+        _chatIngress.parseMessage(body, session);
+    if (parsedMessage is RejectedChatIngressMessage) {
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badRequest,
@@ -498,20 +492,12 @@ class AskUiBridgeServer {
       );
       return;
     }
-
-    if (parsedMessage.text.length > _chatMessageTextLimit) {
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.badRequest,
-        body: {'error': 'chat_message_too_long'},
-      );
-      return;
-    }
+    final acceptedMessage = parsedMessage as AcceptedChatIngressMessage;
 
     final ChatMessage? message = session.chat.sendUserMessage(
-      text: parsedMessage.text,
-      context: parsedMessage.context,
-      parts: parsedMessage.parts,
+      text: acceptedMessage.text,
+      context: acceptedMessage.context,
+      parts: acceptedMessage.parts,
     );
     if (message == null) {
       await _writeJson(
@@ -529,233 +515,6 @@ class AskUiBridgeServer {
         'message': message.toJson(),
       },
     );
-  }
-
-  _ParsedChatMessageRequest? _parseChatMessageRequest(
-    Map<String, Object?> body,
-    BridgeSession session,
-  ) {
-    final Object? text = body['text'];
-    if (text is String) {
-      if (text.trim().isEmpty) {
-        return null;
-      }
-
-      return _ParsedChatMessageRequest(text: text);
-    }
-
-    final Object? rawParts = body['parts'];
-    if (rawParts is! List<Object?> || rawParts.isEmpty) {
-      return null;
-    }
-    if (rawParts.length > _selectionCommentBatchLimit + 1) {
-      return const _ParsedChatMessageRequest.invalid('invalid_chat_parts');
-    }
-
-    final List<Map<String, Object?>> parts = <Map<String, Object?>>[];
-    String typedText = '';
-    int selectionCommentCount = 0;
-    int textPartCount = 0;
-    for (final rawPart in rawParts) {
-      final Map<String, Object?>? part = _normalizeJsonObject(rawPart);
-      if (part == null) {
-        return const _ParsedChatMessageRequest.invalid('invalid_chat_parts');
-      }
-
-      final normalizedPart = _parseChatMessagePart(part, session);
-      if (normalizedPart == null) {
-        return const _ParsedChatMessageRequest.invalid('invalid_chat_parts');
-      }
-
-      if (normalizedPart['type'] == 'text') {
-        textPartCount += 1;
-        typedText = normalizedPart['text'] as String;
-      } else {
-        selectionCommentCount += 1;
-      }
-
-      parts.add(normalizedPart);
-    }
-
-    if (typedText.length > _chatMessageTextLimit ||
-        textPartCount > 1 ||
-        selectionCommentCount > _selectionCommentBatchLimit) {
-      return const _ParsedChatMessageRequest.invalid('invalid_chat_parts');
-    }
-
-    final bool hasAttachment = parts.any(
-      (part) => part['type'] == 'selection_comment',
-    );
-    if (!hasAttachment && typedText.trim().isEmpty) {
-      return null;
-    }
-
-    return _ParsedChatMessageRequest(
-      text: typedText,
-      context: {'projectRoot': session.projectRoot},
-      parts: parts,
-    );
-  }
-
-  Map<String, Object?>? _parseChatMessagePart(
-    Map<String, Object?> part,
-    BridgeSession session,
-  ) {
-    switch (part['type']) {
-      case 'text':
-        final text = part['text'];
-        if (text is! String) {
-          return null;
-        }
-        return {
-          'type': 'text',
-          'text': text,
-        };
-      case 'selection_comment':
-        final attachment = _normalizeJsonObject(part['attachment']);
-        if (attachment == null) {
-          return null;
-        }
-        final normalizedAttachment =
-            _parseSelectionCommentAttachment(attachment, session);
-        if (normalizedAttachment == null) {
-          return null;
-        }
-        return {
-          'type': 'selection_comment',
-          'attachment': normalizedAttachment,
-        };
-    }
-
-    return null;
-  }
-
-  Map<String, Object?>? _parseSelectionCommentAttachment(
-    Map<String, Object?> attachment,
-    BridgeSession session,
-  ) {
-    final id = attachment['id'];
-    final commentText = attachment['commentText'];
-    final selectedWidget = _normalizeJsonObject(attachment['selectedWidget']);
-    final snapshot = _normalizeJsonObject(attachment['snapshot']);
-    if (!_isBoundedNonBlankString(id, _selectionCommentMetadataLimit) ||
-        !_isBoundedNonBlankString(commentText, _selectionCommentTextLimit) ||
-        selectedWidget == null ||
-        snapshot == null) {
-      return null;
-    }
-
-    final normalizedSelectedWidget = _parseSelectedWidget(selectedWidget);
-    final normalizedSnapshot = _parseSelectionCommentSnapshot(
-      snapshot,
-      session,
-    );
-    if (normalizedSelectedWidget == null || normalizedSnapshot == null) {
-      return null;
-    }
-
-    return {
-      'id': id,
-      'commentText': commentText,
-      'selectedWidget': normalizedSelectedWidget,
-      'snapshot': normalizedSnapshot,
-    };
-  }
-
-  Map<String, Object?>? _parseSelectedWidget(Map<String, Object?> widget) {
-    final id = widget['id'];
-    final displayLabel = widget['displayLabel'];
-    if (!_isBoundedNonBlankString(id, _selectionCommentMetadataLimit) ||
-        !_isBoundedNonBlankString(
-          displayLabel,
-          _selectionCommentMetadataLimit,
-        )) {
-      return null;
-    }
-
-    final normalized = <String, Object?>{
-      'id': id,
-      'displayLabel': displayLabel,
-    };
-    for (final key in ['sourceLocation', 'visibleText', 'semanticInfo']) {
-      final value = widget[key];
-      if (value != null) {
-        if (!_isBoundedString(value, _selectionCommentTextLimit)) {
-          return null;
-        }
-        normalized[key] = value;
-      }
-    }
-    return normalized;
-  }
-
-  Map<String, Object?>? _parseSelectionCommentSnapshot(
-    Map<String, Object?> snapshot,
-    BridgeSession session,
-  ) {
-    switch (snapshot['status']) {
-      case 'available':
-        final path = snapshot['path'];
-        if (!_isBoundedNonBlankString(path, _selectionCommentMetadataLimit) ||
-            !_snapshotFileExists(path as String) ||
-            !session.ownsManagedLocalPath(path)) {
-          return null;
-        }
-        return {
-          'status': 'available',
-          'path': path,
-        };
-      case 'unavailable':
-        return {'status': 'unavailable'};
-    }
-
-    return null;
-  }
-
-  bool _isBoundedNonBlankString(Object? value, int limit) {
-    if (value is! String) {
-      return false;
-    }
-    return value.trim().isNotEmpty && value.length <= limit;
-  }
-
-  bool _isBoundedString(Object? value, int limit) {
-    return value is String && value.length <= limit;
-  }
-
-  Map<String, Object?>? _normalizeJsonObject(Object? value) {
-    if (value is! Map) {
-      return null;
-    }
-
-    final Map<String, Object?> normalized = <String, Object?>{};
-    for (final entry in value.entries) {
-      final key = entry.key;
-      if (key is! String) {
-        return null;
-      }
-      normalized[key] = _normalizeJsonValue(entry.value);
-    }
-    return normalized;
-  }
-
-  Object? _normalizeJsonValue(Object? value) {
-    if (value is Map) {
-      final Map<String, Object?> normalized = <String, Object?>{};
-      for (final entry in value.entries) {
-        final key = entry.key;
-        if (key is String) {
-          normalized[key] = _normalizeJsonValue(entry.value);
-        }
-      }
-      return normalized;
-    }
-
-    if (value is List) {
-      return value.map(_normalizeJsonValue).toList();
-    }
-
-    return value;
   }
 
   Future<void> _captureSnapshot(HttpRequest request) async {
@@ -990,7 +749,7 @@ class AskUiBridgeServer {
       return;
     }
 
-    if (text.length > _chatMessageTextLimit) {
+    if (text.length > _agentChatMessageTextLimit) {
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badRequest,
@@ -1761,25 +1520,6 @@ class _WebSocketDeviceStreamSink implements DeviceStreamSink {
   Future<void> close() async {
     await socket.close();
   }
-}
-
-class _ParsedChatMessageRequest {
-  const _ParsedChatMessageRequest({
-    required this.text,
-    this.context = const <String, Object?>{},
-    this.parts = const <Map<String, Object?>>[],
-  }) : error = null;
-
-  const _ParsedChatMessageRequest.invalid(String error)
-      : text = '',
-        context = const <String, Object?>{},
-        parts = const <Map<String, Object?>>[],
-        error = error;
-
-  final String text;
-  final Map<String, Object?> context;
-  final List<Map<String, Object?>> parts;
-  final String? error;
 }
 
 /// Single-frame Annex B H.264 byte fixture for the Device WebSocket shell.
