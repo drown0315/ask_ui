@@ -14,6 +14,12 @@ void main() {
             {
               'valueId': 'inspector-2',
               'description': 'Scaffold',
+              'creationLocation': {
+                'file': 'file:///Users/example/app/lib/home.dart',
+                'line': 9,
+                'column': 7,
+              },
+              'textPreview': 'Home',
             },
           ],
         },
@@ -38,6 +44,8 @@ void main() {
           {
             'id': 'inspector-2',
             'label': 'Scaffold',
+            'sourceLocation': 'lib/home.dart:9:7',
+            'visibleText': 'Home',
             'children': <Object?>[],
           },
         ],
@@ -57,7 +65,7 @@ void main() {
             'groupName': 'ask_ui_widget_tree',
             'isSummaryTree': 'true',
             'withPreviews': 'true',
-            'fullDetails': 'false',
+            'fullDetails': 'true',
           },
         ),
       ]);
