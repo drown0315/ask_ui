@@ -175,5 +175,84 @@ void main() {
       expect(await poll, const AgentPollResult.timedOut());
       expect(chat.snapshot().agentStatus, AgentStatus.waitingForAgent);
     });
+
+    test('stores agent replies with a top-level user reply-to id', () async {
+      final ChatSession chat = ChatSession();
+      final Future<AgentPollResult> poll = chat.waitForAgentMessage();
+      final ChatMessage? userMessage = chat.sendUserTextMessage(
+        'Make this button primary.',
+      );
+      await poll;
+
+      final ChatMessage reply = chat.appendAgentReply(
+        '  Done.  ',
+        replyToMessageId: userMessage?.id,
+      );
+
+      expect(reply.toJson(), {
+        'id': 'message-2',
+        'role': 'agent',
+        'text': '  Done.  ',
+        'replyToMessageId': 'message-1',
+      });
+      expect(
+        () => chat.appendAgentReply('Missing correlation.'),
+        throwsA(isA<InvalidReplyToMessage>()),
+      );
+    });
+
+    test('stores optional system reply-to ids for existing user messages',
+        () async {
+      final ChatSession chat = ChatSession();
+      final Future<AgentPollResult> poll = chat.waitForAgentMessage();
+      final ChatMessage? userMessage = chat.sendUserTextMessage(
+        'Make this button primary.',
+      );
+      await poll;
+
+      final ChatMessage sessionError = chat.appendAgentError(
+        'Session setup failed.',
+      );
+      final ChatMessage workflowError = chat.appendAgentError(
+        'Could not run tests.',
+        replyToMessageId: userMessage?.id,
+      );
+      final ChatMessage followUp = chat.appendAgentReply(
+        'I fixed the layout manually.',
+        replyToMessageId: userMessage?.id,
+      );
+
+      expect(sessionError.toJson(), {
+        'id': 'message-2',
+        'role': 'system',
+        'text': 'Session setup failed.',
+      });
+      expect(workflowError.toJson(), {
+        'id': 'message-3',
+        'role': 'system',
+        'text': 'Could not run tests.',
+        'replyToMessageId': 'message-1',
+      });
+      expect(followUp.toJson(), {
+        'id': 'message-4',
+        'role': 'agent',
+        'text': 'I fixed the layout manually.',
+        'replyToMessageId': 'message-1',
+      });
+      expect(
+        () => chat.appendAgentError(
+          'Bad target.',
+          replyToMessageId: 'message-404',
+        ),
+        throwsA(isA<InvalidReplyToMessage>()),
+      );
+      expect(
+        () => chat.appendAgentError(
+          'System messages are not valid targets.',
+          replyToMessageId: workflowError.id,
+        ),
+        throwsA(isA<InvalidReplyToMessage>()),
+      );
+    });
   });
 }
