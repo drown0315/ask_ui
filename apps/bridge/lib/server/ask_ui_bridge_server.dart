@@ -254,22 +254,14 @@ class AskUiBridgeServer {
 
   Future<void> _createSession(HttpRequest request) async {
     _logger.info('session create start');
-    Map<String, Object?> body;
-
-    try {
-      final rawBody = await utf8.decodeStream(request);
-      final decoded = jsonDecode(rawBody);
-      if (decoded is! Map<String, Object?>) {
-        throw const FormatException('Expected JSON object');
-      }
-      body = decoded;
-    } on FormatException {
-      _logger.info('session create failed error=invalid_json');
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.badRequest,
-        body: {'error': 'invalid_json'},
-      );
+    final Map<String, Object?>? body = await _readJsonObject(
+      request,
+      invalidError: 'invalid_json',
+      onInvalidJson: () {
+        _logger.info('session create failed error=invalid_json');
+      },
+    );
+    if (body == null) {
       return;
     }
 
@@ -320,15 +312,12 @@ class AskUiBridgeServer {
   /// session events stream.
   Future<void> _getChat(HttpRequest request) async {
     final String sessionId = request.uri.pathSegments[2];
-    final BridgeSession? session = _sessionStore.find(sessionId);
-
+    final BridgeSession? session = await _findSessionOrWriteNotFound(
+      request,
+      sessionId: sessionId,
+      logPrefix: 'chat request',
+    );
     if (session == null) {
-      _logger.info('chat request session=$sessionId session_not_found');
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.notFound,
-        body: {'error': 'session_not_found'},
-      );
       return;
     }
 
@@ -351,32 +340,20 @@ class AskUiBridgeServer {
   /// once Agent Status returns to `agent_ready`.
   Future<void> _sendChatMessage(HttpRequest request) async {
     final String sessionId = request.uri.pathSegments[2];
-    final BridgeSession? session = _sessionStore.find(sessionId);
-
+    final BridgeSession? session = await _findSessionOrWriteNotFound(
+      request,
+      sessionId: sessionId,
+      logPrefix: 'chat send',
+    );
     if (session == null) {
-      _logger.info('chat send session=$sessionId session_not_found');
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.notFound,
-        body: {'error': 'session_not_found'},
-      );
       return;
     }
 
-    late final Map<String, Object?> body;
-    try {
-      final String rawBody = await utf8.decodeStream(request);
-      final decoded = jsonDecode(rawBody);
-      if (decoded is! Map<String, Object?>) {
-        throw const FormatException('Expected JSON object');
-      }
-      body = decoded;
-    } on FormatException {
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.badRequest,
-        body: {'error': 'invalid_json'},
-      );
+    final Map<String, Object?>? body = await _readJsonObject(
+      request,
+      invalidError: 'invalid_json',
+    );
+    if (body == null) {
       return;
     }
 
@@ -417,32 +394,20 @@ class AskUiBridgeServer {
 
   Future<void> _captureSnapshot(HttpRequest request) async {
     final String sessionId = request.uri.pathSegments[2];
-    final BridgeSession? session = _sessionStore.find(sessionId);
-
+    final BridgeSession? session = await _findSessionOrWriteNotFound(
+      request,
+      sessionId: sessionId,
+      logPrefix: 'snapshot capture',
+    );
     if (session == null) {
-      _logger.info('snapshot capture session=$sessionId session_not_found');
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.notFound,
-        body: {'error': 'session_not_found'},
-      );
       return;
     }
 
-    late final Map<String, Object?> body;
-    try {
-      final String rawBody = await utf8.decodeStream(request);
-      final decoded = jsonDecode(rawBody);
-      if (decoded is! Map<String, Object?>) {
-        throw const FormatException('Expected JSON object');
-      }
-      body = decoded;
-    } on FormatException {
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.badRequest,
-        body: {'error': 'invalid_json'},
-      );
+    final Map<String, Object?>? body = await _readJsonObject(
+      request,
+      invalidError: 'invalid_json',
+    );
+    if (body == null) {
       return;
     }
 
@@ -508,15 +473,12 @@ class AskUiBridgeServer {
   /// Tests and debugging clients may pass `timeoutMs` to get a bounded response.
   Future<void> _pollAgent(HttpRequest request) async {
     final String sessionId = request.uri.pathSegments[2];
-    final BridgeSession? session = _sessionStore.find(sessionId);
-
+    final BridgeSession? session = await _findSessionOrWriteNotFound(
+      request,
+      sessionId: sessionId,
+      logPrefix: 'agent poll',
+    );
     if (session == null) {
-      _logger.info('agent poll session=$sessionId session_not_found');
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.notFound,
-        body: {'error': 'session_not_found'},
-      );
       return;
     }
 
@@ -608,32 +570,20 @@ class AskUiBridgeServer {
     ) writeMessage,
   }) async {
     final String sessionId = request.uri.pathSegments[2];
-    final BridgeSession? session = _sessionStore.find(sessionId);
-
+    final BridgeSession? session = await _findSessionOrWriteNotFound(
+      request,
+      sessionId: sessionId,
+      logPrefix: 'agent write',
+    );
     if (session == null) {
-      _logger.info('agent write session=$sessionId session_not_found');
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.notFound,
-        body: {'error': 'session_not_found'},
-      );
       return;
     }
 
-    late final Map<String, Object?> body;
-    try {
-      final String rawBody = await utf8.decodeStream(request);
-      final decoded = jsonDecode(rawBody);
-      if (decoded is! Map<String, Object?>) {
-        throw const FormatException('Expected JSON object');
-      }
-      body = decoded;
-    } on FormatException {
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.badRequest,
-        body: {'error': 'invalid_json'},
-      );
+    final Map<String, Object?>? body = await _readJsonObject(
+      request,
+      invalidError: 'invalid_json',
+    );
+    if (body == null) {
       return;
     }
 
@@ -689,15 +639,12 @@ class AskUiBridgeServer {
 
   Future<void> _openDevice(HttpRequest request) async {
     final sessionId = request.uri.pathSegments[2];
-    final session = _sessionStore.find(sessionId);
-
+    final BridgeSession? session = await _findSessionOrWriteNotFound(
+      request,
+      sessionId: sessionId,
+      logPrefix: 'device websocket',
+    );
     if (session == null) {
-      _logger.info('device websocket session=$sessionId session_not_found');
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.notFound,
-        body: {'error': 'session_not_found'},
-      );
       return;
     }
 
@@ -713,15 +660,12 @@ class AskUiBridgeServer {
 
   Future<void> _getWidgetTree(HttpRequest request) async {
     final sessionId = request.uri.pathSegments[2];
-    final session = _sessionStore.find(sessionId);
-
+    final BridgeSession? session = await _findSessionOrWriteNotFound(
+      request,
+      sessionId: sessionId,
+      logPrefix: 'widget_tree request',
+    );
     if (session == null) {
-      _logger.info('widget_tree request session=$sessionId session_not_found');
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.notFound,
-        body: {'error': 'session_not_found'},
-      );
       return;
     }
 
@@ -749,15 +693,12 @@ class AskUiBridgeServer {
 
   Future<void> _hotReload(HttpRequest request) async {
     final sessionId = request.uri.pathSegments[2];
-    final session = _sessionStore.find(sessionId);
-
+    final BridgeSession? session = await _findSessionOrWriteNotFound(
+      request,
+      sessionId: sessionId,
+      logPrefix: 'hot_reload request',
+    );
     if (session == null) {
-      _logger.info('hot_reload request session=$sessionId session_not_found');
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.notFound,
-        body: {'error': 'session_not_found'},
-      );
       return;
     }
 
@@ -784,28 +725,24 @@ class AskUiBridgeServer {
 
   Future<void> _setSelectWidgetMode(HttpRequest request) async {
     final sessionId = request.uri.pathSegments[2];
-    final session = _sessionStore.find(sessionId);
-
+    final BridgeSession? session = await _findSessionOrWriteNotFound(
+      request,
+      sessionId: sessionId,
+      logPrefix: 'select_widget request',
+    );
     if (session == null) {
-      _logger
-          .info('select_widget request session=$sessionId session_not_found');
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.notFound,
-        body: {'error': 'session_not_found'},
-      );
       return;
     }
 
-    late final bool enabled;
-    try {
-      final rawBody = await utf8.decodeStream(request);
-      final decoded = jsonDecode(rawBody);
-      if (decoded is! Map<String, Object?> || decoded['enabled'] is! bool) {
-        throw const FormatException('Expected enabled boolean');
-      }
-      enabled = decoded['enabled']! as bool;
-    } on FormatException {
+    final Map<String, Object?>? body = await _readJsonObject(
+      request,
+      invalidError: 'invalid_select_widget_mode_request',
+    );
+    if (body == null) {
+      return;
+    }
+    final Object? rawEnabled = body['enabled'];
+    if (rawEnabled is! bool) {
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badRequest,
@@ -813,6 +750,7 @@ class AskUiBridgeServer {
       );
       return;
     }
+    final bool enabled = rawEnabled;
 
     _logger.info(
       'select_widget request session=$sessionId start enabled=$enabled',
@@ -845,15 +783,12 @@ class AskUiBridgeServer {
 
   Future<void> _getSelectWidgetMode(HttpRequest request) async {
     final sessionId = request.uri.pathSegments[2];
-    final session = _sessionStore.find(sessionId);
-
+    final BridgeSession? session = await _findSessionOrWriteNotFound(
+      request,
+      sessionId: sessionId,
+      logPrefix: 'select_widget status',
+    );
     if (session == null) {
-      _logger.info('select_widget status session=$sessionId session_not_found');
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.notFound,
-        body: {'error': 'session_not_found'},
-      );
       return;
     }
 
@@ -903,30 +838,24 @@ class AskUiBridgeServer {
   /// Inspector for `session-1`.
   Future<void> _selectWidgetById(HttpRequest request) async {
     final sessionId = request.uri.pathSegments[2];
-    final session = _sessionStore.find(sessionId);
-
+    final BridgeSession? session = await _findSessionOrWriteNotFound(
+      request,
+      sessionId: sessionId,
+      logPrefix: 'widget_selection request',
+    );
     if (session == null) {
-      _logger.info(
-          'widget_selection request session=$sessionId session_not_found');
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.notFound,
-        body: {'error': 'session_not_found'},
-      );
       return;
     }
 
-    late final String widgetId;
-    try {
-      final rawBody = await utf8.decodeStream(request);
-      final decoded = jsonDecode(rawBody);
-      if (decoded is! Map<String, Object?> ||
-          decoded['widgetId'] is! String ||
-          (decoded['widgetId']! as String).trim().isEmpty) {
-        throw const FormatException('Expected non-empty widgetId string');
-      }
-      widgetId = (decoded['widgetId']! as String).trim();
-    } on FormatException {
+    final Map<String, Object?>? body = await _readJsonObject(
+      request,
+      invalidError: 'invalid_widget_selection_request',
+    );
+    if (body == null) {
+      return;
+    }
+    final Object? rawWidgetId = body['widgetId'];
+    if (rawWidgetId is! String || rawWidgetId.trim().isEmpty) {
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badRequest,
@@ -934,6 +863,7 @@ class AskUiBridgeServer {
       );
       return;
     }
+    final String widgetId = rawWidgetId.trim();
 
     _logger.info(
       'widget_selection request session=$sessionId start widget=$widgetId',
@@ -993,15 +923,12 @@ class AskUiBridgeServer {
   /// Widget mode or Chat state changes.
   Future<void> _streamSessionEvents(HttpRequest request) async {
     final sessionId = request.uri.pathSegments[2];
-    final session = _sessionStore.find(sessionId);
-
+    final BridgeSession? session = await _findSessionOrWriteNotFound(
+      request,
+      sessionId: sessionId,
+      logPrefix: 'events stream',
+    );
     if (session == null) {
-      _logger.info('events stream session=$sessionId session_not_found');
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.notFound,
-        body: {'error': 'session_not_found'},
-      );
       return;
     }
 
@@ -1023,15 +950,12 @@ class AskUiBridgeServer {
 
   Future<void> _hotRestart(HttpRequest request) async {
     final sessionId = request.uri.pathSegments[2];
-    final session = _sessionStore.find(sessionId);
-
+    final BridgeSession? session = await _findSessionOrWriteNotFound(
+      request,
+      sessionId: sessionId,
+      logPrefix: 'hot_restart request',
+    );
     if (session == null) {
-      _logger.info('hot_restart request session=$sessionId session_not_found');
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.notFound,
-        body: {'error': 'session_not_found'},
-      );
       return;
     }
 
@@ -1072,6 +996,48 @@ class AskUiBridgeServer {
       ..set(HttpHeaders.accessControlAllowOriginHeader, '*')
       ..set(HttpHeaders.accessControlAllowMethodsHeader, 'POST, GET, OPTIONS')
       ..set(HttpHeaders.accessControlAllowHeadersHeader, 'content-type');
+  }
+
+  Future<Map<String, Object?>?> _readJsonObject(
+    HttpRequest request, {
+    required String invalidError,
+    void Function()? onInvalidJson,
+  }) async {
+    try {
+      final String rawBody = await utf8.decodeStream(request);
+      final Object? decoded = jsonDecode(rawBody);
+      if (decoded is! Map<String, Object?>) {
+        throw const FormatException('Expected JSON object');
+      }
+      return decoded;
+    } on FormatException {
+      onInvalidJson?.call();
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': invalidError},
+      );
+      return null;
+    }
+  }
+
+  Future<BridgeSession?> _findSessionOrWriteNotFound(
+    HttpRequest request, {
+    required String sessionId,
+    required String logPrefix,
+  }) async {
+    final BridgeSession? session = _sessionStore.find(sessionId);
+    if (session != null) {
+      return session;
+    }
+
+    _logger.info('$logPrefix session=$sessionId session_not_found');
+    await _writeJson(
+      request.response,
+      statusCode: HttpStatus.notFound,
+      body: {'error': 'session_not_found'},
+    );
+    return null;
   }
 
   Future<void> _writeJson(
