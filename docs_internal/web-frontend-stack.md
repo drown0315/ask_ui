@@ -162,6 +162,10 @@ POST /api/sessions/:sessionId/chat/messages
 body: { "text": "..." }
 response: { "status": "ok", "message": { "id": "...", "role": "user", "text": "..." } }
 
+POST /api/sessions/:sessionId/chat/messages
+body: { "context": { "projectRoot": "..." }, "parts": [{ "type": "selection_comment", "attachment": ... }, { "type": "text", "text": "..." }] }
+response: { "status": "ok", "message": { "id": "...", "role": "user", "text": "...", "context": { "projectRoot": "..." }, "parts": [...] } }
+
 GET /api/sessions/:sessionId/agent/poll
 response: { "status": "ok", "message": { ... }, "nextStep": "..." }
 
@@ -226,13 +230,14 @@ Selection Chat behavior:
 - Session events include `select_widget_mode_snapshot`, `select_widget_mode_changed`, `chat_snapshot`, `agent_status_changed`, and `chat_history_changed`.
 - One Agent Session may long-poll `/api/sessions/:sessionId/agent/poll`; a second active poll is rejected.
 - Agent Status is `agent_ready` while a poller waits, `agent_working` after a user message is handed off, and `waiting_for_agent` when no poller is waiting.
-- Plain text Chat Send requires Agent Status `agent_ready`, non-empty text, and at most 4000 characters. Send has no offline queue.
-- Staged Selection Comments are local web state in this slice. Add comment requires Select Widget mode, reliable widget id and label, non-empty text, loaded Widget Tree state, and a batch of fewer than 20 comments.
+- Chat Send requires Agent Status `agent_ready`, either non-empty text or at least one Selection Comment attachment, and at most 4000 typed characters. Send has no offline queue.
+- Staged Selection Comments are local web state until Send. Add comment requires Select Widget mode, reliable widget id and label, non-empty text, loaded Widget Tree state, and a batch of fewer than 20 comments.
+- Send waits briefly for in-progress Selection Comment snapshots, then sends attachments before an optional typed text part. Attachment payloads include internal ids, comment text, selected-widget metadata, project-relative source location when available, and either a Bridge Session local snapshot path or unavailable state.
 - Each staged Selection Comment creates a composer Attachment Token that shows only `#n` and widget label.
 - Attachment Token clicks for locatable widgets may synchronize Flutter Inspector selection and Widget Context Panel selection. Unavailable token clicks show stored widget metadata in the Chat Panel without navigating, forcing stale Inspector selection, or restoring stale markers.
 - Live App Surface markers are automatic and not draggable. They are visible only while Select Widget mode is on and the target widget id is currently locatable in the loaded Widget Tree.
 - Turning Select Widget mode off hides selection outline and markers without clearing staged Selection Comments or Attachment Tokens.
-- This slice does not send Selection Comments as Chat attachments, capture snapshots, store marker coordinates or widget bounds, or automatically restore markers after navigating back to a previously locatable widget.
+- The Selection Comment payload does not include marker coordinates, selected bounds, or the full Flutter Widget Tree by default. Ask UI does not automatically restore markers after navigating back to a previously locatable widget.
 
 ## Styling
 

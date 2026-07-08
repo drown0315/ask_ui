@@ -12,16 +12,17 @@ export type ChatComposerState = {
 };
 
 /**
- * Derive the plain text Chat composer sendability from Chat session state.
+ * Derive Chat composer sendability from Chat session state and attachments.
  *
  * The function keeps UI components small and makes the product rules around
- * Agent Status, read-only browser tabs, empty text, and text length directly
+ * Agent Status, read-only browser tabs, empty sends, and text length directly
  * testable.
  */
 export function getChatComposerState(
   chatSessionState: ChatSessionState,
   text: string,
   isSending = false,
+  attachmentCount = 0,
 ): ChatComposerState {
   const isTooLong = text.length > CHAT_COMPOSER_TEXT_LIMIT;
 
@@ -59,7 +60,7 @@ export function getChatComposerState(
     };
   }
 
-  if (text.trim().length === 0) {
+  if (text.trim().length === 0 && attachmentCount === 0) {
     return {
       canSend: false,
       disabledReason: 'Type a message to send.',
@@ -104,6 +105,7 @@ export function shouldSubmitChatComposerKey(
 export function getComposerTextAfterSendResult(
   currentText: string,
   succeeded: boolean,
+  submittedText = currentText,
 ): string {
-  return succeeded ? '' : currentText;
+  return succeeded && currentText === submittedText ? '' : currentText;
 }

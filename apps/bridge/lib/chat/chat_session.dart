@@ -3,9 +3,8 @@ import 'dart:async';
 /// Agent availability shown in the Chat panel.
 ///
 /// The status belongs to one Bridge Session and starts as
-/// `waitingForAgent`. Later issues move it to `agentReady` when an Agent
-/// Session poller is waiting and `agentWorking` while the agent handles a
-/// delivered Chat message.
+/// `waitingForAgent`. It moves to `agentReady` when an Agent Session poller is
+/// waiting and `agentWorking` while the agent handles a delivered Chat message.
 enum AgentStatus {
   waitingForAgent('waiting_for_agent'),
   agentReady('agent_ready'),
@@ -34,24 +33,31 @@ enum ChatMessageRole {
 /// One message in Bridge Session Chat History.
 ///
 /// It carries the stable message id, the role displayed by the web Chat
-/// History, and plain text content. Selection Comment attachments are added to
-/// message payloads in a later Selection Chat slice.
+/// History, plain text content, and optional ordered payload parts sent to the
+/// Agent Session. Attachment parts are kept before the typed text part so the
+/// poller receives the same order the developer sent.
 class ChatMessage {
   const ChatMessage({
     required this.id,
     required this.role,
     required this.text,
+    this.context = const <String, Object?>{},
+    this.parts = const <Map<String, Object?>>[],
   });
 
   final String id;
   final ChatMessageRole role;
   final String text;
+  final Map<String, Object?> context;
+  final List<Map<String, Object?>> parts;
 
   Map<String, Object?> toJson() {
     return {
       'id': id,
       'role': role.wireName,
       'text': text,
+      if (context.isNotEmpty) 'context': context,
+      if (parts.isNotEmpty) 'parts': parts,
     };
   }
 }
@@ -208,10 +214,24 @@ class ChatSession {
   /// Returns `null` when no Agent Session is ready. The message is appended to
   /// Chat History only after the active poller has accepted the handoff.
   ChatMessage? sendUserTextMessage(String text) {
+    return sendUserMessage(text: text);
+  }
+
+  /// Create and deliver one user Chat message with optional ordered parts.
+  ///
+  /// `parts` is the current Agent Session payload. When present, it can contain
+  /// Selection Comment attachments followed by an optional typed text part.
+  ChatMessage? sendUserMessage({
+    required String text,
+    Map<String, Object?> context = const <String, Object?>{},
+    List<Map<String, Object?>> parts = const <Map<String, Object?>>[],
+  }) {
     final ChatMessage message = ChatMessage(
       id: _createMessageId(),
       role: ChatMessageRole.user,
       text: text,
+      context: context,
+      parts: parts,
     );
 
     if (!deliverMessageToAgent(message)) {
@@ -298,8 +318,8 @@ class ChatSession {
 
   /// Deliver one Chat message to the currently waiting Agent Session.
   ///
-  /// Returns `false` when no Agent Session is ready, allowing the later Send API
-  /// to reject the browser request without creating an offline queue.
+  /// Returns `false` when no Agent Session is ready, allowing the browser Send
+  /// endpoint to reject the request without creating an offline queue.
   bool deliverMessageToAgent(ChatMessage message) {
     final Completer<AgentPollResult>? poll = _activePoll;
     if (poll == null || poll.isCompleted) {

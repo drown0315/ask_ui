@@ -132,3 +132,56 @@ export function getVisibleChatHistoryMessages(
     },
   ];
 }
+
+export type ChatHistorySelectionCommentSummary = {
+  id: string;
+  number: number;
+  widgetLabel: string;
+  text: string;
+};
+
+export type ChatHistoryMessageContentItem =
+  | {
+      type: 'selection_comment';
+      summary: ChatHistorySelectionCommentSummary;
+    }
+  | {
+      type: 'text';
+      text: string;
+    };
+
+export function getChatHistorySelectionCommentSummaries(
+  message: ChatMessageResponse,
+): ChatHistorySelectionCommentSummary[] {
+  return (message.parts ?? [])
+    .filter((part) => part.type === 'selection_comment')
+    .map((part, index) => ({
+      id: part.attachment.id,
+      number: index + 1,
+      widgetLabel: part.attachment.selectedWidget.displayLabel,
+      text: part.attachment.commentText,
+    }));
+}
+
+export function getChatHistoryMessageContentItems(
+  message: ChatMessageResponse,
+): ChatHistoryMessageContentItem[] {
+  const attachmentItems = getChatHistorySelectionCommentSummaries(message).map(
+    (summary) => ({
+      type: 'selection_comment' as const,
+      summary,
+    }),
+  );
+
+  if (message.text.trim().length === 0) {
+    return attachmentItems;
+  }
+
+  return [
+    ...attachmentItems,
+    {
+      type: 'text',
+      text: message.text,
+    },
+  ];
+}

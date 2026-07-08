@@ -5,6 +5,7 @@ import {
 } from '../services/bridgeHttp.ts';
 import type {
   GetChatSessionResponse,
+  SendChatMessageRequest,
   SendPlainTextChatMessageResponse,
 } from '../services/bridgeTypes.ts';
 import { isAgentStatusResponse } from '../services/bridgeTypes.ts';
@@ -50,6 +51,13 @@ export async function sendPlainTextChatMessage(
   sessionId: string,
   text: string,
 ): Promise<SendPlainTextChatMessageResponse> {
+  return sendChatMessage(sessionId, { text });
+}
+
+export async function sendChatMessage(
+  sessionId: string,
+  request: SendChatMessageRequest | { text: string },
+): Promise<SendPlainTextChatMessageResponse> {
   const response = await fetch(
     `${bridgeOrigin}/api/sessions/${encodeURIComponent(
       sessionId,
@@ -59,7 +67,7 @@ export async function sendPlainTextChatMessage(
       headers: {
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(request),
     },
   );
 

@@ -31,9 +31,11 @@ void main() {
       final client = HttpClient();
       addTearDown(client.close);
       final String sessionId = await createSession(client, fixture.baseUri);
-      const snapshotPath = '/ask-ui-selection-comment-1.png';
+      final snapshotRoot = '/tmp/ask-ui-snapshots/$sessionId';
+      final snapshotPath = '$snapshotRoot/snapshots/selection-comment-1.png';
       fixture.existingSnapshotPaths.add(snapshotPath);
-      fixture.snapshotCapture.result = const SnapshotCaptureResult.available(
+      fixture.snapshotCapture.managedLocalPath = snapshotRoot;
+      fixture.snapshotCapture.result = SnapshotCaptureResult.available(
         path: snapshotPath,
         mimeType: 'image/png',
         sizeBytes: 120000,
@@ -70,6 +72,45 @@ void main() {
           maxSizeBytes: 1258291,
         ),
       ]);
+    });
+
+    test('rejects snapshots outside capture-managed local paths', () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+      final String sessionId = await createSession(client, fixture.baseUri);
+      final tempDirectory = await Directory.systemTemp.createTemp(
+        'ask-ui-unowned-snapshot-',
+      );
+      final snapshotPath = '${tempDirectory.path}/selection-comment-1.png';
+      await File(snapshotPath).writeAsBytes([1, 2, 3]);
+      fixture.existingSnapshotPaths.add(snapshotPath);
+      fixture.snapshotCapture.result = SnapshotCaptureResult.available(
+        path: snapshotPath,
+        mimeType: 'image/png',
+        sizeBytes: 3,
+      );
+
+      final request = await client.postUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/snapshots'),
+      );
+      request.headers.contentType = ContentType.json;
+      request.write(jsonEncode({
+        'commentId': 'selection-comment-1',
+        'format': 'png',
+        'maxSizeBytes': 1258291,
+        'scope': 'full_device',
+      }));
+
+      final response = await request.close();
+      final body =
+          jsonDecode(await utf8.decodeStream(response)) as Map<String, Object?>;
+      await fixture.close();
+
+      expect(response.statusCode, HttpStatus.ok);
+      expect(body, {'status': 'unavailable'});
+      expect(await tempDirectory.exists(), isTrue);
+
+      await tempDirectory.delete(recursive: true);
     });
 
     test('reports snapshot capture unavailable without failing the session',

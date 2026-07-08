@@ -174,7 +174,7 @@ export type SelectionCommentOverlayMarker = {
 /**
  * Local browser state for the unsent Selection Comment batch.
  *
- * `comments` are staged comments that can become Chat attachments later.
+ * `comments` are staged comments that become Chat attachments on Send.
  * `draftsByWidgetId` stores one unsent textarea draft per widget id.
  * `nextCommentId` provides stable local ids for newly staged comments.
  *

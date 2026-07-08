@@ -31,6 +31,7 @@ export type BridgeSessionState =
   | {
       status: 'ready';
       sessionId: string;
+      projectRoot: string;
       targetDeviceId: string;
       targetDeviceDisplayName?: string;
       clientId: string;

@@ -113,12 +113,15 @@ class BridgeServerFixture {
 class RecordingSnapshotCapture {
   RecordingSnapshotCapture({
     required this.result,
+    this.managedLocalPath,
   });
 
   RecordingSnapshotCapture.unavailable()
-      : result = const SnapshotCaptureResult.unavailable();
+      : result = const SnapshotCaptureResult.unavailable(),
+        managedLocalPath = null;
 
   SnapshotCaptureResult result;
+  String? managedLocalPath;
   final requests = <RecordedSnapshotCaptureRequest>[];
 
   Future<SnapshotCaptureResult> capture(SnapshotCaptureRequest request) async {
@@ -127,6 +130,11 @@ class RecordingSnapshotCapture {
       commentId: request.commentId,
       maxSizeBytes: request.maxSizeBytes,
     ));
+
+    final managedLocalPath = this.managedLocalPath;
+    if (managedLocalPath != null) {
+      request.session.manageLocalPath(managedLocalPath);
+    }
 
     return result;
   }

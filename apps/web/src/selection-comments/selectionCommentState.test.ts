@@ -5,7 +5,10 @@ import {
   addSelectionComment,
   deleteSelectionComment,
   getDraftForSelectedWidget,
+  getInitialSelectionCommentState,
   getSelectionCommentById,
+  getSelectionCommentsAfterSnapshotWait,
+  getSelectionCommentStateAfterSendResult,
   getSelectionCommentsForSelectedWidget,
   updateSelectionCommentDraft,
   updateSelectionCommentSnapshot,
@@ -215,4 +218,183 @@ test('stores selected widget metadata with staged comments for later token navig
     text: 'Make it clearer',
     snapshot: capturingSnapshot,
   });
+});
+
+test('updates sent Selection Comment snapshots without changing submitted text', () => {
+  let state = addSelectionComment(
+    getInitialSelectionCommentState(),
+    target,
+    'Make this primary.',
+  );
+  const submittedComments = state.comments;
+
+  state = updateSelectionCommentText(
+    updateSelectionCommentSnapshot(state, 'selection-comment-1', {
+      status: 'available',
+      path: '/tmp/ask-ui/session-1/snapshots/selection-comment-1.png',
+      mimeType: 'image/png',
+      sizeBytes: 120_000,
+    }),
+    'selection-comment-1',
+    'Edited after send.',
+  );
+
+  assert.deepEqual(
+    getSelectionCommentsAfterSnapshotWait(submittedComments, state.comments),
+    [
+      {
+        id: 'selection-comment-1',
+        widgetId: 'widget-1',
+        widgetLabel: 'PrimaryButton',
+        text: 'Make this primary.',
+        snapshot: {
+          status: 'available',
+          path: '/tmp/ask-ui/session-1/snapshots/selection-comment-1.png',
+          mimeType: 'image/png',
+          sizeBytes: 120_000,
+        },
+      },
+    ],
+  );
+});
+
+test('clears submitted Selection Comments and submit-time drafts after successful Chat send', () => {
+  let state = addSelectionComment(
+    getInitialSelectionCommentState(),
+    target,
+    'Make this primary.',
+  );
+  state = updateSelectionCommentDraft(state, target, 'Submitted draft.');
+  const submittedComments = state.comments;
+  const submittedDraftsByWidgetId = state.draftsByWidgetId;
+
+  state = updateSelectionCommentDraft(
+    addSelectionComment(state, target, 'Added during send.'),
+    {
+      id: 'widget-2',
+      displayLabel: 'SecondaryButton',
+    },
+    'Draft added during send.',
+  );
+
+  assert.deepEqual(
+    getSelectionCommentStateAfterSendResult(
+      state,
+      true,
+      submittedComments,
+      submittedDraftsByWidgetId,
+    ),
+    {
+      comments: [
+        {
+          id: 'selection-comment-2',
+          widgetId: 'widget-1',
+          widgetLabel: 'PrimaryButton',
+          text: 'Added during send.',
+          snapshot: capturingSnapshot,
+        },
+      ],
+      draftsByWidgetId: {
+        'widget-2': 'Draft added during send.',
+      },
+      nextCommentId: 3,
+    },
+  );
+  assert.deepEqual(
+    getSelectionCommentStateAfterSendResult(
+      state,
+      true,
+      state.comments,
+      submittedDraftsByWidgetId,
+    ),
+    {
+      comments: [],
+      draftsByWidgetId: {
+        'widget-2': 'Draft added during send.',
+      },
+      nextCommentId: 3,
+    },
+  );
+  assert.equal(
+    getSelectionCommentStateAfterSendResult(state, false, submittedComments),
+    state,
+  );
+});
+
+test('preserves submitted Selection Comments and drafts edited during Chat send', () => {
+  let state = addSelectionComment(
+    getInitialSelectionCommentState(),
+    target,
+    'Make this primary.',
+  );
+  state = updateSelectionCommentDraft(state, target, 'Submitted draft.');
+
+  const submittedComments = state.comments;
+  const submittedDraftsByWidgetId = state.draftsByWidgetId;
+
+  state = updateSelectionCommentText(
+    state,
+    'selection-comment-1',
+    'Edited during send.',
+  );
+  state = updateSelectionCommentDraft(state, target, 'Draft edited during send.');
+
+  assert.deepEqual(
+    getSelectionCommentStateAfterSendResult(
+      state,
+      true,
+      submittedComments,
+      submittedDraftsByWidgetId,
+    ),
+    {
+      comments: [
+        {
+          id: 'selection-comment-1',
+          widgetId: 'widget-1',
+          widgetLabel: 'PrimaryButton',
+          text: 'Edited during send.',
+          snapshot: capturingSnapshot,
+        },
+      ],
+      draftsByWidgetId: {
+        'widget-1': 'Draft edited during send.',
+      },
+      nextCommentId: 2,
+    },
+  );
+});
+
+test('preserves drafts after successful Chat send without Selection Comments', () => {
+  const state = updateSelectionCommentDraft(
+    getInitialSelectionCommentState(),
+    target,
+    'Keep this for later.',
+  );
+
+  assert.equal(
+    getSelectionCommentStateAfterSendResult(
+      state,
+      true,
+      [],
+      state.draftsByWidgetId,
+    ),
+    state,
+  );
+});
+
+test('keeps id allocation stable after clearing all submitted comments', () => {
+  const state = addSelectionComment(
+    getInitialSelectionCommentState(),
+    target,
+    'Make this primary.',
+  );
+
+  assert.deepEqual(
+    getSelectionCommentStateAfterSendResult(state, true, state.comments),
+    {
+      comments: [],
+      draftsByWidgetId: {},
+      nextCommentId: 2,
+    },
+  );
 });

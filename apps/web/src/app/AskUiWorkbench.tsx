@@ -21,6 +21,8 @@ export function AskUiWorkbench() {
   const liveAppSurface = useLiveAppSurface(readySessionId);
   const clientId =
     bridgeSessionState.status === 'ready' ? bridgeSessionState.clientId : null;
+  const projectRoot =
+    bridgeSessionState.status === 'ready' ? bridgeSessionState.projectRoot : null;
   const chatSession = useChatSession({
     clientId,
     sessionId: readySessionId,
@@ -94,6 +96,7 @@ export function AskUiWorkbench() {
           selectedWidget={selectionComments.selectedWidget}
           selectionCommentState={selectionComments.selectionCommentState}
           sessionId={readySessionId}
+          projectRoot={projectRoot}
           widgetTreeStatus={widgetTree.widgetTreeState.status}
         />
       </div>

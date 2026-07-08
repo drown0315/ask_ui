@@ -278,6 +278,525 @@ void main() {
       );
     });
 
+    test('sends Selection Comment attachments to the active Agent poller',
+        () async {
+      final browserClient = HttpClient();
+      final agentClient = HttpClient();
+      addTearDown(browserClient.close);
+      addTearDown(agentClient.close);
+      final String sessionId = await createSession(
+        browserClient,
+        fixture.baseUri,
+      );
+
+      final pollRequest = await agentClient.getUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/agent/poll'),
+      );
+      final Future<HttpClientResponse> pollResponseFuture = pollRequest.close();
+      await waitForChatStatus(
+        browserClient,
+        fixture.baseUri,
+        sessionId,
+        'agent_ready',
+      );
+
+      final sendRequest = await browserClient.postUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/chat/messages'),
+      );
+      sendRequest.headers.contentType = ContentType.json;
+      sendRequest.write(
+        jsonEncode({
+          'context': {'projectRoot': '/Users/example/app'},
+          'parts': [
+            {
+              'type': 'selection_comment',
+              'attachment': {
+                'id': 'selection-comment-1',
+                'commentText': 'Make this button primary.',
+                'selectedWidget': {
+                  'id': 'widget-1',
+                  'displayLabel': 'PrimaryButton',
+                  'sourceLocation': 'lib/home.dart:12:4',
+                  'visibleText': 'Save',
+                  'semanticInfo': 'button',
+                },
+                'snapshot': {'status': 'unavailable'},
+              },
+            },
+            {
+              'type': 'selection_comment',
+              'attachment': {
+                'id': 'selection-comment-2',
+                'commentText': 'Tighten this copy.',
+                'selectedWidget': {
+                  'id': 'widget-2',
+                  'displayLabel': 'Subtitle',
+                },
+                'snapshot': {'status': 'unavailable'},
+              },
+            },
+            {
+              'type': 'text',
+              'text': 'Please update this screen.',
+            },
+          ],
+        }),
+      );
+
+      final sendResponse = await sendRequest.close();
+      final sendBody = jsonDecode(await utf8.decodeStream(sendResponse))
+          as Map<String, Object?>;
+      final pollResponse = await pollResponseFuture;
+      final pollBody = jsonDecode(await utf8.decodeStream(pollResponse))
+          as Map<String, Object?>;
+
+      final expectedMessage = {
+        'id': 'message-1',
+        'role': 'user',
+        'text': 'Please update this screen.',
+        'context': {'projectRoot': '/Users/example/app'},
+        'parts': [
+          {
+            'type': 'selection_comment',
+            'attachment': {
+              'id': 'selection-comment-1',
+              'commentText': 'Make this button primary.',
+              'selectedWidget': {
+                'id': 'widget-1',
+                'displayLabel': 'PrimaryButton',
+                'sourceLocation': 'lib/home.dart:12:4',
+                'visibleText': 'Save',
+                'semanticInfo': 'button',
+              },
+              'snapshot': {'status': 'unavailable'},
+            },
+          },
+          {
+            'type': 'selection_comment',
+            'attachment': {
+              'id': 'selection-comment-2',
+              'commentText': 'Tighten this copy.',
+              'selectedWidget': {
+                'id': 'widget-2',
+                'displayLabel': 'Subtitle',
+              },
+              'snapshot': {'status': 'unavailable'},
+            },
+          },
+          {
+            'type': 'text',
+            'text': 'Please update this screen.',
+          },
+        ],
+      };
+
+      expect(sendResponse.statusCode, HttpStatus.ok);
+      expect(sendBody, {
+        'status': 'ok',
+        'message': expectedMessage,
+      });
+      expect(pollResponse.statusCode, HttpStatus.ok);
+      expect(pollBody['message'], expectedMessage);
+    });
+
+    test('sends Selection Comment attachments without typed text', () async {
+      final browserClient = HttpClient();
+      final agentClient = HttpClient();
+      addTearDown(browserClient.close);
+      addTearDown(agentClient.close);
+      final String sessionId = await createSession(
+        browserClient,
+        fixture.baseUri,
+      );
+
+      final pollRequest = await agentClient.getUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/agent/poll'),
+      );
+      final Future<HttpClientResponse> pollResponseFuture = pollRequest.close();
+      await waitForChatStatus(
+        browserClient,
+        fixture.baseUri,
+        sessionId,
+        'agent_ready',
+      );
+
+      final sendRequest = await browserClient.postUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/chat/messages'),
+      );
+      sendRequest.headers.contentType = ContentType.json;
+      sendRequest.write(
+        jsonEncode({
+          'context': {'projectRoot': '/Users/example/app'},
+          'parts': [
+            {
+              'type': 'selection_comment',
+              'attachment': {
+                'id': 'selection-comment-1',
+                'commentText': 'Make this button primary.',
+                'selectedWidget': {
+                  'id': 'widget-1',
+                  'displayLabel': 'PrimaryButton',
+                },
+                'snapshot': {'status': 'unavailable'},
+              },
+            },
+          ],
+        }),
+      );
+
+      final sendResponse = await sendRequest.close();
+      final sendBody = jsonDecode(await utf8.decodeStream(sendResponse))
+          as Map<String, Object?>;
+      final pollResponse = await pollResponseFuture;
+      final pollBody = jsonDecode(await utf8.decodeStream(pollResponse))
+          as Map<String, Object?>;
+
+      final expectedMessage = {
+        'id': 'message-1',
+        'role': 'user',
+        'text': '',
+        'context': {'projectRoot': '/Users/example/app'},
+        'parts': [
+          {
+            'type': 'selection_comment',
+            'attachment': {
+              'id': 'selection-comment-1',
+              'commentText': 'Make this button primary.',
+              'selectedWidget': {
+                'id': 'widget-1',
+                'displayLabel': 'PrimaryButton',
+              },
+              'snapshot': {'status': 'unavailable'},
+            },
+          },
+        ],
+      };
+
+      expect(sendResponse.statusCode, HttpStatus.ok);
+      expect(sendBody, {
+        'status': 'ok',
+        'message': expectedMessage,
+      });
+      expect(pollResponse.statusCode, HttpStatus.ok);
+      expect(pollBody['message'], expectedMessage);
+    });
+
+    test('rejects malformed and over-limit Selection Comment attachment parts',
+        () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+      final String sessionId = await createSession(client, fixture.baseUri);
+
+      Future<Map<String, Object?>> sendBody(
+        Map<String, Object?> body,
+      ) async {
+        final request = await client.postUrl(
+          fixture.baseUri.resolve('/api/sessions/$sessionId/chat/messages'),
+        );
+        request.headers.contentType = ContentType.json;
+        request.write(jsonEncode(body));
+        final response = await request.close();
+        final responseBody = jsonDecode(await utf8.decodeStream(response))
+            as Map<String, Object?>;
+
+        expect(response.statusCode, HttpStatus.badRequest);
+        return responseBody;
+      }
+
+      final malformedBody = await sendBody({
+        'parts': [
+          {
+            'type': 'selection_comment',
+            'attachment': {
+              'id': 'selection-comment-1',
+              'commentText': 'Make this button primary.',
+              'selectedWidget': {'id': 'widget-1'},
+              'snapshot': {'status': 'unavailable'},
+            },
+          },
+        ],
+      });
+      final longTextBody = await sendBody({
+        'parts': [
+          {
+            'type': 'selection_comment',
+            'attachment': {
+              'id': 'selection-comment-1',
+              'commentText': List.filled(1001, 'x').join(),
+              'selectedWidget': {
+                'id': 'widget-1',
+                'displayLabel': 'PrimaryButton',
+              },
+              'snapshot': {'status': 'unavailable'},
+            },
+          },
+        ],
+      });
+      final tooManyPartsBody = await sendBody({
+        'parts': List<Object?>.generate(
+          21,
+          (index) => {
+            'type': 'selection_comment',
+            'attachment': {
+              'id': 'selection-comment-$index',
+              'commentText': 'Comment $index',
+              'selectedWidget': {
+                'id': 'widget-$index',
+                'displayLabel': 'Widget$index',
+              },
+              'snapshot': {'status': 'unavailable'},
+            },
+          },
+        ),
+      });
+      final repeatedTextPartsBody = await sendBody({
+        'parts': [
+          {'type': 'text', 'text': 'First.'},
+          {'type': 'text', 'text': 'Second.'},
+        ],
+      });
+
+      expect(malformedBody, {'error': 'invalid_chat_parts'});
+      expect(longTextBody, {'error': 'invalid_chat_parts'});
+      expect(tooManyPartsBody, {'error': 'invalid_chat_parts'});
+      expect(repeatedTextPartsBody, {'error': 'invalid_chat_parts'});
+    });
+
+    test('rejects over-limit Selection Comment metadata strings', () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+      final String sessionId = await createSession(client, fixture.baseUri);
+      final longMetadata = List.filled(1001, 'x').join();
+
+      Future<Map<String, Object?>> sendAttachment(
+        Map<String, Object?> attachment,
+      ) async {
+        final request = await client.postUrl(
+          fixture.baseUri.resolve('/api/sessions/$sessionId/chat/messages'),
+        );
+        request.headers.contentType = ContentType.json;
+        request.write(
+          jsonEncode({
+            'parts': [
+              {
+                'type': 'selection_comment',
+                'attachment': attachment,
+              },
+            ],
+          }),
+        );
+        final response = await request.close();
+        final responseBody = jsonDecode(await utf8.decodeStream(response))
+            as Map<String, Object?>;
+
+        expect(response.statusCode, HttpStatus.badRequest);
+        return responseBody;
+      }
+
+      Map<String, Object?> attachmentWith({
+        Object? id = 'selection-comment-1',
+        Object? widgetId = 'widget-1',
+        Object? displayLabel = 'PrimaryButton',
+        Object? snapshotPath = '/tmp/selection-comment-1.png',
+      }) {
+        return {
+          'id': id,
+          'commentText': 'Make this button primary.',
+          'selectedWidget': {
+            'id': widgetId,
+            'displayLabel': displayLabel,
+          },
+          'snapshot': {
+            'status': 'available',
+            'path': snapshotPath,
+          },
+        };
+      }
+
+      final longAttachmentIdBody = await sendAttachment(
+        attachmentWith(id: longMetadata),
+      );
+      final longWidgetIdBody = await sendAttachment(
+        attachmentWith(widgetId: longMetadata),
+      );
+      final longDisplayLabelBody = await sendAttachment(
+        attachmentWith(displayLabel: longMetadata),
+      );
+      final longSnapshotPathBody = await sendAttachment(
+        attachmentWith(snapshotPath: longMetadata),
+      );
+
+      expect(longAttachmentIdBody, {'error': 'invalid_chat_parts'});
+      expect(longWidgetIdBody, {'error': 'invalid_chat_parts'});
+      expect(longDisplayLabelBody, {'error': 'invalid_chat_parts'});
+      expect(longSnapshotPathBody, {'error': 'invalid_chat_parts'});
+    });
+
+    test('rejects Selection Comment snapshots outside session snapshot paths',
+        () async {
+      final browserClient = HttpClient();
+      final agentClient = HttpClient();
+      addTearDown(browserClient.close);
+      addTearDown(agentClient.close);
+      final String sessionId =
+          await createSession(browserClient, fixture.baseUri);
+      fixture.existingSnapshotPaths.add('/tmp/not-this-session/snapshot.png');
+
+      final pollRequest = await agentClient.getUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/agent/poll'),
+      );
+      final Future<HttpClientResponse> pollResponseFuture = pollRequest.close();
+      await waitForChatStatus(
+        browserClient,
+        fixture.baseUri,
+        sessionId,
+        'agent_ready',
+      );
+
+      final request = await browserClient.postUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/chat/messages'),
+      );
+      request.headers.contentType = ContentType.json;
+      request.write(
+        jsonEncode({
+          'parts': [
+            {
+              'type': 'selection_comment',
+              'attachment': {
+                'id': 'selection-comment-1',
+                'commentText': 'Make this button primary.',
+                'selectedWidget': {
+                  'id': 'widget-1',
+                  'displayLabel': 'PrimaryButton',
+                },
+                'snapshot': {
+                  'status': 'available',
+                  'path': '/tmp/not-this-session/snapshot.png',
+                },
+              },
+            },
+          ],
+        }),
+      );
+
+      final response = await request.close();
+      final body =
+          jsonDecode(await utf8.decodeStream(response)) as Map<String, Object?>;
+
+      expect(response.statusCode, HttpStatus.badRequest);
+      expect(body, {'error': 'invalid_chat_parts'});
+
+      agentClient.close(force: true);
+      await pollResponseFuture.then<void>(
+        (pollResponse) async {
+          await pollResponse.drain<void>().catchError((_) {});
+        },
+        onError: (_) {},
+      );
+    });
+
+    test('accepts Selection Comment snapshots captured for the same session',
+        () async {
+      fixture.snapshotCapture.managedLocalPath =
+          '/tmp/ask-ui-snapshots/session-1';
+      fixture.snapshotCapture.result = const SnapshotCaptureResult.available(
+        path: '/tmp/ask-ui-snapshots/session-1/snapshots/comment.png',
+        mimeType: 'image/png',
+        sizeBytes: 1200,
+      );
+      fixture.existingSnapshotPaths.add(
+        '/tmp/ask-ui-snapshots/session-1/snapshots/comment.png',
+      );
+      final browserClient = HttpClient();
+      final agentClient = HttpClient();
+      addTearDown(browserClient.close);
+      addTearDown(agentClient.close);
+      final String sessionId = await createSession(
+        browserClient,
+        fixture.baseUri,
+      );
+
+      final snapshotRequest = await browserClient.postUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/snapshots'),
+      );
+      snapshotRequest.headers.contentType = ContentType.json;
+      snapshotRequest.write(
+        jsonEncode({
+          'commentId': 'selection-comment-1',
+          'format': 'png',
+          'scope': 'full_device',
+          'maxSizeBytes': 2000,
+        }),
+      );
+      final snapshotResponse = await snapshotRequest.close();
+      await snapshotResponse.drain<void>();
+
+      final pollRequest = await agentClient.getUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/agent/poll'),
+      );
+      final Future<HttpClientResponse> pollResponseFuture = pollRequest.close();
+      await waitForChatStatus(
+        browserClient,
+        fixture.baseUri,
+        sessionId,
+        'agent_ready',
+      );
+
+      final sendRequest = await browserClient.postUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/chat/messages'),
+      );
+      sendRequest.headers.contentType = ContentType.json;
+      sendRequest.write(
+        jsonEncode({
+          'parts': [
+            {
+              'type': 'selection_comment',
+              'attachment': {
+                'id': 'selection-comment-1',
+                'commentText': 'Make this button primary.',
+                'selectedWidget': {
+                  'id': 'widget-1',
+                  'displayLabel': 'PrimaryButton',
+                },
+                'snapshot': {
+                  'status': 'available',
+                  'path':
+                      '/tmp/ask-ui-snapshots/session-1/snapshots/comment.png',
+                },
+              },
+            },
+          ],
+        }),
+      );
+
+      final sendResponse = await sendRequest.close();
+      final sendBody = jsonDecode(await utf8.decodeStream(sendResponse))
+          as Map<String, Object?>;
+      await (await pollResponseFuture).drain<void>();
+
+      expect(sendResponse.statusCode, HttpStatus.ok);
+      expect(
+        (sendBody['message'] as Map<String, Object?>)['parts'],
+        [
+          {
+            'type': 'selection_comment',
+            'attachment': {
+              'id': 'selection-comment-1',
+              'commentText': 'Make this button primary.',
+              'selectedWidget': {
+                'id': 'widget-1',
+                'displayLabel': 'PrimaryButton',
+              },
+              'snapshot': {
+                'status': 'available',
+                'path': '/tmp/ask-ui-snapshots/session-1/snapshots/comment.png',
+              },
+            },
+          },
+        ],
+      );
+    });
+
     test('writes an Agent reply and allows the Agent to poll again', () async {
       final browserClient = HttpClient();
       final agentClient = HttpClient();
