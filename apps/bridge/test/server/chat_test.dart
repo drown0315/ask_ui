@@ -830,7 +830,12 @@ void main() {
         fixture.baseUri.resolve('/api/sessions/$sessionId/agent/reply'),
       );
       replyRequest.headers.contentType = ContentType.json;
-      replyRequest.write(jsonEncode({'text': 'Done.'}));
+      replyRequest.write(
+        jsonEncode({
+          'text': 'Done.',
+          'replyToMessageId': 'message-1',
+        }),
+      );
 
       final replyResponse = await replyRequest.close();
       final replyBody = jsonDecode(await utf8.decodeStream(replyResponse))
@@ -843,6 +848,7 @@ void main() {
           'id': 'message-2',
           'role': 'agent',
           'text': 'Done.',
+          'replyToMessageId': 'message-1',
         },
       });
       expect(
@@ -879,8 +885,43 @@ void main() {
           'id': 'message-2',
           'role': 'agent',
           'text': 'Done.',
+          'replyToMessageId': 'message-1',
         },
       ]);
+    });
+
+    test('rejects Agent replies without a valid user reply-to id', () async {
+      final client = HttpClient();
+      addTearDown(client.close);
+      final String sessionId = await createSession(client, fixture.baseUri);
+
+      final missingRequest = await client.postUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/agent/reply'),
+      );
+      missingRequest.headers.contentType = ContentType.json;
+      missingRequest.write(jsonEncode({'text': 'Done.'}));
+      final missingResponse = await missingRequest.close();
+      final missingBody = jsonDecode(await utf8.decodeStream(missingResponse))
+          as Map<String, Object?>;
+
+      final unknownRequest = await client.postUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/agent/reply'),
+      );
+      unknownRequest.headers.contentType = ContentType.json;
+      unknownRequest.write(
+        jsonEncode({
+          'text': 'Done.',
+          'replyToMessageId': 'message-404',
+        }),
+      );
+      final unknownResponse = await unknownRequest.close();
+      final unknownBody = jsonDecode(await utf8.decodeStream(unknownResponse))
+          as Map<String, Object?>;
+
+      expect(missingResponse.statusCode, HttpStatus.badRequest);
+      expect(missingBody, {'error': 'invalid_reply_to_message'});
+      expect(unknownResponse.statusCode, HttpStatus.badRequest);
+      expect(unknownBody, {'error': 'invalid_reply_to_message'});
     });
 
     test('writes an Agent error as a system Chat History message', () async {
@@ -912,6 +953,79 @@ void main() {
           'text': 'Agent command failed.',
         },
       });
+    });
+
+    test('writes correlated Agent errors and rejects non-user reply targets',
+        () async {
+      final browserClient = HttpClient();
+      final agentClient = HttpClient();
+      addTearDown(browserClient.close);
+      addTearDown(agentClient.close);
+      final String sessionId = await createSession(
+        browserClient,
+        fixture.baseUri,
+      );
+
+      final pollRequest = await agentClient.getUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/agent/poll'),
+      );
+      final Future<HttpClientResponse> pollResponseFuture = pollRequest.close();
+      await waitForChatStatus(
+        browserClient,
+        fixture.baseUri,
+        sessionId,
+        'agent_ready',
+      );
+
+      final sendRequest = await browserClient.postUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/chat/messages'),
+      );
+      sendRequest.headers.contentType = ContentType.json;
+      sendRequest.write(jsonEncode({'text': 'Make this button primary.'}));
+      await (await sendRequest.close()).drain<void>();
+      await (await pollResponseFuture).drain<void>();
+
+      final errorRequest = await agentClient.postUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/agent/error'),
+      );
+      errorRequest.headers.contentType = ContentType.json;
+      errorRequest.write(
+        jsonEncode({
+          'text': 'Could not run tests.',
+          'replyToMessageId': 'message-1',
+        }),
+      );
+      final errorResponse = await errorRequest.close();
+      final errorBody = jsonDecode(await utf8.decodeStream(errorResponse))
+          as Map<String, Object?>;
+
+      final invalidReplyRequest = await agentClient.postUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/agent/reply'),
+      );
+      invalidReplyRequest.headers.contentType = ContentType.json;
+      invalidReplyRequest.write(
+        jsonEncode({
+          'text': 'Done.',
+          'replyToMessageId': 'message-2',
+        }),
+      );
+      final invalidReplyResponse = await invalidReplyRequest.close();
+      final invalidReplyBody =
+          jsonDecode(await utf8.decodeStream(invalidReplyResponse))
+              as Map<String, Object?>;
+
+      expect(errorResponse.statusCode, HttpStatus.ok);
+      expect(errorBody, {
+        'status': 'ok',
+        'message': {
+          'id': 'message-2',
+          'role': 'system',
+          'text': 'Could not run tests.',
+          'replyToMessageId': 'message-1',
+        },
+      });
+      expect(invalidReplyResponse.statusCode, HttpStatus.badRequest);
+      expect(invalidReplyBody, {'error': 'invalid_reply_to_message'});
     });
   });
 }

@@ -41,6 +41,7 @@ class ChatMessage {
     required this.id,
     required this.role,
     required this.text,
+    this.replyToMessageId,
     this.context = const <String, Object?>{},
     this.parts = const <Map<String, Object?>>[],
   });
@@ -48,6 +49,7 @@ class ChatMessage {
   final String id;
   final ChatMessageRole role;
   final String text;
+  final String? replyToMessageId;
   final Map<String, Object?> context;
   final List<Map<String, Object?>> parts;
 
@@ -56,10 +58,19 @@ class ChatMessage {
       'id': id,
       'role': role.wireName,
       'text': text,
+      if (replyToMessageId != null) 'replyToMessageId': replyToMessageId,
       if (context.isNotEmpty) 'context': context,
       if (parts.isNotEmpty) 'parts': parts,
     };
   }
+}
+
+/// Raised when an agent-authored message references no user Chat message.
+class InvalidReplyToMessage implements Exception {
+  const InvalidReplyToMessage();
+
+  @override
+  String toString() => 'InvalidReplyToMessage';
 }
 
 /// Immutable snapshot returned to the web Chat panel.
@@ -246,10 +257,13 @@ class ChatSession {
   /// A reply completes the current agent work item from the web UI's
   /// perspective. The launching Agent Session may start another poll after the
   /// reply has been stored.
-  ChatMessage appendAgentReply(String text) {
+  ChatMessage appendAgentReply(String text, {String? replyToMessageId}) {
+    _validateReplyToMessageId(replyToMessageId);
+
     return _appendAgentAuthoredMessage(
       role: ChatMessageRole.agent,
       text: text,
+      replyToMessageId: replyToMessageId,
     );
   }
 
@@ -257,25 +271,46 @@ class ChatSession {
   ///
   /// Command-level failures are separated from normal agent replies so the
   /// product UI can distinguish tool/session failures from agent prose.
-  ChatMessage appendAgentError(String text) {
+  ChatMessage appendAgentError(String text, {String? replyToMessageId}) {
+    if (replyToMessageId != null) {
+      _validateReplyToMessageId(replyToMessageId);
+    }
+
     return _appendAgentAuthoredMessage(
       role: ChatMessageRole.system,
       text: text,
+      replyToMessageId: replyToMessageId,
     );
   }
 
   ChatMessage _appendAgentAuthoredMessage({
     required ChatMessageRole role,
     required String text,
+    String? replyToMessageId,
   }) {
     final ChatMessage message = ChatMessage(
       id: _createMessageId(),
       role: role,
       text: text,
+      replyToMessageId: replyToMessageId,
     );
     appendMessage(message);
     setAgentStatus(AgentStatus.waitingForAgent);
     return message;
+  }
+
+  void _validateReplyToMessageId(String? replyToMessageId) {
+    if (replyToMessageId == null) {
+      throw const InvalidReplyToMessage();
+    }
+
+    final bool targetsUserMessage = _messages.any((message) {
+      return message.id == replyToMessageId &&
+          message.role == ChatMessageRole.user;
+    });
+    if (!targetsUserMessage) {
+      throw const InvalidReplyToMessage();
+    }
   }
 
   String _createMessageId() {

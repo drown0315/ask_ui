@@ -176,7 +176,12 @@ class AskUiBridgeServer {
         request.uri.pathSegments[4] == 'reply') {
       await _writeAgentChatMessage(
         request,
-        writeMessage: (chat, text) => chat.appendAgentReply(text),
+        writeMessage: (chat, text, replyToMessageId) {
+          return chat.appendAgentReply(
+            text,
+            replyToMessageId: replyToMessageId,
+          );
+        },
       );
       return;
     }
@@ -189,7 +194,12 @@ class AskUiBridgeServer {
         request.uri.pathSegments[4] == 'error') {
       await _writeAgentChatMessage(
         request,
-        writeMessage: (chat, text) => chat.appendAgentError(text),
+        writeMessage: (chat, text, replyToMessageId) {
+          return chat.appendAgentError(
+            text,
+            replyToMessageId: replyToMessageId,
+          );
+        },
       );
       return;
     }
@@ -934,7 +944,11 @@ class AskUiBridgeServer {
   /// command-level `system` error. Both share the same plain text body contract.
   Future<void> _writeAgentChatMessage(
     HttpRequest request, {
-    required ChatMessage Function(ChatSession chat, String text) writeMessage,
+    required ChatMessage Function(
+      ChatSession chat,
+      String text,
+      String? replyToMessageId,
+    ) writeMessage,
   }) async {
     final String sessionId = request.uri.pathSegments[2];
     final BridgeSession? session = _sessionStore.find(sessionId);
@@ -966,7 +980,7 @@ class AskUiBridgeServer {
       return;
     }
 
-    final text = body['text'];
+    final Object? text = body['text'];
     if (text is! String || text.trim().isEmpty) {
       await _writeJson(
         request.response,
@@ -976,7 +990,7 @@ class AskUiBridgeServer {
       return;
     }
 
-    if (text.length > 4000) {
+    if (text.length > _chatMessageTextLimit) {
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badRequest,
@@ -985,7 +999,28 @@ class AskUiBridgeServer {
       return;
     }
 
-    final ChatMessage message = writeMessage(session.chat, text);
+    final Object? replyToMessageId = body['replyToMessageId'];
+    if (replyToMessageId != null && replyToMessageId is! String) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'invalid_reply_to_message'},
+      );
+      return;
+    }
+
+    late final ChatMessage message;
+    try {
+      message = writeMessage(session.chat, text, replyToMessageId as String?);
+    } on InvalidReplyToMessage {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.badRequest,
+        body: {'error': 'invalid_reply_to_message'},
+      );
+      return;
+    }
+
     await _writeJson(
       request.response,
       body: {

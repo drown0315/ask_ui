@@ -31,6 +31,34 @@ scrcpy 4.0 server artifact at
 ADB=/path/to/adb dart run bin/ask_ui_bridge.dart
 ```
 
+The same bridge entrypoint also exposes the Agent Session Command used by a
+launching coding agent. Pass the Bridge Session connection with flags or the
+matching environment variables:
+
+```sh
+dart run bin/ask_ui_bridge.dart agent poll \
+  --base-url http://127.0.0.1:8787 \
+  --session-id <session-id>
+
+ASK_UI_BRIDGE_URL=http://127.0.0.1:8787 \
+ASK_UI_SESSION_ID=<session-id> \
+dart run bin/ask_ui_bridge.dart agent poll --once
+```
+
+After processing a user Chat message, reply with the returned message ID:
+
+```sh
+dart run bin/ask_ui_bridge.dart agent poll \
+  --base-url http://127.0.0.1:8787 \
+  --session-id <session-id> \
+  --reply-to <message-id> \
+  --agent-reply "Done."
+```
+
+Use `--agent-error` for command-level system errors. `--once` writes or polls
+only the current action; without it, reply and error commands continue polling
+for the next Chat message.
+
 ## Web App
 
 Run commands from `apps/web`:

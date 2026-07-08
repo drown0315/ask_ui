@@ -170,13 +170,23 @@ GET /api/sessions/:sessionId/agent/poll
 response: { "status": "ok", "message": { ... }, "nextStep": "..." }
 
 POST /api/sessions/:sessionId/agent/reply
-body: { "text": "..." }
-response: { "status": "ok", "message": { "id": "...", "role": "agent", "text": "..." } }
+body: { "text": "...", "replyToMessageId": "..." }
+response: { "status": "ok", "message": { "id": "...", "role": "agent", "text": "...", "replyToMessageId": "..." } }
 
 POST /api/sessions/:sessionId/agent/error
-body: { "text": "..." }
-response: { "status": "ok", "message": { "id": "...", "role": "system", "text": "..." } }
+body: { "text": "...", "replyToMessageId": "..." }
+response: { "status": "ok", "message": { "id": "...", "role": "system", "text": "...", "replyToMessageId": "..." } }
 ```
+
+Agent reply requests require `replyToMessageId` and it must identify an existing
+user Chat message in the same Bridge Session.
+
+Agent error requests may omit `replyToMessageId` when the system message is not
+correlated to a specific user Chat message.
+
+The CLI Agent Session Command is the formal agent-facing contract for poll,
+reply, error, and continued polling. The HTTP agent endpoints above are the
+underlying transport used by that command.
 
 The web page should create one session per opened Ask UI page. The Widget Tree refresh action should reuse the existing `sessionId` and fetch a fresh tree snapshot from that session.
 
