@@ -359,6 +359,10 @@ class _AgentPollRequest {
     if (resolvedBaseUrl == null || resolvedBaseUrl.isEmpty) {
       throw const _CommandValidationError('missing_bridge_url');
     }
+    final Uri? resolvedBaseUri = Uri.tryParse(resolvedBaseUrl);
+    if (resolvedBaseUri == null) {
+      throw const _CommandValidationError('invalid_arguments');
+    }
 
     final String? resolvedSessionId =
         sessionId ?? environment['ASK_UI_SESSION_ID'];
@@ -395,7 +399,7 @@ class _AgentPollRequest {
     }
 
     return _AgentPollRequest(
-      baseUrl: Uri.parse(resolvedBaseUrl),
+      baseUrl: resolvedBaseUri,
       sessionId: resolvedSessionId,
       replyToMessageId: replyToMessageId,
       agentReplyText: agentReplyText,

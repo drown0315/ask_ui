@@ -90,6 +90,29 @@ void main() {
       expect(transport.requests, isEmpty);
     });
 
+    test('fails with JSON when bridge URL is malformed', () async {
+      final FakeAgentCommandTransport transport = FakeAgentCommandTransport(
+        pollResponse: const <String, Object?>{},
+      );
+
+      final AgentCommandResult result = await runAgentSessionCommand(
+        const ['agent', 'poll', '--once'],
+        environment: const {
+          'ASK_UI_BRIDGE_URL': 'http://[::1',
+          'ASK_UI_SESSION_ID': 'session-1',
+        },
+        transport: transport,
+      );
+
+      expect(result.exitCode, 1);
+      expect(result.stdout, isEmpty);
+      expect(jsonDecode(result.stderr), {
+        'status': 'error',
+        'error': 'invalid_arguments',
+      });
+      expect(transport.requests, isEmpty);
+    });
+
     test('reports poll conflicts and unsupported flags as JSON failures',
         () async {
       final FakeAgentCommandTransport transport = FakeAgentCommandTransport(
