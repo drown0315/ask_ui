@@ -178,6 +178,10 @@ body: { "text": "..." }
 response: { "status": "ok", "message": { "id": "...", "role": "system", "text": "..." } }
 ```
 
+The CLI Agent Session Command is the formal agent-facing contract for poll,
+reply, error, and continued polling. The HTTP agent endpoints above are the
+underlying transport used by that command.
+
 The web page should create one session per opened Ask UI page. The Widget Tree refresh action should reuse the existing `sessionId` and fetch a fresh tree snapshot from that session.
 
 The first browser tab that creates a Bridge Session is the primary client when it supplies `clientId`. Later browser tabs for the same session are read-only: they may observe Chat History and Agent Status, but cannot control the Live App Surface, Select Widget mode, Selection Comment editing, composer editing, or Send.

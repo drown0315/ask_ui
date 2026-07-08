@@ -61,6 +61,19 @@ The right-side workbench panel where the developer reviews the current selected 
 
 The Chat Panel owns the visible Attachment Tokens for unsent Selection Comments. On Send, staged Selection Comments become ordered Chat message parts delivered to the waiting Agent Session.
 
+## Bridge Session
+
+The local Ask UI session that binds one workbench to the running Flutter app context and owns session-scoped Chat state.
+
+## Agent Session
+
+The coding-agent session that receives Chat messages from Ask UI, changes the project with its normal tools, and writes replies back to Chat.
+
+## Agent Session Command
+
+A local agent-facing command that lets the Agent Session exchange Chat work with the Bridge Session.
+_Avoid_: Skill Command
+
 ## Selection Comment
 
 A user-authored comment attached to a selected Flutter widget target.

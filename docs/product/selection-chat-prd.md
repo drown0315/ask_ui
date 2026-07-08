@@ -150,6 +150,7 @@ Selection Comments capture explicit screenshot or Snapshot context at Add commen
 - Store Chat History message roles as user, agent, and system.
 - Store command-level agent errors as system messages. Store normal agent replies as agent messages, even when the reply explains a failure.
 - Correlate agent replies with the user message ID they answer.
+- Use a CLI Agent Session Command as the agent-facing contract; HTTP agent endpoints are the underlying transport.
 - Allow a combined poll command with agent reply to write the reply and continue waiting.
 - Provide an agent error path that writes a system message and normally continues polling unless stopped or unable to continue.
 - Allow only one active Agent Session poller per Bridge Session. Reject additional concurrent pollers.

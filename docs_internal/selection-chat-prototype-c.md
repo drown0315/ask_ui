@@ -492,7 +492,7 @@ Agent replies are stored with the user Chat message ID they respond to so the
 Bridge Session can correlate logs and replace the correct working placeholder.
 The message ID does not need to be visible in the UI.
 
-Codex, Claude Code, or similar agents write back through Ask UI commands. A
+Codex, Claude Code, or similar agents write back through Agent Session Commands. A
 normal reply uses the agent reply path and creates an `agent` message. A command
 or workflow-level failure uses the agent error path and creates a separate
 `system` message in Chat History. If the agent can normally explain that it did
@@ -505,11 +505,12 @@ agent`; Ask UI does not automatically add a system message. If writing an agent
 reply or agent error message fails, the command should not continue polling and
 should return an error so the Agent Session can retry.
 
-The standard skill-facing command can use a combined form such as
-`poll --agent-reply "..."`: first write the agent reply, then continue waiting
-for the next Chat message. A corresponding agent-error command/API should write
-a `system` message; by default it should then continue polling unless explicitly
-stopped or unable to continue.
+The standard Agent Session Command is a CLI command. It can use a combined form
+such as `agent poll --agent-reply "..."`: first write the agent reply, then
+continue waiting for the next Chat message. A corresponding agent-error command
+should write a `system` message; by default it should then continue polling
+unless explicitly stopped or unable to continue. HTTP agent endpoints may remain
+the underlying transport, but they are not the primary agent-facing contract.
 
 Each Bridge Session allows only one active Agent Session poller. If a poller is
 already active, a second poller request is rejected rather than replacing the
