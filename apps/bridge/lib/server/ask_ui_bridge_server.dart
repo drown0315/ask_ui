@@ -10,6 +10,7 @@ import '../device/device_web_socket_session.dart';
 import '../device/scrcpy_device_stream.dart';
 import '../inspector/flutter_inspector_client.dart';
 import '../logging/bridge_logger.dart';
+import '../sessions/bridge_session_creator.dart';
 import '../sessions/bridge_session_event_stream.dart';
 import '../sessions/flutter_device_checker.dart';
 import '../sessions/session_store.dart';
@@ -32,8 +33,14 @@ class AskUiBridgeServer {
   })  : _sessionStore = sessionStore,
         _inspectorClient = inspectorClient,
         _appController = appController,
-        _flutterDeviceChecker =
-            flutterDeviceChecker ?? const FlutterDevicesCommandChecker(),
+        _sessionCreator = BridgeSessionCreator(
+          sessionStore: sessionStore,
+          flutterDeviceChecker:
+              flutterDeviceChecker ?? const FlutterDevicesCommandChecker(),
+          projectRootExists: projectRootExists ??
+              ((projectRoot) => Directory(projectRoot).existsSync()),
+          log: (logger ?? BridgeLogger(write: print)).info,
+        ),
         _deviceWebSocketSession = DeviceWebSocketSession(
           deviceStreamFactory:
               deviceStreamFactory ?? ScrcpyDeviceStreamFactory(),
@@ -51,20 +58,17 @@ class AskUiBridgeServer {
           heartbeatInterval: sessionEventsHeartbeatInterval,
           logger: logger ?? BridgeLogger(write: print),
         ),
-        _projectRootExists = projectRootExists ??
-            ((projectRoot) => Directory(projectRoot).existsSync()),
         _logger = logger ?? BridgeLogger(write: print);
 
   final SessionStore _sessionStore;
   final FlutterInspectorClient _inspectorClient;
   final FlutterAppController _appController;
-  final FlutterDeviceChecker _flutterDeviceChecker;
+  final BridgeSessionCreator _sessionCreator;
   final DeviceWebSocketSession _deviceWebSocketSession;
   final SnapshotCapture _snapshotCapture;
   final bool Function(String path) _snapshotFileExists;
   final ChatIngress _chatIngress;
   final BridgeSessionEventStream _sessionEventStream;
-  final bool Function(String projectRoot) _projectRootExists;
   final BridgeLogger _logger;
   HttpServer? _server;
 
@@ -269,157 +273,44 @@ class AskUiBridgeServer {
       return;
     }
 
-    final vmServiceUri = body['vmServiceUri'];
-    final projectRoot = body['projectRoot'];
-    final deviceId = body['deviceId'];
-    final clientId = body['clientId'];
-
-    if (vmServiceUri is! String ||
-        projectRoot is! String ||
-        deviceId is! String) {
-      _logger.info('session create failed error=missing_session_parameters');
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.badRequest,
-        body: {'error': 'missing_session_parameters'},
-      );
-      return;
-    }
-
-    if (vmServiceUri.trim().isEmpty ||
-        projectRoot.trim().isEmpty ||
-        deviceId.trim().isEmpty) {
-      _logger.info('session create failed error=missing_session_parameters');
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.badRequest,
-        body: {'error': 'missing_session_parameters'},
-      );
-      return;
-    }
-
-    final trimmedProjectRoot = projectRoot.trim();
-    if (!_projectRootExists(trimmedProjectRoot)) {
-      _logger.info(
-        'session create failed error=invalid_project_root '
-        'projectRoot=$trimmedProjectRoot',
-      );
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.badRequest,
-        body: {
-          'error': 'invalid_project_root',
-          'message': 'Project root $trimmedProjectRoot does not exist.',
-          'projectRoot': trimmedProjectRoot,
-        },
-      );
-      return;
-    }
-
-    late final FlutterDeviceCheckResult targetDeviceCheck;
-    try {
-      targetDeviceCheck = await _flutterDeviceChecker.checkDeviceId(
-        deviceId,
-      );
-    } catch (error, stackTrace) {
-      _logger.info(
-        'target_device_check_failed command="flutter devices --machine" '
-        'deviceId=$deviceId error=$error\n'
-        'Stack trace:\n$stackTrace',
-      );
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.badRequest,
-        body: {
-          'error': 'target_device_check_failed',
-          'message': 'Ask UI could not check Flutter target devices.',
-          'deviceId': deviceId,
-        },
-      );
-      return;
-    }
-
-    if (targetDeviceCheck.availability == FlutterDeviceAvailability.notFound) {
-      _logger.info(
-        'session create failed error=target_device_not_found deviceId=$deviceId',
-      );
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.badRequest,
-        body: {
-          'error': 'target_device_not_found',
-          'message': 'Target Device $deviceId is not listed by Flutter.',
-          'deviceId': deviceId,
-        },
-      );
-      return;
-    }
-
-    if (targetDeviceCheck.availability ==
-        FlutterDeviceAvailability.unavailable) {
-      _logger.info(
-        'session create failed error=target_device_unavailable deviceId=$deviceId',
-      );
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.badRequest,
-        body: {
-          'error': 'target_device_unavailable',
-          'message': 'Target Device $deviceId is not available.',
-          'deviceId': deviceId,
-        },
-      );
-      return;
-    }
-
-    try {
-      final session = _sessionStore.createSession(
-        vmServiceUri: vmServiceUri,
-        projectRoot: projectRoot,
-        deviceId: deviceId,
-        deviceDisplayName: targetDeviceCheck.device?.displayName ?? '',
-        clientId: clientId is String ? clientId : null,
-      );
-      await _writeJson(
-        request.response,
-        body: {
-          'sessionId': session.id,
-          'targetDevice': {
-            'id': session.deviceId,
-            'displayName': session.deviceDisplayName,
+    final BridgeSessionCreationResult result =
+        await _sessionCreator.create(body);
+    switch (result) {
+      case BridgeSessionCreationSuccess():
+        final BridgeSession session = result.session;
+        await _writeJson(
+          request.response,
+          body: {
+            'sessionId': session.id,
+            'targetDevice': {
+              'id': session.deviceId,
+              'displayName': session.deviceDisplayName,
+            },
+            'readOnly': result.readOnly,
           },
-          'readOnly':
-              session.isReadOnlyClient(clientId is String ? clientId : null),
-        },
-      );
-      _logger.info(
-        'session create success session=${session.id} deviceId=${session.deviceId}',
-      );
-    } on InvalidSessionRequest {
-      _logger.info('session create failed error=missing_session_parameters');
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.badRequest,
-        body: {'error': 'missing_session_parameters'},
-      );
-    } on DeviceMismatchForSession catch (error) {
-      _logger.info(
-        'session create failed error=device_mismatch_for_session '
-        'expectedDeviceId=${error.expectedDeviceId} '
-        'requestedDeviceId=${error.requestedDeviceId}',
-      );
-      await _writeJson(
-        request.response,
-        statusCode: HttpStatus.badRequest,
-        body: {
-          'error': 'device_mismatch_for_session',
-          'message': 'VM Service device does not match Target Device '
-              '${error.requestedDeviceId}.',
-          'expectedDeviceId': error.expectedDeviceId,
-          'requestedDeviceId': error.requestedDeviceId,
-        },
-      );
+        );
+      case BridgeSessionCreationFailure():
+        await _writeJson(
+          request.response,
+          statusCode: HttpStatus.badRequest,
+          body: _sessionCreationErrorBody(result),
+        );
     }
+  }
+
+  Map<String, Object?> _sessionCreationErrorBody(
+    BridgeSessionCreationFailure failure,
+  ) {
+    return {
+      'error': failure.error,
+      if (failure.message != null) 'message': failure.message,
+      if (failure.deviceId != null) 'deviceId': failure.deviceId,
+      if (failure.projectRoot != null) 'projectRoot': failure.projectRoot,
+      if (failure.expectedDeviceId != null)
+        'expectedDeviceId': failure.expectedDeviceId,
+      if (failure.requestedDeviceId != null)
+        'requestedDeviceId': failure.requestedDeviceId,
+    };
   }
 
   /// Return the current Chat state for one Bridge Session.
