@@ -140,10 +140,12 @@ void main() {
       addTearDown(server.close);
 
       final List<Uri> requests = <Uri>[];
+      final List<Map<String, Object?>> requestBodies = <Map<String, Object?>>[];
       server.listen((HttpRequest request) async {
         requests.add(request.uri);
         request.response.headers.contentType = ContentType.json;
-        if (request.uri.path.contains('/sessions/session-1/')) {
+        if (request.uri.path.endsWith('/agent/poll') &&
+            request.uri.path.contains('/sessions/session-1/')) {
           request.response.write('\n');
           request.response.write(
             jsonEncode({
@@ -154,6 +156,22 @@ void main() {
                 'text': 'Make this button primary.',
               },
               'nextStep': 'Bridge transport instruction.',
+            }),
+          );
+        } else if (request.uri.path.endsWith('/agent/reply')) {
+          final Map<String, Object?> body =
+              jsonDecode(await utf8.decodeStream(request))
+                  as Map<String, Object?>;
+          requestBodies.add(body);
+          request.response.write(
+            jsonEncode({
+              'status': 'ok',
+              'message': {
+                'id': 'message-2',
+                'role': 'agent',
+                'text': body['text'],
+                'replyToMessageId': body['replyToMessageId'],
+              },
             }),
           );
         } else {
@@ -170,6 +188,13 @@ void main() {
         baseUrl: Uri.parse('http://127.0.0.1:${server.port}'),
         sessionId: 'session-1',
       );
+      final Map<String, Object?> replyResponse =
+          await transport.writeAgentReply(
+        baseUrl: Uri.parse('http://127.0.0.1:${server.port}'),
+        sessionId: 'session-1',
+        replyToMessageId: 'message-1',
+        text: 'Done.',
+      );
       final Future<Map<String, Object?>> Function() conflictPoll = () {
         return transport.poll(
           baseUrl: Uri.parse('http://127.0.0.1:${server.port}'),
@@ -181,6 +206,12 @@ void main() {
         'id': 'message-1',
         'role': 'user',
         'text': 'Make this button primary.',
+      });
+      expect(replyResponse['message'], {
+        'id': 'message-2',
+        'role': 'agent',
+        'text': 'Done.',
+        'replyToMessageId': 'message-1',
       });
       await expectLater(
         conflictPoll(),
@@ -194,7 +225,11 @@ void main() {
       );
       expect(requests, [
         Uri.parse('/api/sessions/session-1/agent/poll'),
+        Uri.parse('/api/sessions/session-1/agent/reply'),
         Uri.parse('/api/sessions/conflict/agent/poll'),
+      ]);
+      expect(requestBodies, [
+        {'text': 'Done.', 'replyToMessageId': 'message-1'},
       ]);
     });
 
@@ -214,16 +249,185 @@ void main() {
         'error': 'missing_bridge_url',
       });
     });
+
+    test('writes an agent reply once with a required reply-to id', () async {
+      final FakeAgentCommandTransport transport = FakeAgentCommandTransport(
+        replyResponse: {
+          'status': 'ok',
+          'message': {
+            'id': 'message-2',
+            'role': 'agent',
+            'text': 'Done.',
+            'replyToMessageId': 'message-1',
+          },
+        },
+      );
+
+      final AgentCommandResult result = await runAgentSessionCommand(
+        const [
+          'agent',
+          'poll',
+          '--base-url',
+          'http://127.0.0.1:8787',
+          '--session-id',
+          'session-1',
+          '--reply-to',
+          'message-1',
+          '--agent-reply',
+          'Done.',
+          '--once',
+        ],
+        environment: const <String, String>{},
+        transport: transport,
+      );
+
+      expect(result.exitCode, 0);
+      expect(result.stderr, isEmpty);
+      expect(jsonDecode(result.stdout), {
+        'status': 'ok',
+        'writtenMessage': {
+          'id': 'message-2',
+          'role': 'agent',
+          'text': 'Done.',
+          'replyToMessageId': 'message-1',
+        },
+        'message': null,
+        'nextStep': 'No further polling was requested.',
+      });
+      expect(transport.replyRequests, [
+        (
+          baseUrl: Uri.parse('http://127.0.0.1:8787'),
+          sessionId: 'session-1',
+          replyToMessageId: 'message-1',
+          text: 'Done.',
+        ),
+      ]);
+      expect(transport.requests, isEmpty);
+    });
+
+    test('validates agent reply once arguments before polling', () async {
+      final FakeAgentCommandTransport invalidReplyTransport =
+          FakeAgentCommandTransport(
+        replyError: const AgentCommandException('invalid_reply_to_message'),
+      );
+      final FakeAgentCommandTransport localValidationTransport =
+          FakeAgentCommandTransport();
+
+      Future<AgentCommandResult> runReply(
+        List<String> extraArgs, {
+        FakeAgentCommandTransport? transport,
+      }) {
+        return runAgentSessionCommand(
+          [
+            'agent',
+            'poll',
+            '--base-url',
+            'http://127.0.0.1:8787',
+            '--session-id',
+            'session-1',
+            ...extraArgs,
+          ],
+          environment: const <String, String>{},
+          transport: transport ?? localValidationTransport,
+        );
+      }
+
+      final AgentCommandResult missingReplyTo = await runReply(
+        const ['--agent-reply', 'Done.', '--once'],
+      );
+      final AgentCommandResult emptyReply = await runReply(
+        const [
+          '--reply-to',
+          'message-1',
+          '--agent-reply',
+          '  ',
+          '--once',
+        ],
+      );
+      final AgentCommandResult longReply = await runReply([
+        '--reply-to',
+        'message-1',
+        '--agent-reply',
+        List<String>.filled(4001, 'x').join(),
+        '--once',
+      ]);
+      final AgentCommandResult exclusive = await runReply(
+        const [
+          '--reply-to',
+          'message-1',
+          '--agent-reply',
+          'Done.',
+          '--agent-error',
+          'Failed.',
+          '--once',
+        ],
+      );
+      final AgentCommandResult invalidReplyTo = await runReply(
+        const [
+          '--reply-to',
+          'message-404',
+          '--agent-reply',
+          'Done.',
+          '--once',
+        ],
+        transport: invalidReplyTransport,
+      );
+
+      expect(jsonDecode(missingReplyTo.stderr), {
+        'status': 'error',
+        'error': 'invalid_reply_to_message',
+      });
+      expect(jsonDecode(emptyReply.stderr), {
+        'status': 'error',
+        'error': 'empty_chat_message',
+      });
+      expect(jsonDecode(longReply.stderr), {
+        'status': 'error',
+        'error': 'chat_message_too_long',
+      });
+      expect(jsonDecode(exclusive.stderr), {
+        'status': 'error',
+        'error': 'invalid_arguments',
+      });
+      expect(jsonDecode(invalidReplyTo.stderr), {
+        'status': 'error',
+        'error': 'invalid_reply_to_message',
+      });
+      expect(localValidationTransport.requests, isEmpty);
+      expect(localValidationTransport.replyRequests, isEmpty);
+      expect(invalidReplyTransport.requests, isEmpty);
+      expect(invalidReplyTransport.replyRequests.single.replyToMessageId,
+          'message-404');
+    });
   });
 }
 
 class FakeAgentCommandTransport implements AgentCommandTransport {
-  FakeAgentCommandTransport({this.pollResponse, this.pollError});
+  FakeAgentCommandTransport({
+    this.pollResponse,
+    this.pollError,
+    this.replyResponse,
+    this.replyError,
+  });
 
   final Map<String, Object?>? pollResponse;
   final AgentCommandException? pollError;
+  final Map<String, Object?>? replyResponse;
+  final AgentCommandException? replyError;
   final List<({Uri baseUrl, String sessionId})> requests =
       <({Uri baseUrl, String sessionId})>[];
+  final List<
+      ({
+        Uri baseUrl,
+        String sessionId,
+        String replyToMessageId,
+        String text,
+      })> replyRequests = <({
+    Uri baseUrl,
+    String sessionId,
+    String replyToMessageId,
+    String text,
+  })>[];
 
   @override
   Future<Map<String, Object?>> poll({
@@ -237,5 +441,26 @@ class FakeAgentCommandTransport implements AgentCommandTransport {
     }
 
     return pollResponse ?? const <String, Object?>{};
+  }
+
+  @override
+  Future<Map<String, Object?>> writeAgentReply({
+    required Uri baseUrl,
+    required String sessionId,
+    required String replyToMessageId,
+    required String text,
+  }) async {
+    replyRequests.add((
+      baseUrl: baseUrl,
+      sessionId: sessionId,
+      replyToMessageId: replyToMessageId,
+      text: text,
+    ));
+    final AgentCommandException? error = replyError;
+    if (error != null) {
+      throw error;
+    }
+
+    return replyResponse ?? const <String, Object?>{};
   }
 }

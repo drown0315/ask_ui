@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+const int _chatMessageTextLimit = 4000;
+
 /// Result returned by the Agent Session Command runner.
 ///
 /// Tests use this object directly, while the binary maps it to stdout, stderr,
@@ -22,6 +24,13 @@ abstract interface class AgentCommandTransport {
   Future<Map<String, Object?>> poll({
     required Uri baseUrl,
     required String sessionId,
+  });
+
+  Future<Map<String, Object?>> writeAgentReply({
+    required Uri baseUrl,
+    required String sessionId,
+    required String replyToMessageId,
+    required String text,
   });
 }
 
@@ -69,6 +78,25 @@ class AgentHttpCommandTransport implements AgentCommandTransport {
     }
   }
 
+  @override
+  Future<Map<String, Object?>> writeAgentReply({
+    required Uri baseUrl,
+    required String sessionId,
+    required String replyToMessageId,
+    required String text,
+  }) async {
+    final Uri replyUri = baseUrl.resolve(
+      '/api/sessions/$sessionId/agent/reply',
+    );
+    return _postAgentMessage(
+      replyUri,
+      {
+        'text': text,
+        'replyToMessageId': replyToMessageId,
+      },
+    );
+  }
+
   Map<String, Object?> _decodeJsonObject(String responseBody) {
     final Object? decoded = jsonDecode(responseBody.trim());
     if (decoded is! Map<String, Object?>) {
@@ -76,6 +104,33 @@ class AgentHttpCommandTransport implements AgentCommandTransport {
     }
 
     return decoded;
+  }
+
+  Future<Map<String, Object?>> _postAgentMessage(
+    Uri uri,
+    Map<String, Object?> body,
+  ) async {
+    try {
+      final HttpClientRequest request = await _httpClient.postUrl(uri);
+      request.headers.contentType = ContentType.json;
+      request.write(jsonEncode(body));
+      final HttpClientResponse response = await request.close();
+      final String responseBody = await utf8.decodeStream(response);
+      final Map<String, Object?> decoded = _decodeJsonObject(responseBody);
+
+      if (response.statusCode != HttpStatus.ok) {
+        final Object? error = decoded['error'];
+        throw AgentCommandException(
+          error is String ? error : 'bridge_request_failed',
+        );
+      }
+
+      return decoded;
+    } on AgentCommandException {
+      rethrow;
+    } catch (_) {
+      throw const AgentCommandException('bridge_request_failed');
+    }
   }
 }
 
@@ -90,6 +145,27 @@ Future<AgentCommandResult> runAgentSessionCommand(
     request = _AgentPollRequest.parse(args, environment);
   } on _CommandValidationError catch (error) {
     return _CommandOutput.failure(error.code);
+  }
+
+  if (request.agentReplyText != null) {
+    late final Map<String, Object?> replyResponse;
+    try {
+      replyResponse = await transport.writeAgentReply(
+        baseUrl: request.baseUrl,
+        sessionId: request.sessionId,
+        replyToMessageId: request.replyToMessageId!,
+        text: request.agentReplyText!,
+      );
+    } on AgentCommandException catch (error) {
+      return _CommandOutput.failure(error.code);
+    }
+
+    return _CommandOutput.success({
+      'status': 'ok',
+      'writtenMessage': replyResponse['message'],
+      'message': null,
+      'nextStep': _NextStep.writeOnceSuccess(),
+    });
   }
 
   late final Map<String, Object?> response;
@@ -119,10 +195,14 @@ class _AgentPollRequest {
   const _AgentPollRequest({
     required this.baseUrl,
     required this.sessionId,
+    this.replyToMessageId,
+    this.agentReplyText,
   });
 
   final Uri baseUrl;
   final String sessionId;
+  final String? replyToMessageId;
+  final String? agentReplyText;
 
   static _AgentPollRequest parse(
     List<String> args,
@@ -134,6 +214,9 @@ class _AgentPollRequest {
 
     String? baseUrl;
     String? sessionId;
+    String? replyToMessageId;
+    String? agentReplyText;
+    String? agentErrorText;
 
     for (var index = 2; index < args.length; index += 1) {
       final String arg = args[index];
@@ -143,6 +226,15 @@ class _AgentPollRequest {
       } else if (arg == '--session-id' && index + 1 < args.length) {
         index += 1;
         sessionId = args[index];
+      } else if (arg == '--reply-to' && index + 1 < args.length) {
+        index += 1;
+        replyToMessageId = args[index];
+      } else if (arg == '--agent-reply' && index + 1 < args.length) {
+        index += 1;
+        agentReplyText = args[index];
+      } else if (arg == '--agent-error' && index + 1 < args.length) {
+        index += 1;
+        agentErrorText = args[index];
       } else if (arg == '--once') {
         continue;
       } else {
@@ -161,9 +253,31 @@ class _AgentPollRequest {
       throw const _CommandValidationError('missing_session_id');
     }
 
+    if (agentReplyText != null && agentErrorText != null) {
+      throw const _CommandValidationError('invalid_arguments');
+    }
+
+    if (agentReplyText != null) {
+      if (replyToMessageId == null || replyToMessageId.isEmpty) {
+        throw const _CommandValidationError('invalid_reply_to_message');
+      }
+
+      if (agentReplyText.trim().isEmpty) {
+        throw const _CommandValidationError('empty_chat_message');
+      }
+
+      if (agentReplyText.length > _chatMessageTextLimit) {
+        throw const _CommandValidationError('chat_message_too_long');
+      }
+    } else if (replyToMessageId != null || agentErrorText != null) {
+      throw const _CommandValidationError('invalid_arguments');
+    }
+
     return _AgentPollRequest(
       baseUrl: Uri.parse(resolvedBaseUrl),
       sessionId: resolvedSessionId,
+      replyToMessageId: replyToMessageId,
+      agentReplyText: agentReplyText,
     );
   }
 }
@@ -197,5 +311,9 @@ class _NextStep {
 
   static String pollSuccess(String? messageId) {
     return 'Process $messageId, then reply with --reply-to $messageId and either --agent-reply or --agent-error.';
+  }
+
+  static String writeOnceSuccess() {
+    return 'No further polling was requested.';
   }
 }
