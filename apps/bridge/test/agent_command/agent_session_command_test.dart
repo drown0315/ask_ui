@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:ask_ui_bridge/agent_command/agent_session_command.dart';
 import 'package:test/test.dart';
 
+import '../server/bridge_server_test_harness.dart';
+
 void main() {
   group('Agent Session Command', () {
     test('polls once using flag connection values before environment',
@@ -588,6 +590,328 @@ void main() {
       expect(invalidReplyTransport.requests, isEmpty);
       expect(invalidReplyTransport.errorRequests.single.replyToMessageId,
           'message-404');
+    });
+
+    test('continues polling after writing an agent reply by default', () async {
+      final FakeAgentCommandTransport transport = FakeAgentCommandTransport(
+        replyResponse: {
+          'status': 'ok',
+          'message': {
+            'id': 'message-2',
+            'role': 'agent',
+            'text': 'Done.',
+            'replyToMessageId': 'message-1',
+          },
+        },
+        pollResponse: {
+          'status': 'ok',
+          'message': {
+            'id': 'message-3',
+            'role': 'user',
+            'text': 'Now update the empty state.',
+          },
+        },
+      );
+
+      final AgentCommandResult result = await runAgentSessionCommand(
+        const [
+          'agent',
+          'poll',
+          '--base-url',
+          'http://127.0.0.1:8787',
+          '--session-id',
+          'session-1',
+          '--reply-to',
+          'message-1',
+          '--agent-reply',
+          'Done.',
+        ],
+        environment: const <String, String>{},
+        transport: transport,
+      );
+
+      expect(result.exitCode, 0);
+      expect(result.stderr, isEmpty);
+      expect(jsonDecode(result.stdout), {
+        'status': 'ok',
+        'writtenMessage': {
+          'id': 'message-2',
+          'role': 'agent',
+          'text': 'Done.',
+          'replyToMessageId': 'message-1',
+        },
+        'message': {
+          'id': 'message-3',
+          'role': 'user',
+          'text': 'Now update the empty state.',
+        },
+        'nextStep': 'Process message-3, then reply with --reply-to message-3 '
+            'and either --agent-reply or --agent-error.',
+      });
+      expect(transport.replyRequests, [
+        (
+          baseUrl: Uri.parse('http://127.0.0.1:8787'),
+          sessionId: 'session-1',
+          replyToMessageId: 'message-1',
+          text: 'Done.',
+        ),
+      ]);
+      expect(transport.requests, [
+        (
+          baseUrl: Uri.parse('http://127.0.0.1:8787'),
+          sessionId: 'session-1',
+        ),
+      ]);
+    });
+
+    test('continues polling after writing agent errors by default', () async {
+      final FakeAgentCommandTransport transport = FakeAgentCommandTransport(
+        errorResponses: <Map<String, Object?>>[
+          {
+            'status': 'ok',
+            'message': {
+              'id': 'message-2',
+              'role': 'system',
+              'text': 'Could not run tests.',
+              'replyToMessageId': 'message-1',
+            },
+          },
+        ],
+        pollResponse: {
+          'status': 'ok',
+          'message': {
+            'id': 'message-3',
+            'role': 'user',
+            'text': 'Try a smaller fix.',
+          },
+        },
+      );
+
+      final AgentCommandResult result = await runAgentSessionCommand(
+        const [
+          'agent',
+          'poll',
+          '--base-url',
+          'http://127.0.0.1:8787',
+          '--session-id',
+          'session-1',
+          '--reply-to',
+          'message-1',
+          '--agent-error',
+          'Could not run tests.',
+        ],
+        environment: const <String, String>{},
+        transport: transport,
+      );
+
+      expect(result.exitCode, 0);
+      expect(jsonDecode(result.stdout), {
+        'status': 'ok',
+        'writtenMessage': {
+          'id': 'message-2',
+          'role': 'system',
+          'text': 'Could not run tests.',
+          'replyToMessageId': 'message-1',
+        },
+        'message': {
+          'id': 'message-3',
+          'role': 'user',
+          'text': 'Try a smaller fix.',
+        },
+        'nextStep': 'Process message-3, then reply with --reply-to message-3 '
+            'and either --agent-reply or --agent-error.',
+      });
+      expect(transport.errorRequests.single.replyToMessageId, 'message-1');
+      expect(transport.requests, [
+        (
+          baseUrl: Uri.parse('http://127.0.0.1:8787'),
+          sessionId: 'session-1',
+        ),
+      ]);
+    });
+
+    test('reports partial success when continuation polling fails', () async {
+      final FakeAgentCommandTransport replyTransport =
+          FakeAgentCommandTransport(
+        replyResponse: {
+          'status': 'ok',
+          'message': {
+            'id': 'message-2',
+            'role': 'agent',
+            'text': 'Done.',
+            'replyToMessageId': 'message-1',
+          },
+        },
+        pollError: const AgentCommandException('agent_poll_already_active'),
+      );
+      final FakeAgentCommandTransport errorTransport =
+          FakeAgentCommandTransport(
+        errorResponses: <Map<String, Object?>>[
+          {
+            'status': 'ok',
+            'message': {
+              'id': 'message-3',
+              'role': 'system',
+              'text': 'Could not run tests.',
+            },
+          },
+        ],
+        pollError: const AgentCommandException('bridge_request_failed'),
+      );
+
+      final AgentCommandResult replyFailure = await runAgentSessionCommand(
+        const [
+          'agent',
+          'poll',
+          '--base-url',
+          'http://127.0.0.1:8787',
+          '--session-id',
+          'session-1',
+          '--reply-to',
+          'message-1',
+          '--agent-reply',
+          'Done.',
+        ],
+        environment: const <String, String>{},
+        transport: replyTransport,
+      );
+      final AgentCommandResult errorFailure = await runAgentSessionCommand(
+        const [
+          'agent',
+          'poll',
+          '--base-url',
+          'http://127.0.0.1:8787',
+          '--session-id',
+          'session-1',
+          '--agent-error',
+          'Could not run tests.',
+        ],
+        environment: const <String, String>{},
+        transport: errorTransport,
+      );
+
+      expect(replyFailure.exitCode, 1);
+      expect(replyFailure.stdout, isEmpty);
+      expect(jsonDecode(replyFailure.stderr), {
+        'status': 'error',
+        'error': 'poll_continuation_failed',
+        'cause': 'agent_poll_already_active',
+        'writtenMessage': {
+          'id': 'message-2',
+          'role': 'agent',
+          'text': 'Done.',
+          'replyToMessageId': 'message-1',
+        },
+        'nextStep':
+            'Do not retry the written message; restart polling for the next Chat message.',
+      });
+      expect(errorFailure.exitCode, 1);
+      expect(errorFailure.stdout, isEmpty);
+      expect(jsonDecode(errorFailure.stderr), {
+        'status': 'error',
+        'error': 'poll_continuation_failed',
+        'cause': 'bridge_request_failed',
+        'writtenMessage': {
+          'id': 'message-3',
+          'role': 'system',
+          'text': 'Could not run tests.',
+        },
+        'nextStep':
+            'Do not retry the written message; restart polling for the next Chat message.',
+      });
+      expect(replyTransport.replyRequests, hasLength(1));
+      expect(replyTransport.requests, hasLength(1));
+      expect(errorTransport.errorRequests, hasLength(1));
+      expect(errorTransport.requests, hasLength(1));
+    });
+
+    test('HTTP command continuation waits with Agent ready status', () async {
+      final BridgeServerFixture fixture = BridgeServerFixture();
+      await fixture.start();
+      addTearDown(fixture.close);
+      final HttpClient browserClient = HttpClient();
+      final HttpClient agentClient = HttpClient();
+      addTearDown(browserClient.close);
+      addTearDown(agentClient.close);
+      final String sessionId = await createSession(
+        browserClient,
+        fixture.baseUri,
+      );
+
+      final initialPollRequest = await agentClient.getUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/agent/poll'),
+      );
+      final Future<HttpClientResponse> initialPollResponseFuture =
+          initialPollRequest.close();
+      await waitForChatStatus(
+        browserClient,
+        fixture.baseUri,
+        sessionId,
+        'agent_ready',
+      );
+
+      final firstSendRequest = await browserClient.postUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/chat/messages'),
+      );
+      firstSendRequest.headers.contentType = ContentType.json;
+      firstSendRequest.write(jsonEncode({'text': 'Make this button primary.'}));
+      await (await firstSendRequest.close()).drain<void>();
+      await (await initialPollResponseFuture).drain<void>();
+
+      final Future<AgentCommandResult> commandFuture = runAgentSessionCommand(
+        [
+          'agent',
+          'poll',
+          '--base-url',
+          fixture.baseUri.toString(),
+          '--session-id',
+          sessionId,
+          '--reply-to',
+          'message-1',
+          '--agent-reply',
+          'Done.',
+        ],
+        environment: const <String, String>{},
+        transport: AgentHttpCommandTransport(),
+      );
+      await waitForChatStatus(
+        browserClient,
+        fixture.baseUri,
+        sessionId,
+        'agent_ready',
+      );
+
+      final secondSendRequest = await browserClient.postUrl(
+        fixture.baseUri.resolve('/api/sessions/$sessionId/chat/messages'),
+      );
+      secondSendRequest.headers.contentType = ContentType.json;
+      secondSendRequest
+          .write(jsonEncode({'text': 'Now update the empty state.'}));
+      await (await secondSendRequest.close()).drain<void>();
+
+      final AgentCommandResult result = await commandFuture;
+
+      expect(result.exitCode, 0);
+      expect(jsonDecode(result.stdout), {
+        'status': 'ok',
+        'writtenMessage': {
+          'id': 'message-2',
+          'role': 'agent',
+          'text': 'Done.',
+          'replyToMessageId': 'message-1',
+        },
+        'message': {
+          'id': 'message-3',
+          'role': 'user',
+          'text': 'Now update the empty state.',
+        },
+        'nextStep': 'Process message-3, then reply with --reply-to message-3 '
+            'and either --agent-reply or --agent-error.',
+      });
+      expect(
+        await readChatStatus(browserClient, fixture.baseUri, sessionId),
+        'agent_working',
+      );
     });
   });
 }

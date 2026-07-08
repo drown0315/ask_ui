@@ -186,12 +186,11 @@ Future<AgentCommandResult> runAgentSessionCommand(
       return _CommandOutput.failure(error.code);
     }
 
-    return _CommandOutput.success({
-      'status': 'ok',
-      'writtenMessage': replyResponse['message'],
-      'message': null,
-      'nextStep': _NextStep.writeOnceSuccess(),
-    });
+    return _finishWrite(
+      request: request,
+      transport: transport,
+      writtenMessage: replyResponse['message'],
+    );
   }
 
   if (request.agentErrorText != null) {
@@ -207,23 +206,51 @@ Future<AgentCommandResult> runAgentSessionCommand(
       return _CommandOutput.failure(error.code);
     }
 
+    return _finishWrite(
+      request: request,
+      transport: transport,
+      writtenMessage: errorResponse['message'],
+    );
+  }
+
+  try {
+    return await _pollSuccess(request: request, transport: transport);
+  } on AgentCommandException catch (error) {
+    return _CommandOutput.failure(error.code);
+  }
+}
+
+Future<AgentCommandResult> _finishWrite({
+  required _AgentPollRequest request,
+  required AgentCommandTransport transport,
+  required Object? writtenMessage,
+}) async {
+  if (request.once) {
     return _CommandOutput.success({
       'status': 'ok',
-      'writtenMessage': errorResponse['message'],
+      'writtenMessage': writtenMessage,
       'message': null,
       'nextStep': _NextStep.writeOnceSuccess(),
     });
   }
 
+  return _pollAfterWrite(
+    request: request,
+    transport: transport,
+    writtenMessage: writtenMessage,
+  );
+}
+
+Future<AgentCommandResult> _pollSuccess({
+  required _AgentPollRequest request,
+  required AgentCommandTransport transport,
+  Object? writtenMessage,
+}) async {
   late final Map<String, Object?> response;
-  try {
-    response = await transport.poll(
-      baseUrl: request.baseUrl,
-      sessionId: request.sessionId,
-    );
-  } on AgentCommandException catch (error) {
-    return _CommandOutput.failure(error.code);
-  }
+  response = await transport.poll(
+    baseUrl: request.baseUrl,
+    sessionId: request.sessionId,
+  );
 
   final Object? message = response['message'];
   final String? messageId =
@@ -233,9 +260,29 @@ Future<AgentCommandResult> runAgentSessionCommand(
 
   return _CommandOutput.success({
     'status': 'ok',
+    if (writtenMessage != null) 'writtenMessage': writtenMessage,
     'message': message,
     'nextStep': _NextStep.pollSuccess(messageId),
   });
+}
+
+Future<AgentCommandResult> _pollAfterWrite({
+  required _AgentPollRequest request,
+  required AgentCommandTransport transport,
+  required Object? writtenMessage,
+}) async {
+  try {
+    return await _pollSuccess(
+      request: request,
+      transport: transport,
+      writtenMessage: writtenMessage,
+    );
+  } on AgentCommandException catch (error) {
+    return _CommandOutput.pollContinuationFailure(
+      cause: error.code,
+      writtenMessage: writtenMessage,
+    );
+  }
 }
 
 class _AgentPollRequest {
@@ -245,6 +292,7 @@ class _AgentPollRequest {
     this.replyToMessageId,
     this.agentReplyText,
     this.agentErrorText,
+    this.once = false,
   });
 
   final Uri baseUrl;
@@ -252,6 +300,7 @@ class _AgentPollRequest {
   final String? replyToMessageId;
   final String? agentReplyText;
   final String? agentErrorText;
+  final bool once;
 
   static _AgentPollRequest parse(
     List<String> args,
@@ -266,6 +315,7 @@ class _AgentPollRequest {
     String? replyToMessageId;
     String? agentReplyText;
     String? agentErrorText;
+    bool once = false;
 
     for (var index = 2; index < args.length; index += 1) {
       final String arg = args[index];
@@ -285,7 +335,7 @@ class _AgentPollRequest {
         index += 1;
         agentErrorText = args[index];
       } else if (arg == '--once') {
-        continue;
+        once = true;
       } else {
         throw const _CommandValidationError('invalid_arguments');
       }
@@ -336,6 +386,7 @@ class _AgentPollRequest {
       replyToMessageId: replyToMessageId,
       agentReplyText: agentReplyText,
       agentErrorText: agentErrorText,
+      once: once,
     );
   }
 }
@@ -362,6 +413,22 @@ class _CommandOutput {
       }),
     );
   }
+
+  static AgentCommandResult pollContinuationFailure({
+    required String cause,
+    required Object? writtenMessage,
+  }) {
+    return AgentCommandResult(
+      exitCode: 1,
+      stderr: jsonEncode({
+        'status': 'error',
+        'error': 'poll_continuation_failed',
+        'cause': cause,
+        'writtenMessage': writtenMessage,
+        'nextStep': _NextStep.pollContinuationFailure(),
+      }),
+    );
+  }
 }
 
 class _NextStep {
@@ -373,5 +440,9 @@ class _NextStep {
 
   static String writeOnceSuccess() {
     return 'No further polling was requested.';
+  }
+
+  static String pollContinuationFailure() {
+    return 'Do not retry the written message; restart polling for the next Chat message.';
   }
 }
