@@ -39,7 +39,7 @@ export function SelectedWidgetSection({
             ) : null}
             {panelTarget.visibleText ? (
               <div className="selected-widget-detail">
-                <span>Text</span>
+                <span>Text:</span>
                 <strong>{panelTarget.visibleText}</strong>
               </div>
             ) : null}
