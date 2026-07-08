@@ -1733,8 +1733,7 @@ class _ParsedChatMessageRequest {
     required this.text,
     this.context = const <String, Object?>{},
     this.parts = const <Map<String, Object?>>[],
-    this.error,
-  });
+  }) : error = null;
 
   const _ParsedChatMessageRequest.invalid(String error)
       : text = '',
