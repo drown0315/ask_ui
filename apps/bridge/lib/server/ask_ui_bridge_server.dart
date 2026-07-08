@@ -10,6 +10,7 @@ import '../device/device_web_socket_session.dart';
 import '../device/scrcpy_device_stream.dart';
 import '../inspector/flutter_inspector_client.dart';
 import '../logging/bridge_logger.dart';
+import '../sessions/bridge_session_event_stream.dart';
 import '../sessions/flutter_device_checker.dart';
 import '../sessions/session_store.dart';
 import '../snapshots/snapshot_capture.dart';
@@ -45,9 +46,13 @@ class AskUiBridgeServer {
           snapshotFileExists:
               snapshotFileExists ?? ((path) => File(path).existsSync()),
         ),
+        _sessionEventStream = BridgeSessionEventStream(
+          inspectorClient: inspectorClient,
+          heartbeatInterval: sessionEventsHeartbeatInterval,
+          logger: logger ?? BridgeLogger(write: print),
+        ),
         _projectRootExists = projectRootExists ??
             ((projectRoot) => Directory(projectRoot).existsSync()),
-        _sessionEventsHeartbeatInterval = sessionEventsHeartbeatInterval,
         _logger = logger ?? BridgeLogger(write: print);
 
   final SessionStore _sessionStore;
@@ -58,8 +63,8 @@ class AskUiBridgeServer {
   final SnapshotCapture _snapshotCapture;
   final bool Function(String path) _snapshotFileExists;
   final ChatIngress _chatIngress;
+  final BridgeSessionEventStream _sessionEventStream;
   final bool Function(String projectRoot) _projectRootExists;
-  final Duration _sessionEventsHeartbeatInterval;
   final BridgeLogger _logger;
   HttpServer? _server;
 
@@ -1109,139 +1114,20 @@ class AskUiBridgeServer {
       return;
     }
 
-    SelectWidgetModeStatus snapshot;
-    try {
-      snapshot = await _inspectorClient.getSelectWidgetModeStatus(session);
-    } catch (error) {
-      _logger.info('events stream session=$sessionId failed error=$error');
+    final result = await _sessionEventStream.open(
+      session: session,
+      transport: _HttpSessionEventTransport(request.response),
+    );
+    if (result is BridgeSessionEventStreamFailure) {
       await _writeJson(
         request.response,
         statusCode: HttpStatus.badGateway,
         body: {
-          'error': 'session_events_failed',
-          'message': error.toString(),
+          'error': result.error,
+          'message': result.message,
         },
       );
-      return;
     }
-
-    _logger.info('events stream session=$sessionId open');
-    request.response.statusCode = HttpStatus.ok;
-    request.response.bufferOutput = false;
-    request.response.headers
-      ..contentType = ContentType('text', 'event-stream', charset: 'utf-8')
-      ..set(HttpHeaders.cacheControlHeader, 'no-cache')
-      ..set(HttpHeaders.transferEncodingHeader, 'chunked')
-      ..set(HttpHeaders.connectionHeader, 'keep-alive');
-
-    Timer? heartbeat;
-    StreamSubscription<SelectWidgetModeStatus>? selectWidgetSubscription;
-    StreamSubscription<ChatSessionEvent>? chatSubscription;
-    var streamClosed = false;
-    var writeQueue = Future<void>.value();
-
-    Future<void> closeSseStream() async {
-      if (streamClosed) {
-        return;
-      }
-      streamClosed = true;
-      heartbeat?.cancel();
-      await selectWidgetSubscription?.cancel();
-      await chatSubscription?.cancel();
-      _logger.info('events stream session=$sessionId close');
-    }
-
-    Future<void> enqueueSseWrite(void Function() write) {
-      final nextWrite = writeQueue.then((_) async {
-        if (streamClosed) {
-          return;
-        }
-
-        try {
-          write();
-          await request.response.flush();
-        } catch (error) {
-          _logger.info(
-            'events stream session=$sessionId write_failed error=$error',
-          );
-          await closeSseStream();
-        }
-      });
-      writeQueue = nextWrite.catchError((_) {});
-      return nextWrite;
-    }
-
-    await enqueueSseWrite(() {
-      _writeSseEvent(
-        request.response,
-        event: 'bridge_session_event',
-        data: {
-          'type': 'select_widget_mode_snapshot',
-          'sessionId': sessionId,
-          'payload': {
-            'known': snapshot.enabled != null,
-            if (snapshot.enabled != null) 'enabled': snapshot.enabled,
-          },
-        },
-      );
-    });
-
-    await enqueueSseWrite(() {
-      _writeSseEvent(
-        request.response,
-        event: 'bridge_session_event',
-        data: {
-          'type': 'chat_snapshot',
-          'sessionId': sessionId,
-          'payload': {
-            'agentStatus': session.chat.snapshot().agentStatus.wireName,
-            'messages': session.chat
-                .snapshot()
-                .messages
-                .map((message) => message.toJson())
-                .toList(),
-          },
-        },
-      );
-    });
-
-    selectWidgetSubscription =
-        _inspectorClient.watchSelectWidgetModeStatus(session).listen((status) {
-      unawaited(enqueueSseWrite(() {
-        _writeSseEvent(
-          request.response,
-          event: 'bridge_session_event',
-          data: {
-            'type': 'select_widget_mode_changed',
-            'sessionId': sessionId,
-            'payload': {
-              if (status.enabled != null) 'enabled': status.enabled,
-            },
-          },
-        );
-      }));
-    });
-    chatSubscription = session.chat.events.listen((event) {
-      unawaited(enqueueSseWrite(() {
-        _writeSseEvent(
-          request.response,
-          event: 'bridge_session_event',
-          data: {
-            ...event.toJson(),
-            'sessionId': sessionId,
-          },
-        );
-      }));
-    });
-    heartbeat = Timer.periodic(_sessionEventsHeartbeatInterval, (_) {
-      unawaited(enqueueSseWrite(() {
-        request.response.add(utf8.encode(': ping\n\n'));
-      }));
-    });
-
-    request.response.done.whenComplete(() {
-      unawaited(closeSseStream());
-    });
   }
 
   Future<void> _hotRestart(HttpRequest request) async {
@@ -1307,29 +1193,43 @@ class AskUiBridgeServer {
     response.write(jsonEncode(body));
     await response.close();
   }
+}
 
-  /// Write one JSON payload as an SSE event frame.
-  ///
-  /// Args:
-  /// - `response`: Open `text/event-stream` response.
-  /// - `event`: Browser-visible event name. The web app listens for
-  ///   `bridge_session_event`.
-  /// - `data`: JSON-serializable payload written to the SSE `data:` line.
-  ///
-  /// Returns:
-  /// Nothing. The caller decides when to flush because snapshot writes and
-  /// change writes happen in different parts of the stream lifecycle.
-  ///
-  /// Example:
-  /// `event=bridge_session_event` and
-  /// `data={type: select_widget_mode_changed, payload: {enabled: true}}`
-  /// becomes an EventSource `bridge_session_event` message in the browser.
-  void _writeSseEvent(
-    HttpResponse response, {
+class _HttpSessionEventTransport implements BridgeSessionEventTransport {
+  const _HttpSessionEventTransport(this.response);
+
+  final HttpResponse response;
+
+  @override
+  Future<void> get done => response.done;
+
+  @override
+  void start() {
+    response.statusCode = HttpStatus.ok;
+    response.bufferOutput = false;
+    response.headers
+      ..contentType = ContentType('text', 'event-stream', charset: 'utf-8')
+      ..set(HttpHeaders.cacheControlHeader, 'no-cache')
+      ..set(HttpHeaders.transferEncodingHeader, 'chunked')
+      ..set(HttpHeaders.connectionHeader, 'keep-alive');
+  }
+
+  @override
+  void writeEvent({
     required String event,
     required Map<String, Object?> data,
   }) {
     response.add(utf8.encode('event: $event\ndata: ${jsonEncode(data)}\n\n'));
+  }
+
+  @override
+  void writeComment(String comment) {
+    response.add(utf8.encode(': $comment\n\n'));
+  }
+
+  @override
+  Future<void> flush() {
+    return response.flush();
   }
 }
 
