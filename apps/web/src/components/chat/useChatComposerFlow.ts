@@ -4,6 +4,7 @@ import {
   type KeyboardEvent,
   type RefObject,
   type SetStateAction,
+  useEffect,
   useRef,
   useState,
 } from 'react';
@@ -18,6 +19,7 @@ import {
   type SelectionCommentSnapshot,
   type SelectionCommentState,
 } from '../../selection-comments/selectionCommentState';
+import { shouldWarnBeforeChatUnload } from '../../chat/chatUnloadWarning';
 import { useChatSendFlow } from './useChatSendFlow';
 
 type UseChatComposerFlowOptions = {
@@ -74,6 +76,30 @@ export function useChatComposerFlow({
     sendFlow.isFinishingSnapshots
       ? 'Finishing snapshots...'
       : composerState.disabledReason ?? defaultDisabledReason;
+  const selectionCommentDraftsByWidgetId =
+    getSelectionCommentDraftsByWidgetIdForSend();
+  const shouldWarnOnUnload = shouldWarnBeforeChatUnload({
+    composerText,
+    selectionCommentCount: getSelectionCommentsForSend().length,
+    selectionCommentDraftsByWidgetId,
+  });
+
+  useEffect(() => {
+    if (!shouldWarnOnUnload) {
+      return;
+    }
+
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [shouldWarnOnUnload]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

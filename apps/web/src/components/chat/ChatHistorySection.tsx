@@ -1,7 +1,13 @@
+import { useEffect, useRef, useState } from 'react';
 import {
   getChatHistoryMessageContentItems,
   type ChatSessionState,
 } from '../../chat/chatSessionState';
+import {
+  getChatHistoryViewportAfterMessageChange,
+  getChatHistoryViewportAfterScroll,
+  isChatHistoryNearBottom,
+} from '../../chat/chatHistoryViewport';
 import type { ChatMessageResponse } from '../../services/bridgeTypes';
 
 export function ChatHistorySection({
@@ -15,8 +21,76 @@ export function ChatHistorySection({
   title: string;
   visibleMessages: ChatMessageResponse[];
 }) {
+  const historyRef = useRef<HTMLElement>(null);
+  const previousMessageCountRef = useRef(visibleMessages.length);
+  const isNearBottomRef = useRef(true);
+  const [showNewMessageIndicator, setShowNewMessageIndicator] =
+    useState(false);
+
+  useEffect(() => {
+    const messageCountChanged =
+      previousMessageCountRef.current !== visibleMessages.length;
+    const viewport = getChatHistoryViewportAfterMessageChange({
+      isNearBottom: isNearBottomRef.current,
+      messageCountChanged,
+    });
+    previousMessageCountRef.current = visibleMessages.length;
+
+    if (viewport.shouldScrollToBottom) {
+      requestAnimationFrame(() => {
+        const history = historyRef.current;
+        if (history === null) {
+          return;
+        }
+
+        history.scrollTop = history.scrollHeight;
+      });
+    }
+
+    if (viewport.showNewMessageIndicator) {
+      setShowNewMessageIndicator(true);
+    } else if (viewport.shouldScrollToBottom || !messageCountChanged) {
+      setShowNewMessageIndicator(false);
+    }
+  }, [visibleMessages.length]);
+
+  function handleHistoryScroll() {
+    const history = historyRef.current;
+    if (history === null) {
+      return;
+    }
+
+    isNearBottomRef.current = isChatHistoryNearBottom({
+      clientHeight: history.clientHeight,
+      scrollHeight: history.scrollHeight,
+      scrollTop: history.scrollTop,
+    });
+    setShowNewMessageIndicator(
+      getChatHistoryViewportAfterScroll({
+        isNearBottom: isNearBottomRef.current,
+        showNewMessageIndicator,
+      }).showNewMessageIndicator,
+    );
+  }
+
+  function scrollToLatestMessage() {
+    const history = historyRef.current;
+    if (history === null) {
+      return;
+    }
+
+    history.scrollTop = history.scrollHeight;
+    isNearBottomRef.current = true;
+    setShowNewMessageIndicator(false);
+  }
+
   return (
-    <section className="chat-history" aria-labelledby="chat-history-title">
+    <section
+      className="chat-history"
+      aria-labelledby="chat-history-title"
+      onScroll={handleHistoryScroll}
+      ref={historyRef}
+    >
       <div id="chat-history-title" className="chat-section-title">
         {title}
       </div>
@@ -49,6 +123,15 @@ export function ChatHistorySection({
             : emptyState}
         </div>
       )}
+      {showNewMessageIndicator ? (
+        <button
+          className="chat-history-new-message"
+          onClick={scrollToLatestMessage}
+          type="button"
+        >
+          New messages
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -83,6 +166,12 @@ function ChatHistoryMessageContent({
               </div>
               <div className="chat-history-attachment-text">
                 {item.summary.text}
+              </div>
+              <div className="chat-history-attachment-meta">
+                {item.summary.sourceLocation ? (
+                  <span>{item.summary.sourceLocation}</span>
+                ) : null}
+                <span>{item.summary.snapshotLabel}</span>
               </div>
             </li>
           ))}

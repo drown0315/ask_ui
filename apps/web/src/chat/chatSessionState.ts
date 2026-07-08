@@ -138,6 +138,8 @@ export type ChatHistorySelectionCommentSummary = {
   number: number;
   widgetLabel: string;
   text: string;
+  sourceLocation: string | null;
+  snapshotLabel: string;
 };
 
 export type ChatHistoryMessageContentItem =
@@ -160,6 +162,11 @@ export function getChatHistorySelectionCommentSummaries(
       number: index + 1,
       widgetLabel: part.attachment.selectedWidget.displayLabel,
       text: part.attachment.commentText,
+      sourceLocation: part.attachment.selectedWidget.sourceLocation ?? null,
+      snapshotLabel:
+        part.attachment.snapshot.status === 'available'
+          ? 'Snapshot available'
+          : 'Snapshot unavailable',
     }));
 }
 

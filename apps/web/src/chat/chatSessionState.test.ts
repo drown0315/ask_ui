@@ -194,6 +194,7 @@ test('summarizes Selection Comment attachments for Chat History rows', () => {
             selectedWidget: {
               id: 'widget-1',
               displayLabel: 'PrimaryButton',
+              sourceLocation: 'lib/home.dart:12',
             },
             snapshot: {
               status: 'unavailable',
@@ -227,12 +228,16 @@ test('summarizes Selection Comment attachments for Chat History rows', () => {
         number: 1,
         widgetLabel: 'PrimaryButton',
         text: 'Make this primary.',
+        sourceLocation: 'lib/home.dart:12',
+        snapshotLabel: 'Snapshot unavailable',
       },
       {
         id: 'selection-comment-2',
         number: 2,
         widgetLabel: 'Subtitle',
         text: 'Use friendlier copy.',
+        sourceLocation: null,
+        snapshotLabel: 'Snapshot available',
       },
     ],
   );
@@ -273,6 +278,8 @@ test('orders Chat History attachments before typed text', () => {
           number: 1,
           widgetLabel: 'PrimaryButton',
           text: 'Make this primary.',
+          sourceLocation: null,
+          snapshotLabel: 'Snapshot unavailable',
         },
       },
       {
