@@ -114,7 +114,7 @@ class VmServiceFlutterInspectorClient implements FlutterInspectorClient {
           'groupName': 'ask_ui_widget_tree',
           'isSummaryTree': 'true',
           'withPreviews': 'true',
-          'fullDetails': 'false',
+          'fullDetails': 'true',
         },
       );
       final result = _decodeInspectorResult(response);
@@ -125,7 +125,10 @@ class VmServiceFlutterInspectorClient implements FlutterInspectorClient {
         );
       }
 
-      return WidgetTreeNode.fromFlutterDiagnostics(result);
+      return WidgetTreeNode.fromFlutterDiagnostics(
+        result,
+        projectRoot: session.projectRoot,
+      );
     } finally {
       await vmService.dispose();
     }
