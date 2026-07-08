@@ -178,6 +178,9 @@ body: { "text": "...", "replyToMessageId": "..." }
 response: { "status": "ok", "message": { "id": "...", "role": "system", "text": "...", "replyToMessageId": "..." } }
 ```
 
+Agent reply requests require `replyToMessageId` and it must identify an existing
+user Chat message in the same Bridge Session.
+
 Agent error requests may omit `replyToMessageId` when the system message is not
 correlated to a specific user Chat message.
 

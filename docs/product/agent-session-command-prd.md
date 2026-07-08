@@ -67,7 +67,7 @@ HTTP agent endpoints remain the underlying transport. The CLI owns the machine-r
 - `--agent-reply` and `--agent-error` are mutually exclusive.
 - Reply and error text are supplied only by explicit flags. The command does not support stdin variants for message text.
 - The CLI does not expose a timeout option. The underlying HTTP transport may keep its test/debug timeout behavior, but timeout is not part of the Agent Session Command contract.
-- Without `--once`, the command uses the continuous long-poll model. When a reply or error is supplied, the command writes it first, starts the next poll in the same process, waits until the next user Chat message arrives, outputs JSON, and exits.
+- Without `--once`, the command uses the continuous long-poll model. When a reply or error is supplied, the command writes it first, starts the next poll in the same process, waits until the next user Chat message arrives, outputs JSON, and exits. Agent replies must include `--reply-to <message-id>`.
 - With `--once`, the command completes only the current action. Pure poll waits for one message and exits. Reply or error writes the message and exits without continued polling.
 - Success output is a single JSON object on stdout. Failure output is a single JSON object on stderr with a non-zero exit code. The command does not support a `--json` flag because JSON is the only output mode.
 - Pure poll success returns `status`, `message`, and `nextStep`.

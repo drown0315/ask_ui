@@ -506,11 +506,12 @@ reply or agent error message fails, the command should not continue polling and
 should return an error so the Agent Session can retry.
 
 The standard Agent Session Command is a CLI command. It can use a combined form
-such as `agent poll --agent-reply "..."`: first write the agent reply, then
-continue waiting for the next Chat message. A corresponding agent-error command
-should write a `system` message; by default it should then continue polling
-unless explicitly stopped or unable to continue. HTTP agent endpoints may remain
-the underlying transport, but they are not the primary agent-facing contract.
+such as `agent poll --reply-to <message-id> --agent-reply "..."`: first write
+the agent reply, then continue waiting for the next Chat message. A
+corresponding agent-error command should write a `system` message; by default
+it should then continue polling unless explicitly stopped or unable to continue.
+HTTP agent endpoints may remain the underlying transport, but they are not the
+primary agent-facing contract.
 
 Each Bridge Session allows only one active Agent Session poller. If a poller is
 already active, a second poller request is rejected rather than replacing the

@@ -35,11 +35,13 @@ class AgentCommandResult {
 
 /// Transport boundary for Agent Session Command bridge requests.
 abstract interface class AgentCommandTransport {
+  /// Wait for the next user Chat message from the Bridge Session.
   Future<Map<String, Object?>> poll({
     required Uri baseUrl,
     required String sessionId,
   });
 
+  /// Write a normal agent reply correlated to a user Chat message.
   Future<Map<String, Object?>> writeAgentReply({
     required Uri baseUrl,
     required String sessionId,
@@ -47,6 +49,8 @@ abstract interface class AgentCommandTransport {
     required String text,
   });
 
+  /// Write a command-level system error, optionally correlated to a user Chat
+  /// message.
   Future<Map<String, Object?>> writeAgentError({
     required Uri baseUrl,
     required String sessionId,
