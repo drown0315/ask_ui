@@ -6,8 +6,8 @@ import '../app_controller/flutter_app_controller.dart';
 import '../chat/chat_ingress.dart';
 import '../chat/chat_session.dart';
 import '../device/device_stream.dart';
+import '../device/device_web_socket_session.dart';
 import '../device/scrcpy_device_stream.dart';
-import '../device_control/device_control_protocol.dart';
 import '../inspector/flutter_inspector_client.dart';
 import '../logging/bridge_logger.dart';
 import '../sessions/flutter_device_checker.dart';
@@ -33,8 +33,11 @@ class AskUiBridgeServer {
         _appController = appController,
         _flutterDeviceChecker =
             flutterDeviceChecker ?? const FlutterDevicesCommandChecker(),
-        _deviceStreamFactory =
-            deviceStreamFactory ?? ScrcpyDeviceStreamFactory(),
+        _deviceWebSocketSession = DeviceWebSocketSession(
+          deviceStreamFactory:
+              deviceStreamFactory ?? ScrcpyDeviceStreamFactory(),
+          logger: logger ?? BridgeLogger(write: print),
+        ),
         _snapshotCapture = snapshotCapture ?? AdbSnapshotCapture().capture,
         _snapshotFileExists =
             snapshotFileExists ?? ((path) => File(path).existsSync()),
@@ -51,14 +54,13 @@ class AskUiBridgeServer {
   final FlutterInspectorClient _inspectorClient;
   final FlutterAppController _appController;
   final FlutterDeviceChecker _flutterDeviceChecker;
-  final DeviceStreamFactory _deviceStreamFactory;
+  final DeviceWebSocketSession _deviceWebSocketSession;
   final SnapshotCapture _snapshotCapture;
   final bool Function(String path) _snapshotFileExists;
   final ChatIngress _chatIngress;
   final bool Function(String projectRoot) _projectRootExists;
   final Duration _sessionEventsHeartbeatInterval;
   final BridgeLogger _logger;
-  final Set<String> _activeDeviceSessionIds = {};
   HttpServer? _server;
 
   Future<int> start({required String host, required int port}) async {
@@ -804,139 +806,12 @@ class AskUiBridgeServer {
     }
 
     final socket = await WebSocketTransformer.upgrade(request);
-    _logger.info('device websocket session=$sessionId open');
-    if (_activeDeviceSessionIds.contains(sessionId)) {
-      _logger.info('device websocket session=$sessionId already_active');
-      socket.add(jsonEncode({
-        'type': 'error',
-        'error': 'device_already_active',
-        'message': 'Device is already active for this bridge session.',
-      }));
-      await socket.close();
-      return;
-    }
-
-    _activeDeviceSessionIds.add(sessionId);
-    DeviceStream? deviceStream;
-    var socketClosed = false;
-    var deviceStreamClosed = false;
-    Future<void> closeDeviceStream() async {
-      final stream = deviceStream;
-      if (stream == null || deviceStreamClosed) {
-        return;
-      }
-      deviceStreamClosed = true;
-      await stream.close();
-    }
-
-    socket.listen(
-      (message) {
-        if (message is! String) {
-          return;
-        }
-
-        final Map<String, Object?>? controlError =
-            DeviceControlProtocol.validateTextMessage(message);
-        if (controlError != null) {
-          _logger.info(
-            'device control session=$sessionId control_error '
-            'error=${controlError['error']}',
-          );
-          socket.add(jsonEncode(controlError));
-          return;
-        }
-        _logAcceptedDeviceControl(sessionId: sessionId, rawMessage: message);
-        final decoded = jsonDecode(message);
-        if (decoded is Map<String, Object?>) {
-          unawaited(deviceStream?.handleControl(decoded));
-        }
-      },
-      onDone: () async {
-        socketClosed = true;
-        _activeDeviceSessionIds.remove(sessionId);
-        await closeDeviceStream();
-        _logger.info('device websocket session=$sessionId close');
-      },
-      onError: (error) async {
-        socketClosed = true;
-        _activeDeviceSessionIds.remove(sessionId);
-        await closeDeviceStream();
-        _logger.info('device websocket session=$sessionId error=$error');
-      },
-    );
-    final streamSink = _WebSocketDeviceStreamSink(
-      socket: socket,
-      logger: _logger,
-      sessionId: sessionId,
-    );
-    final streamFactory = request.uri.queryParameters['debugVideo'] == 'fixture'
-        ? FixtureH264DeviceStreamFactory(chunk: _fixtureH264AnnexBChunk)
-        : _deviceStreamFactory;
-
-    try {
-      deviceStream = await streamFactory.start(
-        session: session,
-        sink: streamSink,
-      );
-      if (socketClosed) {
-        await closeDeviceStream();
-        return;
-      }
-      if (request.uri.queryParameters['debugMetadata'] == 'rotation') {
-        streamSink.sendMetadata(DeviceMetadata(
-          deviceId: session.deviceId,
-          screenWidth: 2400,
-          screenHeight: 1080,
-          maxFps: 60,
-          videoCodec: 'h264',
-          controlReady: true,
-        ));
-      }
-    } catch (error, stackTrace) {
-      _logger.info(
-        'device websocket session=$sessionId start_failed '
-        'error=$error\nStack trace:\n$stackTrace',
-      );
-      if (socketClosed) {
-        return;
-      }
-      socket.add(jsonEncode({
-        'type': 'error',
-        'error': 'device_start_failed',
-        'message': 'Device failed to start.',
-      }));
-      await socket.close();
-    }
-  }
-
-  void _logAcceptedDeviceControl({
-    required String sessionId,
-    required String rawMessage,
-  }) {
-    final decoded = jsonDecode(rawMessage);
-    if (decoded is! Map<String, Object?>) {
-      return;
-    }
-
-    if (decoded['type'] == DeviceControlProtocol.systemKeyType) {
-      _logger.info(
-        'device control session=$sessionId systemKey key=${decoded['key']}',
-      );
-      return;
-    }
-
-    if (decoded['type'] != DeviceControlProtocol.touchType) {
-      return;
-    }
-
-    final action = decoded['action'];
-    if (action == 'move') {
-      return;
-    }
-
-    _logger.info(
-      'device control session=$sessionId touch action=$action '
-      'pointerId=${decoded['pointerId']} x=${decoded['x']} y=${decoded['y']}',
+    await _deviceWebSocketSession.open(
+      session: session,
+      transport: _IoDeviceWebSocketTransport(socket),
+      debugVideoFixture: request.uri.queryParameters['debugVideo'] == 'fixture',
+      debugMetadataRotation:
+          request.uri.queryParameters['debugMetadata'] == 'rotation',
     );
   }
 
@@ -1458,62 +1333,17 @@ class AskUiBridgeServer {
   }
 }
 
-class _WebSocketDeviceStreamSink implements DeviceStreamSink {
-  _WebSocketDeviceStreamSink({
-    required this.socket,
-    required this.logger,
-    required this.sessionId,
-  });
+class _IoDeviceWebSocketTransport implements DeviceWebSocketTransport {
+  const _IoDeviceWebSocketTransport(this.socket);
 
   final WebSocket socket;
-  final BridgeLogger logger;
-  final String sessionId;
 
   @override
-  void sendReady(DeviceMetadata metadata) {
-    socket.add(jsonEncode({
-      'type': 'ready',
-      ...metadata.toJson(),
-    }));
-    logger.info(
-      'device websocket session=$sessionId ready '
-      'deviceId=${metadata.deviceId} '
-      'screenWidth=${metadata.screenWidth} '
-      'screenHeight=${metadata.screenHeight}',
-    );
-  }
+  Stream<dynamic> get incoming => socket;
 
   @override
-  void sendMetadata(DeviceMetadata metadata) {
-    socket.add(jsonEncode({
-      'type': 'metadata',
-      ...metadata.toJson(),
-    }));
-    logger.info(
-      'device websocket session=$sessionId metadata '
-      'deviceId=${metadata.deviceId} '
-      'screenWidth=${metadata.screenWidth} '
-      'screenHeight=${metadata.screenHeight}',
-    );
-  }
-
-  @override
-  void sendVideoChunk(List<int> bytes) {
-    socket.add(bytes);
-  }
-
-  @override
-  void fail(String error, String message) {
-    socket.add(jsonEncode({
-      'type': 'error',
-      'error': error,
-      'message': message,
-    }));
-  }
-
-  @override
-  void log(String message) {
-    logger.info('device websocket session=$sessionId $message');
+  void add(Object? message) {
+    socket.add(message);
   }
 
   @override
@@ -1521,19 +1351,3 @@ class _WebSocketDeviceStreamSink implements DeviceStreamSink {
     await socket.close();
   }
 }
-
-/// Single-frame Annex B H.264 byte fixture for the Device WebSocket shell.
-///
-/// The bytes are a 16x16 Constrained Baseline IDR frame generated by ffmpeg.
-/// They prove that the bridge can send decodable binary video bytes over the
-/// same WebSocket as JSON protocol messages.
-final List<int> _fixtureH264AnnexBChunk = [
-  ...base64Decode(
-    'AAAAAWdCwArd7ARAAAADAEAAAAMAo8SJ4AAAAAFozg/IAAABBgX//03cRem95tlIt5Ys2CDZI+7veDI2NCAtIGNvcmUgMTY1IHIzMjIyIGIzNTYwNWEgLSBILjI2NC9NUEVHLTQgQVZDIGNvZGVjIC0gQ29weWxlZnQgMjAwMy0yMDI1IC0gaHR0cDovL3d3dy52aWRlb2xhbi5vcmcveDI2NC5odG1sIC0gb3B0aW9uczogY2FiYWM9MCByZWY9MSBkZWJsb2NrPTA6MDowIGFuYWx5c2U9MDowIG1lPWRpYSBzdWJtZT0wIHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTAgbWVfcmFuZ2U9MTYgY2hyb21hX21lPTEgdHJlbGxpcz0wIDh4OGRjdD0wIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zmc2V0PTAgdGhyZWFkcz0xIGxvb2thaGVhZF90aHJlYWRzPTEgc2xpY2VkX3RocmVhZHM9MCBucj0wIGRlY2ltYXRlPTEgaW50ZXJsYWNlZD0wIGJsdXJheV9jb21wYXQ9MCBjb25zdHJhaW5lZF9pbnRyYT0wIGJmcmFtZXM9MCB3ZWlnaHRwPTAga2V5aW50PTEga2V5aW50X21pbj0xIHNjZW5lY3V0PTAgaW50cmFfcmVmcmVzaD0wIHJjPWNyZiBtYnRyZWU9MCBjcmY9MjMuMCBxY29tcD0wLjYwIHFwbWluPTAgcXBtYXg9NjkgcXBzdGVwPTQgaXBfcmF0aW89MS40MCBhcT0wAIAAAAFliIQ6JigACQLg',
-  ),
-  0x00,
-  0x00,
-  0x01,
-  0x09,
-  0xf0,
-];
