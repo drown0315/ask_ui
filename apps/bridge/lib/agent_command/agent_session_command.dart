@@ -32,6 +32,13 @@ abstract interface class AgentCommandTransport {
     required String replyToMessageId,
     required String text,
   });
+
+  Future<Map<String, Object?>> writeAgentError({
+    required Uri baseUrl,
+    required String sessionId,
+    required String? replyToMessageId,
+    required String text,
+  });
 }
 
 /// Normalized bridge transport failure for command output.
@@ -93,6 +100,25 @@ class AgentHttpCommandTransport implements AgentCommandTransport {
       {
         'text': text,
         'replyToMessageId': replyToMessageId,
+      },
+    );
+  }
+
+  @override
+  Future<Map<String, Object?>> writeAgentError({
+    required Uri baseUrl,
+    required String sessionId,
+    required String? replyToMessageId,
+    required String text,
+  }) async {
+    final Uri errorUri = baseUrl.resolve(
+      '/api/sessions/$sessionId/agent/error',
+    );
+    return _postAgentMessage(
+      errorUri,
+      {
+        'text': text,
+        if (replyToMessageId != null) 'replyToMessageId': replyToMessageId,
       },
     );
   }
@@ -168,6 +194,27 @@ Future<AgentCommandResult> runAgentSessionCommand(
     });
   }
 
+  if (request.agentErrorText != null) {
+    late final Map<String, Object?> errorResponse;
+    try {
+      errorResponse = await transport.writeAgentError(
+        baseUrl: request.baseUrl,
+        sessionId: request.sessionId,
+        replyToMessageId: request.replyToMessageId,
+        text: request.agentErrorText!,
+      );
+    } on AgentCommandException catch (error) {
+      return _CommandOutput.failure(error.code);
+    }
+
+    return _CommandOutput.success({
+      'status': 'ok',
+      'writtenMessage': errorResponse['message'],
+      'message': null,
+      'nextStep': _NextStep.writeOnceSuccess(),
+    });
+  }
+
   late final Map<String, Object?> response;
   try {
     response = await transport.poll(
@@ -197,12 +244,14 @@ class _AgentPollRequest {
     required this.sessionId,
     this.replyToMessageId,
     this.agentReplyText,
+    this.agentErrorText,
   });
 
   final Uri baseUrl;
   final String sessionId;
   final String? replyToMessageId;
   final String? agentReplyText;
+  final String? agentErrorText;
 
   static _AgentPollRequest parse(
     List<String> args,
@@ -269,7 +318,15 @@ class _AgentPollRequest {
       if (agentReplyText.length > _chatMessageTextLimit) {
         throw const _CommandValidationError('chat_message_too_long');
       }
-    } else if (replyToMessageId != null || agentErrorText != null) {
+    } else if (agentErrorText != null) {
+      if (agentErrorText.trim().isEmpty) {
+        throw const _CommandValidationError('empty_chat_message');
+      }
+
+      if (agentErrorText.length > _chatMessageTextLimit) {
+        throw const _CommandValidationError('chat_message_too_long');
+      }
+    } else if (replyToMessageId != null) {
       throw const _CommandValidationError('invalid_arguments');
     }
 
@@ -278,6 +335,7 @@ class _AgentPollRequest {
       sessionId: resolvedSessionId,
       replyToMessageId: replyToMessageId,
       agentReplyText: agentReplyText,
+      agentErrorText: agentErrorText,
     );
   }
 }

@@ -174,6 +174,22 @@ void main() {
               },
             }),
           );
+        } else if (request.uri.path.endsWith('/agent/error')) {
+          final Map<String, Object?> body =
+              jsonDecode(await utf8.decodeStream(request))
+                  as Map<String, Object?>;
+          requestBodies.add(body);
+          request.response.write(
+            jsonEncode({
+              'status': 'ok',
+              'message': {
+                'id': 'message-3',
+                'role': 'system',
+                'text': body['text'],
+                'replyToMessageId': body['replyToMessageId'],
+              },
+            }),
+          );
         } else {
           request.response.statusCode = HttpStatus.conflict;
           request.response.write(
@@ -195,6 +211,13 @@ void main() {
         replyToMessageId: 'message-1',
         text: 'Done.',
       );
+      final Map<String, Object?> errorResponse =
+          await transport.writeAgentError(
+        baseUrl: Uri.parse('http://127.0.0.1:${server.port}'),
+        sessionId: 'session-1',
+        replyToMessageId: 'message-1',
+        text: 'Could not run tests.',
+      );
       final Future<Map<String, Object?>> Function() conflictPoll = () {
         return transport.poll(
           baseUrl: Uri.parse('http://127.0.0.1:${server.port}'),
@@ -213,6 +236,12 @@ void main() {
         'text': 'Done.',
         'replyToMessageId': 'message-1',
       });
+      expect(errorResponse['message'], {
+        'id': 'message-3',
+        'role': 'system',
+        'text': 'Could not run tests.',
+        'replyToMessageId': 'message-1',
+      });
       await expectLater(
         conflictPoll(),
         throwsA(
@@ -226,10 +255,12 @@ void main() {
       expect(requests, [
         Uri.parse('/api/sessions/session-1/agent/poll'),
         Uri.parse('/api/sessions/session-1/agent/reply'),
+        Uri.parse('/api/sessions/session-1/agent/error'),
         Uri.parse('/api/sessions/conflict/agent/poll'),
       ]);
       expect(requestBodies, [
         {'text': 'Done.', 'replyToMessageId': 'message-1'},
+        {'text': 'Could not run tests.', 'replyToMessageId': 'message-1'},
       ]);
     });
 
@@ -399,6 +430,165 @@ void main() {
       expect(invalidReplyTransport.replyRequests.single.replyToMessageId,
           'message-404');
     });
+
+    test('writes agent errors once with optional reply-to ids', () async {
+      final FakeAgentCommandTransport transport = FakeAgentCommandTransport(
+        errorResponses: <Map<String, Object?>>[
+          {
+            'status': 'ok',
+            'message': {
+              'id': 'message-1',
+              'role': 'system',
+              'text': 'Session setup failed.',
+            },
+          },
+          {
+            'status': 'ok',
+            'message': {
+              'id': 'message-3',
+              'role': 'system',
+              'text': 'Could not run tests.',
+              'replyToMessageId': 'message-2',
+            },
+          },
+        ],
+      );
+
+      final AgentCommandResult sessionError = await runAgentSessionCommand(
+        const [
+          'agent',
+          'poll',
+          '--base-url',
+          'http://127.0.0.1:8787',
+          '--session-id',
+          'session-1',
+          '--agent-error',
+          'Session setup failed.',
+          '--once',
+        ],
+        environment: const <String, String>{},
+        transport: transport,
+      );
+      final AgentCommandResult correlatedError = await runAgentSessionCommand(
+        const [
+          'agent',
+          'poll',
+          '--base-url',
+          'http://127.0.0.1:8787',
+          '--session-id',
+          'session-1',
+          '--reply-to',
+          'message-2',
+          '--agent-error',
+          'Could not run tests.',
+          '--once',
+        ],
+        environment: const <String, String>{},
+        transport: transport,
+      );
+
+      expect(jsonDecode(sessionError.stdout), {
+        'status': 'ok',
+        'writtenMessage': {
+          'id': 'message-1',
+          'role': 'system',
+          'text': 'Session setup failed.',
+        },
+        'message': null,
+        'nextStep': 'No further polling was requested.',
+      });
+      expect(jsonDecode(correlatedError.stdout), {
+        'status': 'ok',
+        'writtenMessage': {
+          'id': 'message-3',
+          'role': 'system',
+          'text': 'Could not run tests.',
+          'replyToMessageId': 'message-2',
+        },
+        'message': null,
+        'nextStep': 'No further polling was requested.',
+      });
+      expect(transport.errorRequests, [
+        (
+          baseUrl: Uri.parse('http://127.0.0.1:8787'),
+          sessionId: 'session-1',
+          replyToMessageId: null,
+          text: 'Session setup failed.',
+        ),
+        (
+          baseUrl: Uri.parse('http://127.0.0.1:8787'),
+          sessionId: 'session-1',
+          replyToMessageId: 'message-2',
+          text: 'Could not run tests.',
+        ),
+      ]);
+      expect(transport.requests, isEmpty);
+    });
+
+    test('validates agent error once arguments before polling', () async {
+      final FakeAgentCommandTransport invalidReplyTransport =
+          FakeAgentCommandTransport(
+        errorError: const AgentCommandException('invalid_reply_to_message'),
+      );
+      final FakeAgentCommandTransport localValidationTransport =
+          FakeAgentCommandTransport();
+
+      Future<AgentCommandResult> runError(
+        List<String> extraArgs, {
+        FakeAgentCommandTransport? transport,
+      }) {
+        return runAgentSessionCommand(
+          [
+            'agent',
+            'poll',
+            '--base-url',
+            'http://127.0.0.1:8787',
+            '--session-id',
+            'session-1',
+            ...extraArgs,
+          ],
+          environment: const <String, String>{},
+          transport: transport ?? localValidationTransport,
+        );
+      }
+
+      final AgentCommandResult emptyError = await runError(
+        const ['--agent-error', '  ', '--once'],
+      );
+      final AgentCommandResult longError = await runError([
+        '--agent-error',
+        List<String>.filled(4001, 'x').join(),
+        '--once',
+      ]);
+      final AgentCommandResult invalidReplyTo = await runError(
+        const [
+          '--reply-to',
+          'message-404',
+          '--agent-error',
+          'Could not run tests.',
+          '--once',
+        ],
+        transport: invalidReplyTransport,
+      );
+
+      expect(jsonDecode(emptyError.stderr), {
+        'status': 'error',
+        'error': 'empty_chat_message',
+      });
+      expect(jsonDecode(longError.stderr), {
+        'status': 'error',
+        'error': 'chat_message_too_long',
+      });
+      expect(jsonDecode(invalidReplyTo.stderr), {
+        'status': 'error',
+        'error': 'invalid_reply_to_message',
+      });
+      expect(localValidationTransport.requests, isEmpty);
+      expect(localValidationTransport.errorRequests, isEmpty);
+      expect(invalidReplyTransport.requests, isEmpty);
+      expect(invalidReplyTransport.errorRequests.single.replyToMessageId,
+          'message-404');
+    });
   });
 }
 
@@ -408,12 +598,16 @@ class FakeAgentCommandTransport implements AgentCommandTransport {
     this.pollError,
     this.replyResponse,
     this.replyError,
+    this.errorResponses = const <Map<String, Object?>>[],
+    this.errorError,
   });
 
   final Map<String, Object?>? pollResponse;
   final AgentCommandException? pollError;
   final Map<String, Object?>? replyResponse;
   final AgentCommandException? replyError;
+  final List<Map<String, Object?>> errorResponses;
+  final AgentCommandException? errorError;
   final List<({Uri baseUrl, String sessionId})> requests =
       <({Uri baseUrl, String sessionId})>[];
   final List<
@@ -426,6 +620,18 @@ class FakeAgentCommandTransport implements AgentCommandTransport {
     Uri baseUrl,
     String sessionId,
     String replyToMessageId,
+    String text,
+  })>[];
+  final List<
+      ({
+        Uri baseUrl,
+        String sessionId,
+        String? replyToMessageId,
+        String text,
+      })> errorRequests = <({
+    Uri baseUrl,
+    String sessionId,
+    String? replyToMessageId,
     String text,
   })>[];
 
@@ -462,5 +668,26 @@ class FakeAgentCommandTransport implements AgentCommandTransport {
     }
 
     return replyResponse ?? const <String, Object?>{};
+  }
+
+  @override
+  Future<Map<String, Object?>> writeAgentError({
+    required Uri baseUrl,
+    required String sessionId,
+    required String? replyToMessageId,
+    required String text,
+  }) async {
+    errorRequests.add((
+      baseUrl: baseUrl,
+      sessionId: sessionId,
+      replyToMessageId: replyToMessageId,
+      text: text,
+    ));
+    final AgentCommandException? error = errorError;
+    if (error != null) {
+      throw error;
+    }
+
+    return errorResponses[errorRequests.length - 1];
   }
 }
