@@ -236,6 +236,7 @@
 }
 
 .chat-history {
+  position: relative;
   min-height: 0;
   padding: 0 12px 12px;
   overflow: auto;
@@ -350,6 +351,37 @@
 .chat-history-message-working {
   border-style: dashed;
   background: #f8fbfa;
+}
+
+.chat-history-attachment-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.chat-history-new-message {
+  position: sticky;
+  bottom: 8px;
+  justify-self: center;
+  display: block;
+  width: fit-content;
+  margin: 8px auto 0;
+  padding: 6px 10px;
+  border: 1px solid rgba(66, 184, 131, 0.24);
+  border-radius: 999px;
+  background: var(--vue-green);
+  color: #ffffff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 850;
+  box-shadow: 0 8px 18px rgba(31, 41, 55, 0.12);
+  cursor: pointer;
 }
 
 .chat-composer {
