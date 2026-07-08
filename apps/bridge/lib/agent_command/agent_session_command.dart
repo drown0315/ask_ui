@@ -3,6 +3,20 @@ import 'dart:io';
 
 const int _chatMessageTextLimit = 4000;
 
+/// Machine-readable error codes in the Agent Session Command contract.
+const Set<String> supportedAgentCommandErrorCodes = <String>{
+  'missing_bridge_url',
+  'missing_session_id',
+  'invalid_arguments',
+  'invalid_reply_to_message',
+  'empty_chat_message',
+  'chat_message_too_long',
+  'session_not_found',
+  'agent_poll_already_active',
+  'bridge_request_failed',
+  'poll_continuation_failed',
+};
+
 /// Result returned by the Agent Session Command runner.
 ///
 /// Tests use this object directly, while the binary maps it to stdout, stderr,
@@ -43,7 +57,7 @@ abstract interface class AgentCommandTransport {
 
 /// Normalized bridge transport failure for command output.
 class AgentCommandException implements Exception {
-  const AgentCommandException(this.code);
+  const AgentCommandException(String code) : code = code;
 
   final String code;
 }
@@ -409,7 +423,7 @@ class _CommandOutput {
       exitCode: 1,
       stderr: jsonEncode({
         'status': 'error',
-        'error': code,
+        'error': _normalizeErrorCode(code),
       }),
     );
   }
@@ -418,16 +432,27 @@ class _CommandOutput {
     required String cause,
     required Object? writtenMessage,
   }) {
+    final String normalizedCause = _normalizeErrorCode(cause);
     return AgentCommandResult(
       exitCode: 1,
       stderr: jsonEncode({
         'status': 'error',
         'error': 'poll_continuation_failed',
-        'cause': cause,
+        'cause': normalizedCause,
         'writtenMessage': writtenMessage,
         'nextStep': _NextStep.pollContinuationFailure(),
       }),
     );
+  }
+
+  static String _normalizeErrorCode(String code) {
+    if (code == 'poll_continuation_failed') {
+      return 'bridge_request_failed';
+    }
+
+    return supportedAgentCommandErrorCodes.contains(code)
+        ? code
+        : 'bridge_request_failed';
   }
 }
 

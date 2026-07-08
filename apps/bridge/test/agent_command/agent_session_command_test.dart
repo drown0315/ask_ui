@@ -913,6 +913,107 @@ void main() {
         'agent_working',
       );
     });
+
+    test('exposes the final supported error-code vocabulary', () {
+      expect(supportedAgentCommandErrorCodes, {
+        'missing_bridge_url',
+        'missing_session_id',
+        'invalid_arguments',
+        'invalid_reply_to_message',
+        'empty_chat_message',
+        'chat_message_too_long',
+        'session_not_found',
+        'agent_poll_already_active',
+        'bridge_request_failed',
+        'poll_continuation_failed',
+      });
+    });
+
+    test('normalizes unsupported bridge error codes to bridge_request_failed',
+        () async {
+      final FakeAgentCommandTransport transport = FakeAgentCommandTransport(
+        pollError: const AgentCommandException('unexpected_bridge_error'),
+      );
+
+      final AgentCommandResult result = await runAgentSessionCommand(
+        const ['agent', 'poll', '--once'],
+        environment: const {
+          'ASK_UI_BRIDGE_URL': 'http://127.0.0.1:8787',
+          'ASK_UI_SESSION_ID': 'session-1',
+        },
+        transport: transport,
+      );
+
+      expect(result.exitCode, 1);
+      expect(result.stdout, isEmpty);
+      expect(jsonDecode(result.stderr), {
+        'status': 'error',
+        'error': 'bridge_request_failed',
+      });
+    });
+
+    test('rejects unsupported output and stdin flags with JSON only', () async {
+      final FakeAgentCommandTransport transport = FakeAgentCommandTransport();
+      final List<List<String>> unsupportedArgs = <List<String>>[
+        const ['agent', 'poll', '--json'],
+        const ['agent', 'poll', '--timeout', '1'],
+        const ['agent', 'poll', '--stdin'],
+        const ['agent', 'poll', '--agent-reply-stdin'],
+        const ['agent', 'poll', '--unknown'],
+      ];
+
+      for (final List<String> args in unsupportedArgs) {
+        final AgentCommandResult result = await runAgentSessionCommand(
+          args,
+          environment: const {
+            'ASK_UI_BRIDGE_URL': 'http://127.0.0.1:8787',
+            'ASK_UI_SESSION_ID': 'session-1',
+          },
+          transport: transport,
+        );
+
+        expect(result.exitCode, 1, reason: args.join(' '));
+        expect(result.stdout, isEmpty, reason: args.join(' '));
+        expect(
+            jsonDecode(result.stderr),
+            {
+              'status': 'error',
+              'error': 'invalid_arguments',
+            },
+            reason: args.join(' '));
+      }
+      expect(transport.requests, isEmpty);
+    });
+
+    test('product UI source does not expose command terminology', () {
+      final Directory webSource = Directory('../../apps/web/src');
+      final RegExp forbiddenTerms = RegExp(
+        r'\b(Agent Session Command|agent command|agent poll|poller|transport|--agent-reply|--agent-error|--reply-to)\b',
+        caseSensitive: false,
+      );
+      final List<String> leaks = <String>[];
+
+      for (final FileSystemEntity entity
+          in webSource.listSync(recursive: true)) {
+        if (entity is! File) {
+          continue;
+        }
+        if (!entity.path.endsWith('.ts') && !entity.path.endsWith('.tsx')) {
+          continue;
+        }
+        if (entity.path.endsWith('.test.ts') ||
+            entity.path.endsWith('.test.tsx')) {
+          continue;
+        }
+
+        final String contents = entity.readAsStringSync();
+        if (forbiddenTerms.hasMatch(contents)) {
+          leaks.add(entity.path);
+        }
+      }
+
+      expect(leaks, isEmpty);
+    });
   });
 }
 
