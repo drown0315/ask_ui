@@ -1,4 +1,4 @@
-import { CHAT_COMPOSER_TEXT_LIMIT } from '../../chat/chatComposerState';
+import { getChatComposerTextareaInputPolicy } from '../../chat/chatComposerState';
 import type { ChatSessionState } from '../../chat/chatSessionState';
 import type { SelectionCommentAttachmentToken } from '../../selection-comments/selectionCommentState';
 import type { useChatComposerFlow } from './useChatComposerFlow';
@@ -20,6 +20,8 @@ export function ChatComposer({
   placeholder: string;
   sessionId: string | null;
 }) {
+  const inputPolicy = getChatComposerTextareaInputPolicy();
+
   return (
     <form
       className="chat-composer"
@@ -48,7 +50,7 @@ export function ChatComposer({
         aria-label="Message"
         className="chat-composer-input"
         disabled={chatSessionState.status === 'ready' && chatSessionState.readOnly}
-        maxLength={CHAT_COMPOSER_TEXT_LIMIT}
+        maxLength={inputPolicy.maxLength}
         onChange={(event) => {
           composer.handleComposerTextChange(event.target.value);
         }}

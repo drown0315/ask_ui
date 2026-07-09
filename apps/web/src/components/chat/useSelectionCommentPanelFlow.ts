@@ -31,6 +31,7 @@ import { captureSelectionCommentSnapshot } from '../../services/askUiBridgeClien
 type UseSelectionCommentPanelFlowOptions = {
   activeSelectionCommentId: string | null;
   attachmentTokens: SelectionCommentAttachmentToken[];
+  isReadOnly: boolean;
   isSelectWidgetActive: boolean;
   onSelectionCommentStateChange: Dispatch<SetStateAction<SelectionCommentState>>;
   selectedWidget: SelectedWidgetTarget | null;
@@ -42,6 +43,7 @@ type UseSelectionCommentPanelFlowOptions = {
 export function useSelectionCommentPanelFlow({
   activeSelectionCommentId,
   attachmentTokens,
+  isReadOnly,
   isSelectWidgetActive,
   onSelectionCommentStateChange,
   selectedWidget,
@@ -78,6 +80,7 @@ export function useSelectionCommentPanelFlow({
     panelTarget,
   );
   const selectionCommentInputState = getSelectionCommentInputState({
+    isReadOnly,
     isSelectWidgetActive,
     selectedWidget: panelTarget,
     widgetTreeStatus,
@@ -195,6 +198,7 @@ export function useSelectionCommentPanelFlow({
     getSelectionCommentDraftsByWidgetIdForSend,
     getSelectionCommentsForSend,
     panelTarget,
+    isReadOnly,
     selectedWidgetComments,
     selectionCommentInputState,
     selectionCommentText,

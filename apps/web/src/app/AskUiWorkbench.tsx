@@ -88,6 +88,7 @@ export function AskUiWorkbench() {
           activeSelectionCommentId={selectionComments.activeSelectionCommentId}
           attachmentTokens={selectionComments.attachmentTokens}
           chatSessionState={chatSession}
+          isReadOnly={isReadOnly}
           isSelectWidgetActive={actions.topBarActionState.isSelectWidgetActive}
           onAttachmentTokenClick={selectionComments.handleAttachmentTokenClick}
           onSelectionCommentStateChange={

@@ -23,6 +23,16 @@ export type DeviceControlMessage = DeviceTouchMessage | DeviceSystemKeyMessage;
 
 const maxPointerId = 0xffffffff;
 
+export function shouldSendDeviceControlMessage({
+  isInputDisabled,
+  controlReady,
+}: {
+  isInputDisabled: boolean;
+  controlReady: boolean;
+}): boolean {
+  return !isInputDisabled && controlReady;
+}
+
 /**
  * Build the JSON touch control message sent over the Device WebSocket.
  *

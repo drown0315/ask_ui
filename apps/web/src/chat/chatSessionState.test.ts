@@ -80,6 +80,44 @@ test('applies Chat History and Agent Status bridge events', () => {
   ]);
 });
 
+test('keeps read-only Chat sessions observable while applying bridge events', () => {
+  const initial = getInitialChatSessionState({
+    status: 'ok',
+    agentStatus: 'waiting_for_agent',
+    readOnly: true,
+    messages: [],
+  });
+
+  const nextState = reduceChatSessionBridgeEvent(initial, {
+    type: 'chat_snapshot',
+    sessionId: 'session-1',
+    payload: {
+      agentStatus: 'agent_ready',
+      messages: [
+        {
+          id: 'message-1',
+          role: 'agent',
+          text: 'Ready.',
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(nextState, {
+    status: 'ready',
+    agentStatus: 'agent_ready',
+    readOnly: true,
+    connectionWarning: null,
+    messages: [
+      {
+        id: 'message-1',
+        role: 'agent',
+        text: 'Ready.',
+      },
+    ],
+  });
+});
+
 test('replays queued bridge events after loading the initial Chat snapshot', () => {
   assert.deepEqual(
     getInitialChatSessionStateWithQueuedEvents(
@@ -148,6 +186,45 @@ test('maps session event disconnect to Waiting for agent with a warning', () => 
     readOnly: false,
     connectionWarning: 'Bridge session events disconnected.',
     messages: [],
+  });
+});
+
+test('clears the session event disconnect warning when bridge events resume', () => {
+  const disconnected = reduceChatSessionDisconnected(
+    getInitialChatSessionState({
+      status: 'ok',
+      agentStatus: 'agent_working',
+      readOnly: false,
+      messages: [
+        {
+          id: 'message-1',
+          role: 'user',
+          text: 'Make it primary.',
+        },
+      ],
+    }),
+  );
+
+  const reconnected = reduceChatSessionBridgeEvent(disconnected, {
+    type: 'agent_status_changed',
+    sessionId: 'session-1',
+    payload: {
+      agentStatus: 'agent_ready',
+    },
+  });
+
+  assert.deepEqual(reconnected, {
+    status: 'ready',
+    agentStatus: 'agent_ready',
+    readOnly: false,
+    connectionWarning: null,
+    messages: [
+      {
+        id: 'message-1',
+        role: 'user',
+        text: 'Make it primary.',
+      },
+    ],
   });
 });
 

@@ -4,6 +4,7 @@ import type { LiveAppSurfaceState } from '../../live-app-surface/liveAppSurfaceS
 import {
   buildSystemKeyMessage,
   buildTouchMessage,
+  shouldSendDeviceControlMessage,
   type DeviceControlMessage,
   type DeviceSystemKey,
 } from '../../live-app-surface/deviceControlProtocol';
@@ -142,7 +143,13 @@ export function DeviceShell({
     action: 'down' | 'move' | 'up' | 'cancel',
     event: PointerEvent<HTMLDivElement>,
   ) => {
-    if (isInputDisabled || !fit || !metadata.controlReady) {
+    if (
+      !shouldSendDeviceControlMessage({
+        isInputDisabled,
+        controlReady: metadata.controlReady,
+      }) ||
+      !fit
+    ) {
       return;
     }
 
@@ -218,7 +225,12 @@ export function DeviceShell({
   };
 
   const sendSystemKey = (key: DeviceSystemKey) => {
-    if (isInputDisabled) {
+    if (
+      !shouldSendDeviceControlMessage({
+        isInputDisabled,
+        controlReady: metadata.controlReady,
+      })
+    ) {
       return;
     }
 
@@ -262,7 +274,12 @@ export function DeviceShell({
       <div className="surface-controls">
         <button
           aria-label="Back"
-          disabled={isInputDisabled || !metadata.controlReady}
+          disabled={
+            !shouldSendDeviceControlMessage({
+              isInputDisabled,
+              controlReady: metadata.controlReady,
+            })
+          }
           onClick={() => sendSystemKey('back')}
           title="Back"
           type="button"
@@ -271,7 +288,12 @@ export function DeviceShell({
         </button>
         <button
           aria-label="Home"
-          disabled={isInputDisabled || !metadata.controlReady}
+          disabled={
+            !shouldSendDeviceControlMessage({
+              isInputDisabled,
+              controlReady: metadata.controlReady,
+            })
+          }
           onClick={() => sendSystemKey('home')}
           title="Home"
           type="button"
@@ -280,7 +302,12 @@ export function DeviceShell({
         </button>
         <button
           aria-label="Recents"
-          disabled={isInputDisabled || !metadata.controlReady}
+          disabled={
+            !shouldSendDeviceControlMessage({
+              isInputDisabled,
+              controlReady: metadata.controlReady,
+            })
+          }
           onClick={() => sendSystemKey('recents')}
           title="Recents"
           type="button"

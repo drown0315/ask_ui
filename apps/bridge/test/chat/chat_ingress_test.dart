@@ -206,6 +206,42 @@ void main() {
           (unowned as RejectedChatIngressMessage).error, 'invalid_chat_parts');
       expect(owned, isA<AcceptedChatIngressMessage>());
     });
+
+    test('does not restore snapshot ownership in a restarted Bridge Session',
+        () {
+      const snapshotPath = '/tmp/ask-ui/session-1/snapshots/comment.png';
+      existingSnapshotPaths.add(snapshotPath);
+      session.manageLocalPath('/tmp/ask-ui/session-1');
+      final originalSessionResult = ingress.parseMessage(
+        {
+          'parts': [
+            selectionCommentPart(snapshotPath),
+          ],
+        },
+        session,
+      );
+      final restartedSession = BridgeSession(
+        id: 'session-1',
+        vmServiceUri: session.vmServiceUri,
+        projectRoot: session.projectRoot,
+        deviceId: session.deviceId,
+      );
+
+      final restartedSessionResult = ingress.parseMessage(
+        {
+          'parts': [
+            selectionCommentPart(snapshotPath),
+          ],
+        },
+        restartedSession,
+      );
+
+      expect(originalSessionResult, isA<AcceptedChatIngressMessage>());
+      expect(
+        (restartedSessionResult as RejectedChatIngressMessage).error,
+        'invalid_chat_parts',
+      );
+    });
   });
 }
 
