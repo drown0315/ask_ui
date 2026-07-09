@@ -92,6 +92,27 @@ test('parses Chat bridge session events from EventSource', () => {
   );
 });
 
+test('parses Widget Selection bridge session events from EventSource', () => {
+  assert.deepEqual(
+    parseBridgeSessionEvent(
+      JSON.stringify({
+        type: 'widget_selection_changed',
+        sessionId: 'session-1',
+        payload: {
+          widgetId: 'inspector-2',
+        },
+      }),
+    ),
+    {
+      type: 'widget_selection_changed',
+      sessionId: 'session-1',
+      payload: {
+        widgetId: 'inspector-2',
+      },
+    },
+  );
+});
+
 test('reports invalid bridge session events without dispatching them', () => {
   const invalidEvents: string[] = [];
 

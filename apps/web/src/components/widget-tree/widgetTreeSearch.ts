@@ -142,6 +142,25 @@ export function collectAncestorNodeIds(
   return ancestorNodeIds;
 }
 
+export function collectAncestorNodeIdsForWidget(
+  root: WidgetTreeNode,
+  widgetId: string | null,
+): string[] {
+  if (widgetId === null) {
+    return [];
+  }
+
+  let selectedAncestorNodeIds: string[] = [];
+
+  visitWidgetTreeForSearch(root, [], (node, ancestorNodeIds) => {
+    if (node.id === widgetId) {
+      selectedAncestorNodeIds = ancestorNodeIds;
+    }
+  });
+
+  return selectedAncestorNodeIds;
+}
+
 function visitWidgetTreeForSearch(
   node: WidgetTreeNode,
   ancestorNodeIds: string[],

@@ -39,6 +39,7 @@ class BridgeSessionEventStream {
 
     Timer? heartbeat;
     StreamSubscription<SelectWidgetModeStatus>? selectWidgetSubscription;
+    StreamSubscription<WidgetSelectionStatus>? widgetSelectionSubscription;
     StreamSubscription<ChatSessionEvent>? chatSubscription;
     var streamClosed = false;
     var writeQueue = Future<void>.value();
@@ -50,6 +51,7 @@ class BridgeSessionEventStream {
       streamClosed = true;
       heartbeat?.cancel();
       await selectWidgetSubscription?.cancel();
+      await widgetSelectionSubscription?.cancel();
       await chatSubscription?.cancel();
       _logger.info('events stream session=$sessionId close');
     }
@@ -116,6 +118,21 @@ class BridgeSessionEventStream {
             'sessionId': sessionId,
             'payload': {
               if (status.enabled != null) 'enabled': status.enabled,
+            },
+          },
+        );
+      }));
+    });
+    widgetSelectionSubscription =
+        _inspectorClient.watchWidgetSelectionStatus(session).listen((status) {
+      unawaited(enqueueSseWrite(() {
+        transport.writeEvent(
+          event: 'bridge_session_event',
+          data: {
+            'type': 'widget_selection_changed',
+            'sessionId': sessionId,
+            'payload': {
+              'widgetId': status.widgetId,
             },
           },
         );

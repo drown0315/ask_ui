@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:ask_ui_bridge/app_controller/flutter_app_controller.dart';
 import 'package:ask_ui_bridge/inspector/flutter_inspector_client.dart';
 import 'package:ask_ui_bridge/logging/bridge_logger.dart';
@@ -331,6 +333,13 @@ class RecordingHotReloadVmService implements FlutterInspectorVmService {
   @override
   Future<void> listenToServiceExtensionStateChanges(
     void Function(FlutterServiceExtensionStateChange change) onChange,
+  ) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> listenToInspectorSelectionChanges(
+    FutureOr<void> Function() onSelectionChanged,
   ) {
     throw UnimplementedError();
   }

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  collectAncestorNodeIdsForWidget,
   collectAncestorNodeIds,
   findWidgetTreeMatches,
   getNextMatchIndex,
@@ -87,4 +88,13 @@ test('collects unique ancestors for matched widget ids', () => {
     'home-column',
     'content-container',
   ]);
+});
+
+test('collects ancestors for one selected widget id', () => {
+  assert.deepEqual(collectAncestorNodeIdsForWidget(tree, 'nested-column'), [
+    'material-app',
+    'home-column',
+    'content-container',
+  ]);
+  assert.deepEqual(collectAncestorNodeIdsForWidget(tree, 'missing'), []);
 });

@@ -9,6 +9,7 @@ type LegacyBridgeSessionEvent = {
   type:
     | 'select_widget_mode_snapshot'
     | 'select_widget_mode_changed'
+    | 'widget_selection_changed'
     | 'chat_snapshot'
     | 'agent_status_changed'
     | 'chat_history_changed';
@@ -86,6 +87,7 @@ function isBridgeSessionEventType(
   return (
     type === 'select_widget_mode_snapshot' ||
     type === 'select_widget_mode_changed' ||
+    type === 'widget_selection_changed' ||
     type === 'chat_snapshot' ||
     type === 'agent_status_changed' ||
     type === 'chat_history_changed'
@@ -98,6 +100,13 @@ function validateBridgeSessionEventPayload(event: LegacyBridgeSessionEvent) {
     event.type === 'select_widget_mode_changed'
   ) {
     return;
+  }
+
+  if (
+    event.type === 'widget_selection_changed' &&
+    typeof event.payload.widgetId !== 'string'
+  ) {
+    throw new Error('Widget Selection event did not include widgetId');
   }
 
   if (

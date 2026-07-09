@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   getInitialSelectionCommentState,
   getLocatableWidgetBoundsById,
@@ -8,7 +8,10 @@ import {
   getSelectionCommentOverlayMarkers,
   type SelectionCommentAttachmentToken,
 } from '../selection-comments/selectionCommentState';
-import { selectWidgetById } from '../services/askUiBridgeClient';
+import {
+  selectWidgetById,
+  subscribeToBridgeSessionEvents,
+} from '../services/askUiBridgeClient';
 import type { WidgetTreeLoadState } from '../types/bridgeSession';
 
 type UseWorkbenchSelectionCommentsOptions = {
@@ -77,6 +80,27 @@ export function useWorkbenchSelectionComments({
     setSelectedWidgetId(widgetId);
     setActiveSelectionCommentId(null);
   }, []);
+
+  useEffect(() => {
+    if (sessionId === null) {
+      return;
+    }
+
+    const subscription = subscribeToBridgeSessionEvents(sessionId, (event) => {
+      if (
+        event.sessionId !== sessionId ||
+        event.type !== 'widget_selection_changed'
+      ) {
+        return;
+      }
+
+      handleSelectedWidgetIdChange(event.payload.widgetId);
+    });
+
+    return () => {
+      subscription.close();
+    };
+  }, [handleSelectedWidgetIdChange, sessionId]);
 
   const handleAttachmentTokenClick = useCallback(
     (token: SelectionCommentAttachmentToken) => {

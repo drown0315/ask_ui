@@ -69,14 +69,16 @@ void main() {
       ]);
     });
 
-    test('forwards Select Widget and Chat updates', () async {
+    test('forwards Select Widget, Widget Selection, and Chat updates',
+        () async {
       await eventStream().open(session: session, transport: transport);
       transport.events.clear();
 
       inspectorClient.emitSelectWidgetMode(true);
+      inspectorClient.emitWidgetSelection('inspector-2');
       session.chat.setAgentStatus(AgentStatus.agentReady);
 
-      await waitForEventCount(transport, 2);
+      await waitForEventCount(transport, 3);
 
       expect(transport.events, [
         SseWrite(
@@ -85,6 +87,14 @@ void main() {
             'type': 'select_widget_mode_changed',
             'sessionId': 'session-1',
             'payload': {'enabled': true},
+          },
+        ),
+        SseWrite(
+          event: 'bridge_session_event',
+          data: {
+            'type': 'widget_selection_changed',
+            'sessionId': 'session-1',
+            'payload': {'widgetId': 'inspector-2'},
           },
         ),
         SseWrite(
@@ -241,6 +251,8 @@ class SseWrite {
 
 class RecordingInspectorClient implements FlutterInspectorClient {
   final _controller = StreamController<SelectWidgetModeStatus>.broadcast();
+  final _widgetSelectionController =
+      StreamController<WidgetSelectionStatus>.broadcast();
   bool? selectWidgetModeStatus;
   Object? failure;
 
@@ -264,6 +276,17 @@ class RecordingInspectorClient implements FlutterInspectorClient {
 
   void emitSelectWidgetMode(bool enabled) {
     _controller.add(SelectWidgetModeStatus(enabled: enabled));
+  }
+
+  @override
+  Stream<WidgetSelectionStatus> watchWidgetSelectionStatus(
+    BridgeSession session,
+  ) {
+    return _widgetSelectionController.stream;
+  }
+
+  void emitWidgetSelection(String widgetId) {
+    _widgetSelectionController.add(WidgetSelectionStatus(widgetId: widgetId));
   }
 
   @override
