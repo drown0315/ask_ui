@@ -78,5 +78,37 @@ void main() {
         },
       );
     });
+
+    test('normalizes app-side visual bounds by widget id', () {
+      final root = WidgetTreeNode.fromFlutterDiagnostics(
+        {
+          'valueId': 'inspector-1',
+          'description': 'Text',
+        },
+        boundsById: const {
+          'inspector-1': WidgetBounds(
+            x: 10.5,
+            y: 20,
+            width: 100,
+            height: 40,
+          ),
+        },
+      );
+
+      expect(
+        root.toJson(),
+        {
+          'id': 'inspector-1',
+          'label': 'Text',
+          'bounds': {
+            'x': 10.5,
+            'y': 20.0,
+            'width': 100.0,
+            'height': 40.0,
+          },
+          'children': <Object?>[],
+        },
+      );
+    });
   });
 }

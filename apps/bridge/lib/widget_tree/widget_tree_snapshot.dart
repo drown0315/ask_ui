@@ -14,6 +14,7 @@ class WidgetTreeNode {
     required this.id,
     required this.label,
     required this.children,
+    this.bounds,
     this.sourceLocation,
     this.visibleText,
     this.semanticInfo,
@@ -42,8 +43,10 @@ class WidgetTreeNode {
   factory WidgetTreeNode.fromFlutterDiagnostics(
     Map<String, Object?> diagnosticsNode, {
     String? projectRoot,
+    Map<String, WidgetBounds> boundsById = const {},
   }) {
     final rawChildren = diagnosticsNode['children'];
+    final id = diagnosticsNode['valueId']?.toString() ?? '';
     final children = rawChildren is List
         ? rawChildren
             .whereType<Map<String, Object?>>()
@@ -51,6 +54,7 @@ class WidgetTreeNode {
               (child) => WidgetTreeNode.fromFlutterDiagnostics(
                 child,
                 projectRoot: projectRoot,
+                boundsById: boundsById,
               ),
             )
             .toList()
@@ -58,7 +62,7 @@ class WidgetTreeNode {
     final description = diagnosticsNode['description']?.toString() ?? '';
 
     return WidgetTreeNode(
-      id: diagnosticsNode['valueId']?.toString() ?? '',
+      id: id,
       label: description,
       sourceLocation: _sourceLocationFromDiagnostics(
         diagnosticsNode,
@@ -70,12 +74,14 @@ class WidgetTreeNode {
         'semanticLabel',
         'semanticDescription',
       ]),
+      bounds: boundsById[id],
       children: children,
     );
   }
 
   final String id;
   final String label;
+  final WidgetBounds? bounds;
   final String? sourceLocation;
   final String? visibleText;
   final String? semanticInfo;
@@ -85,10 +91,35 @@ class WidgetTreeNode {
     return {
       'id': id,
       'label': label,
+      if (bounds != null) 'bounds': bounds!.toJson(),
       if (sourceLocation != null) 'sourceLocation': sourceLocation,
       if (visibleText != null) 'visibleText': visibleText,
       if (semanticInfo != null) 'semanticInfo': semanticInfo,
       'children': children.map((child) => child.toJson()).toList(),
+    };
+  }
+}
+
+/// Visual rectangle for a Flutter widget in device-screen coordinates.
+class WidgetBounds {
+  const WidgetBounds({
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+  });
+
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+
+  Map<String, Object?> toJson() {
+    return {
+      'x': x,
+      'y': y,
+      'width': width,
+      'height': height,
     };
   }
 }

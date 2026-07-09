@@ -125,9 +125,16 @@ class VmServiceFlutterInspectorClient implements FlutterInspectorClient {
         );
       }
 
+      final boundsById = await _fetchWidgetBoundsById(
+        vmService,
+        isolateId: isolateId,
+        diagnosticsNode: result,
+      );
+
       return WidgetTreeNode.fromFlutterDiagnostics(
         result,
         projectRoot: session.projectRoot,
+        boundsById: boundsById,
       );
     } finally {
       await vmService.dispose();
@@ -303,6 +310,123 @@ class VmServiceFlutterInspectorClient implements FlutterInspectorClient {
   }
 }
 
+Future<Map<String, WidgetBounds>> _fetchWidgetBoundsById(
+  FlutterInspectorVmService vmService, {
+  required String isolateId,
+  required Map<String, Object?> diagnosticsNode,
+}) async {
+  final boundsById = <String, WidgetBounds>{};
+
+  for (final widgetId in _widgetIdsInDiagnostics(diagnosticsNode)) {
+    final WidgetBounds? bounds;
+    try {
+      bounds = await _fetchWidgetBounds(
+        vmService,
+        isolateId: isolateId,
+        widgetId: widgetId,
+      );
+    } on _WidgetBoundsExtensionUnavailable {
+      break;
+    }
+    if (bounds == null) {
+      continue;
+    }
+    boundsById[widgetId] = bounds;
+  }
+
+  return boundsById;
+}
+
+Iterable<String> _widgetIdsInDiagnostics(
+  Map<String, Object?> diagnosticsNode,
+) sync* {
+  final id = diagnosticsNode['valueId']?.toString().trim();
+  if (id != null && id.isNotEmpty) {
+    yield id;
+  }
+
+  final rawChildren = diagnosticsNode['children'];
+  if (rawChildren is! List) {
+    return;
+  }
+
+  for (final child in rawChildren.whereType<Map<String, Object?>>()) {
+    yield* _widgetIdsInDiagnostics(child);
+  }
+}
+
+Future<WidgetBounds?> _fetchWidgetBounds(
+  FlutterInspectorVmService vmService, {
+  required String isolateId,
+  required String widgetId,
+}) async {
+  final response = await _callWidgetBoundsExtension(
+    vmService,
+    isolateId: isolateId,
+    widgetId: widgetId,
+  );
+  if (response == null) {
+    return null;
+  }
+
+  final result = _decodeInspectorResult(response);
+  if (result is! Map<String, Object?>) {
+    return null;
+  }
+
+  return _widgetBoundsFromAppSideResult(result);
+}
+
+Future<Map<String, Object?>?> _callWidgetBoundsExtension(
+  FlutterInspectorVmService vmService, {
+  required String isolateId,
+  required String widgetId,
+}) async {
+  try {
+    return await vmService.callServiceExtension(
+      'ext.ask_ui.widgetBounds',
+      isolateId: isolateId,
+      args: {
+        'id': widgetId,
+        'groupName': 'ask_ui_widget_tree',
+      },
+    );
+  } on FlutterInspectorServiceUnavailableException {
+    throw const _WidgetBoundsExtensionUnavailable();
+  } on RPCError catch (error) {
+    if (error.code == RPCErrorKind.kMethodNotFound.code) {
+      throw const _WidgetBoundsExtensionUnavailable();
+    }
+    rethrow;
+  }
+}
+
+WidgetBounds? _widgetBoundsFromAppSideResult(Map<String, Object?> result) {
+  final x = _doubleFrom(result['x']);
+  final y = _doubleFrom(result['y']);
+  final width = _doubleFrom(result['width']);
+  final height = _doubleFrom(result['height']);
+  final devicePixelRatio = _doubleFrom(result['devicePixelRatio']) ?? 1;
+
+  if (x == null || y == null || width == null || height == null) {
+    return null;
+  }
+  if (width <= 0 || height <= 0 || devicePixelRatio <= 0) {
+    return null;
+  }
+
+  return WidgetBounds(
+    x: x * devicePixelRatio,
+    y: y * devicePixelRatio,
+    width: width * devicePixelRatio,
+    height: height * devicePixelRatio,
+  );
+}
+
+class _WidgetBoundsExtensionUnavailable implements Exception {
+  const _WidgetBoundsExtensionUnavailable();
+}
+
 Object? _decodeInspectorResult(Map<String, Object?> response) {
   final result = response['result'] ?? response['object'] ?? response['value'];
 
@@ -311,6 +435,18 @@ Object? _decodeInspectorResult(Map<String, Object?> response) {
   }
 
   return result ?? response;
+}
+
+double? _doubleFrom(Object? value) {
+  if (value is num) {
+    return value.toDouble();
+  }
+
+  final stringValue = value?.toString().trim();
+  if (stringValue == null || stringValue.isEmpty) {
+    return null;
+  }
+  return double.tryParse(stringValue);
 }
 
 class FlutterInspectorException implements Exception {

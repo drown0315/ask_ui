@@ -68,6 +68,14 @@ void main() {
             'fullDetails': 'true',
           },
         ),
+        const FlutterInspectorVmServiceCall(
+          method: 'ext.ask_ui.widgetBounds',
+          isolateId: 'isolates/main',
+          args: {
+            'id': 'inspector-1',
+            'groupName': 'ask_ui_widget_tree',
+          },
+        ),
       ]);
     });
 
@@ -94,6 +102,165 @@ void main() {
         'label': 'MaterialApp',
         'children': <Object?>[],
       });
+    });
+
+    test('enriches widget tree nodes with app-side widget bounds', () async {
+      final vmService = RecordingFlutterInspectorVmService(
+        {
+          'result': {
+            'valueId': 'inspector-1',
+            'description': 'MaterialApp',
+            'children': [
+              {
+                'valueId': 'inspector-2',
+                'description': 'FilledButton',
+              },
+            ],
+          },
+        },
+        serviceExtensionResponses: {
+          'ext.ask_ui.widgetBounds': [
+            {
+              'result': {
+                'x': 4,
+                'y': 8,
+                'width': 120,
+                'height': 48,
+                'devicePixelRatio': 2.5,
+              },
+            },
+            {
+              'result':
+                  '{"x":24,"y":36,"width":80,"height":20,"devicePixelRatio":2.5}',
+            },
+          ],
+        },
+      );
+      final client = VmServiceFlutterInspectorClient(
+        vmServiceFactory: RecordingFlutterInspectorVmServiceFactory(vmService),
+      );
+
+      final root = await client.fetchRootWidgetTree(
+        BridgeSession(
+          id: 'session-1',
+          vmServiceUri: 'ws://127.0.0.1:12345/ws',
+          projectRoot: '/Users/example/app',
+          deviceId: '19271FDF6007TY',
+        ),
+      );
+
+      expect(root.toJson(), {
+        'id': 'inspector-1',
+        'label': 'MaterialApp',
+        'bounds': {
+          'x': 10.0,
+          'y': 20.0,
+          'width': 300.0,
+          'height': 120.0,
+        },
+        'children': [
+          {
+            'id': 'inspector-2',
+            'label': 'FilledButton',
+            'bounds': {
+              'x': 60.0,
+              'y': 90.0,
+              'width': 200.0,
+              'height': 50.0,
+            },
+            'children': <Object?>[],
+          },
+        ],
+      });
+      expect(vmService.calls, [
+        const FlutterInspectorVmServiceCall(
+          method: 'ext.flutter.inspector.setPubRootDirectories',
+          isolateId: 'isolates/main',
+          args: {'arg0': '/Users/example/app'},
+        ),
+        const FlutterInspectorVmServiceCall(
+          method: 'ext.flutter.inspector.getRootWidgetTree',
+          isolateId: 'isolates/main',
+          args: {
+            'groupName': 'ask_ui_widget_tree',
+            'isSummaryTree': 'true',
+            'withPreviews': 'true',
+            'fullDetails': 'true',
+          },
+        ),
+        const FlutterInspectorVmServiceCall(
+          method: 'ext.ask_ui.widgetBounds',
+          isolateId: 'isolates/main',
+          args: {
+            'id': 'inspector-1',
+            'groupName': 'ask_ui_widget_tree',
+          },
+        ),
+        const FlutterInspectorVmServiceCall(
+          method: 'ext.ask_ui.widgetBounds',
+          isolateId: 'isolates/main',
+          args: {
+            'id': 'inspector-2',
+            'groupName': 'ask_ui_widget_tree',
+          },
+        ),
+      ]);
+    });
+
+    test('keeps widget tree available when app-side bounds extension is absent',
+        () async {
+      final vmService = RecordingFlutterInspectorVmService({
+        'result': {
+          'valueId': 'inspector-1',
+          'description': 'MaterialApp',
+          'children': [
+            {
+              'valueId': 'inspector-2',
+              'description': 'Scaffold',
+            },
+          ],
+        },
+      }, unavailableServiceExtensions: {
+        'ext.ask_ui.widgetBounds'
+      });
+      final client = VmServiceFlutterInspectorClient(
+        vmServiceFactory: RecordingFlutterInspectorVmServiceFactory(vmService),
+      );
+
+      final root = await client.fetchRootWidgetTree(
+        BridgeSession(
+          id: 'session-1',
+          vmServiceUri: 'ws://127.0.0.1:12345/ws',
+          projectRoot: '/Users/example/app',
+          deviceId: '19271FDF6007TY',
+        ),
+      );
+
+      expect(root.toJson(), {
+        'id': 'inspector-1',
+        'label': 'MaterialApp',
+        'children': [
+          {
+            'id': 'inspector-2',
+            'label': 'Scaffold',
+            'children': <Object?>[],
+          },
+        ],
+      });
+      expect(
+        vmService.calls
+            .where((call) => call.method == 'ext.ask_ui.widgetBounds'),
+        [
+          const FlutterInspectorVmServiceCall(
+            method: 'ext.ask_ui.widgetBounds',
+            isolateId: 'isolates/main',
+            args: {
+              'id': 'inspector-1',
+              'groupName': 'ask_ui_widget_tree',
+            },
+          ),
+        ],
+      );
     });
 
     test('sets Flutter Inspector select widget mode through inspector.show',
@@ -239,9 +406,20 @@ class RecordingFlutterInspectorVmServiceFactory
 }
 
 class RecordingFlutterInspectorVmService implements FlutterInspectorVmService {
-  RecordingFlutterInspectorVmService(this.widgetTreeResponse);
+  RecordingFlutterInspectorVmService(
+    this.widgetTreeResponse, {
+    Map<String, List<Map<String, Object?>>> serviceExtensionResponses =
+        const {},
+    Set<String> unavailableServiceExtensions = const {},
+  })  : _serviceExtensionResponses = {
+          for (final entry in serviceExtensionResponses.entries)
+            entry.key: List<Map<String, Object?>>.of(entry.value),
+        },
+        _unavailableServiceExtensions = unavailableServiceExtensions;
 
   final Map<String, Object?> widgetTreeResponse;
+  final Map<String, List<Map<String, Object?>>> _serviceExtensionResponses;
+  final Set<String> _unavailableServiceExtensions;
   final calls = <FlutterInspectorVmServiceCall>[];
   final serviceExtensionStateListeners =
       <void Function(FlutterServiceExtensionStateChange change)>[];
@@ -268,6 +446,20 @@ class RecordingFlutterInspectorVmService implements FlutterInspectorVmService {
 
     if (method == 'ext.flutter.inspector.getRootWidgetTree') {
       return widgetTreeResponse;
+    }
+    if (_unavailableServiceExtensions.contains(method)) {
+      throw const FlutterInspectorServiceUnavailableException(
+        'Service extension is not registered.',
+      );
+    }
+    final responses = _serviceExtensionResponses[method];
+    if (responses != null && responses.isNotEmpty) {
+      return responses.removeAt(0);
+    }
+    if (method == 'ext.ask_ui.widgetBounds') {
+      throw const FlutterInspectorServiceUnavailableException(
+        'Service extension is not registered.',
+      );
     }
 
     return {'result': null};
