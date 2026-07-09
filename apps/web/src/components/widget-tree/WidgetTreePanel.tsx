@@ -1,6 +1,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type KeyboardEvent,
@@ -16,6 +17,7 @@ import {
   collectExpandableNodeIds,
 } from './widgetTreeRows';
 import {
+  collectAncestorNodeIdsForWidget,
   collectAncestorNodeIds,
   findWidgetTreeMatches,
   getNextMatchIndex,
@@ -168,6 +170,7 @@ function WidgetTreeRows({
   onSelectWidget: (widgetId: string) => void;
 }) {
   const allExpandableNodeIds = useMemo(() => collectExpandableNodeIds(root), [root]);
+  const selectedRowRef = useRef<HTMLDivElement | null>(null);
   const [expandedNodeIds, setExpandedNodeIds] = useState(
     () => new Set(allExpandableNodeIds),
   );
@@ -200,6 +203,32 @@ function WidgetTreeRows({
     });
   }, [searchExpandedAncestorIds]);
 
+  useEffect(() => {
+    const selectedAncestorNodeIds = collectAncestorNodeIdsForWidget(
+      root,
+      selectedWidgetId,
+    );
+    if (selectedAncestorNodeIds.length === 0) {
+      return;
+    }
+
+    setExpandedNodeIds((current) => {
+      const next = new Set(current);
+
+      for (const nodeId of selectedAncestorNodeIds) {
+        next.add(nodeId);
+      }
+
+      return next;
+    });
+  }, [root, selectedWidgetId]);
+
+  useEffect(() => {
+    selectedRowRef.current?.scrollIntoView({
+      block: 'nearest',
+    });
+  }, [selectedWidgetId, rows]);
+
   function toggleNode(nodeId: string) {
     setExpandedNodeIds((current) => {
       const next = new Set(current);
@@ -218,15 +247,16 @@ function WidgetTreeRows({
     <div className="widget-tree-flat-list" role="tree">
       {rows.map((row) => {
         const isExpanded = row.hasChildren && expandedNodeIds.has(row.node.id);
+        const isSelected = row.node.id === selectedWidgetId;
         const icon = getWidgetTreeIcon(row.node.label);
 
         return (
           <div
             aria-expanded={row.hasChildren ? isExpanded : undefined}
             aria-level={row.depth + 1}
-            aria-selected={row.node.id === selectedWidgetId}
+            aria-selected={isSelected}
             className={`widget-tree-row ${
-              row.node.id === selectedWidgetId ? 'widget-tree-row-selected' : ''
+              isSelected ? 'widget-tree-row-selected' : ''
             } ${
               row.node.id === searchActiveWidgetId
                 ? 'widget-tree-row-search-active'
@@ -243,6 +273,7 @@ function WidgetTreeRows({
             role="treeitem"
             style={{ '--tree-depth': row.depth } as CSSProperties}
             tabIndex={0}
+            ref={isSelected ? selectedRowRef : null}
           >
             <button
               aria-label={

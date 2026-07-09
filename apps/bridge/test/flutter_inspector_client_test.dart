@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:ask_ui_bridge/inspector/flutter_inspector_client.dart';
 import 'package:ask_ui_bridge/logging/bridge_logger.dart';
 import 'package:ask_ui_bridge/sessions/session_store.dart';
@@ -390,6 +392,67 @@ void main() {
         ),
       );
     });
+
+    test('publishes Widget Selection status from Inspector inspect events',
+        () async {
+      final vmService = RecordingFlutterInspectorVmService(
+        {'result': null},
+        serviceExtensionResponses: {
+          'ext.flutter.inspector.getSelectedSummaryWidget': [
+            {
+              'result': {
+                'valueId': 'inspector-2',
+                'description': 'PrimaryButton',
+                'children': <Object?>[],
+              },
+            },
+          ],
+        },
+      );
+      final logs = <String>[];
+      final client = VmServiceFlutterInspectorClient(
+        vmServiceFactory: RecordingFlutterInspectorVmServiceFactory(vmService),
+        logger: BridgeLogger(write: logs.add),
+      );
+      final session = BridgeSession(
+        id: 'session-1',
+        vmServiceUri: 'ws://127.0.0.1:12345/ws',
+        projectRoot: '/Users/example/app',
+        deviceId: '19271FDF6007TY',
+      );
+      final emittedSelections = <WidgetSelectionStatus>[];
+      final subscription = client
+          .watchWidgetSelectionStatus(session)
+          .listen(emittedSelections.add);
+
+      await Future<void>.delayed(Duration.zero);
+      await vmService.emitInspectorSelectionChange();
+      await Future<void>.delayed(Duration.zero);
+      await subscription.cancel();
+
+      expect(
+        emittedSelections.map((status) => status.widgetId),
+        ['inspector-2'],
+      );
+      expect(
+        vmService.calls,
+        contains(
+          const FlutterInspectorVmServiceCall(
+            method: 'ext.flutter.inspector.getSelectedSummaryWidget',
+            isolateId: 'isolates/main',
+            args: {
+              'objectGroup': 'ask_ui_widget_tree',
+            },
+          ),
+        ),
+      );
+      expect(
+        logs,
+        contains(
+          '[ask_ui_bridge] widget_selection session=session-1 monitor_update widget=inspector-2',
+        ),
+      );
+    });
   });
 }
 
@@ -423,6 +486,7 @@ class RecordingFlutterInspectorVmService implements FlutterInspectorVmService {
   final calls = <FlutterInspectorVmServiceCall>[];
   final serviceExtensionStateListeners =
       <void Function(FlutterServiceExtensionStateChange change)>[];
+  final inspectorSelectionListeners = <FutureOr<void> Function()>[];
   bool didFindMainIsolateId = false;
   bool disposed = false;
 
@@ -494,6 +558,13 @@ class RecordingFlutterInspectorVmService implements FlutterInspectorVmService {
   }
 
   @override
+  Future<void> listenToInspectorSelectionChanges(
+    FutureOr<void> Function() onSelectionChanged,
+  ) async {
+    inspectorSelectionListeners.add(onSelectionChanged);
+  }
+
+  @override
   Future<void> dispose() async {
     disposed = true;
   }
@@ -503,6 +574,12 @@ class RecordingFlutterInspectorVmService implements FlutterInspectorVmService {
   ) {
     for (final listener in serviceExtensionStateListeners) {
       listener(change);
+    }
+  }
+
+  Future<void> emitInspectorSelectionChange() async {
+    for (final listener in inspectorSelectionListeners) {
+      await listener();
     }
   }
 }

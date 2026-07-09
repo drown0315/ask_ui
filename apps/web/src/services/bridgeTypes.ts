@@ -144,6 +144,13 @@ export type BridgeSessionEvent =
       };
     }
   | {
+      type: 'widget_selection_changed';
+      sessionId: string;
+      payload: {
+        widgetId: string;
+      };
+    }
+  | {
       type: 'chat_snapshot';
       sessionId: string;
       payload: {
@@ -171,9 +178,14 @@ export type SelectWidgetBridgeSessionEvent = Extract<
   { type: 'select_widget_mode_snapshot' | 'select_widget_mode_changed' }
 >;
 
+export type WidgetSelectionBridgeSessionEvent = Extract<
+  BridgeSessionEvent,
+  { type: 'widget_selection_changed' }
+>;
+
 export type ChatBridgeSessionEvent = Exclude<
   BridgeSessionEvent,
-  SelectWidgetBridgeSessionEvent
+  SelectWidgetBridgeSessionEvent | WidgetSelectionBridgeSessionEvent
 >;
 
 export function isAgentStatusResponse(

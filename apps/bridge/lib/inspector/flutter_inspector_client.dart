@@ -66,6 +66,10 @@ abstract class FlutterInspectorClient {
   Stream<SelectWidgetModeStatus> watchSelectWidgetModeStatus(
     BridgeSession session,
   );
+
+  Stream<WidgetSelectionStatus> watchWidgetSelectionStatus(
+    BridgeSession session,
+  );
 }
 
 /// Flutter Inspector client backed by Dart VM Service extension calls.
@@ -93,6 +97,8 @@ class VmServiceFlutterInspectorClient implements FlutterInspectorClient {
   final _selectWidgetMonitorServices = <String, FlutterInspectorVmService>{};
   final _selectWidgetModeControllers =
       <String, StreamController<SelectWidgetModeStatus>>{};
+  final _widgetSelectionControllers =
+      <String, StreamController<WidgetSelectionStatus>>{};
 
   @override
   Future<WidgetTreeNode> fetchRootWidgetTree(BridgeSession session) async {
@@ -261,6 +267,57 @@ class VmServiceFlutterInspectorClient implements FlutterInspectorClient {
           'monitor_update extension=${change.extension} enabled=$enabled',
         );
       });
+      _logger.info(
+        'widget_selection session=${session.id} monitor_listen_inspect_stream start',
+      );
+      try {
+        await vmService.listenToInspectorSelectionChanges(() async {
+          _logger.info(
+            'widget_selection session=${session.id} inspect_event received',
+          );
+          try {
+            final isolateId = await vmService.findMainIsolateId();
+            final response = await vmService.callServiceExtension(
+              'ext.flutter.inspector.getSelectedSummaryWidget',
+              isolateId: isolateId,
+              args: {
+                'objectGroup': 'ask_ui_widget_tree',
+              },
+            );
+            final result = _decodeInspectorResult(response);
+            if (result is! Map<String, Object?>) {
+              _logger.info(
+                'widget_selection session=${session.id} monitor_ignore reason=selected_summary_not_object',
+              );
+              return;
+            }
+
+            final widgetId = result['valueId']?.toString().trim();
+            if (widgetId == null || widgetId.isEmpty) {
+              _logger.info(
+                'widget_selection session=${session.id} monitor_ignore reason=selected_summary_missing_value_id',
+              );
+              return;
+            }
+
+            _publishWidgetSelectionStatus(session.id, widgetId);
+            _logger.info(
+              'widget_selection session=${session.id} monitor_update widget=$widgetId',
+            );
+          } catch (error) {
+            _logger.info(
+              'widget_selection session=${session.id} monitor_failed error=$error',
+            );
+          }
+        });
+        _logger.info(
+          'widget_selection session=${session.id} monitor_listen_inspect_stream ready',
+        );
+      } catch (error) {
+        _logger.info(
+          'widget_selection session=${session.id} monitor_listen_inspect_stream failed error=$error',
+        );
+      }
     });
   }
 
@@ -308,7 +365,35 @@ class VmServiceFlutterInspectorClient implements FlutterInspectorClient {
 
     controller.add(SelectWidgetModeStatus(enabled: enabled));
   }
+
+  @override
+  Stream<WidgetSelectionStatus> watchWidgetSelectionStatus(
+    BridgeSession session,
+  ) {
+    unawaited(_ensureSelectWidgetModeMonitor(session));
+    return _widgetSelectionController(session.id).stream;
+  }
+
+  StreamController<WidgetSelectionStatus> _widgetSelectionController(
+    String sessionId,
+  ) {
+    return _widgetSelectionControllers.putIfAbsent(
+      sessionId,
+      () => StreamController<WidgetSelectionStatus>.broadcast(),
+    );
+  }
+
+  void _publishWidgetSelectionStatus(String sessionId, String widgetId) {
+    final controller = _widgetSelectionControllers[sessionId];
+    if (controller == null || controller.isClosed) {
+      return;
+    }
+
+    controller.add(WidgetSelectionStatus(widgetId: widgetId));
+  }
 }
+
+const flutterInspectorSelectionEventStream = EventStreams.kDebug;
 
 Future<Map<String, WidgetBounds>> _fetchWidgetBoundsById(
   FlutterInspectorVmService vmService, {
@@ -530,6 +615,14 @@ class WidgetSelectionResult {
   }
 }
 
+class WidgetSelectionStatus {
+  const WidgetSelectionStatus({
+    required this.widgetId,
+  });
+
+  final String widgetId;
+}
+
 /// Cached Select Widget mode state observed from Flutter Inspector.
 ///
 /// It contains the last known `enabled` value reported by the app. When the
@@ -655,6 +748,10 @@ abstract class FlutterInspectorVmService {
 
   Future<void> listenToServiceExtensionStateChanges(
     void Function(FlutterServiceExtensionStateChange change) onChange,
+  );
+
+  Future<void> listenToInspectorSelectionChanges(
+    FutureOr<void> Function() onSelectionChanged,
   );
 
   Future<void> dispose();
@@ -808,6 +905,20 @@ class VmServiceAdapter implements FlutterInspectorVmService {
     });
 
     await _vmService.streamListen(EventStreams.kExtension);
+  }
+
+  @override
+  Future<void> listenToInspectorSelectionChanges(
+    FutureOr<void> Function() onSelectionChanged,
+  ) async {
+    _vmService.onEvent(flutterInspectorSelectionEventStream).listen((event) {
+      if (event.kind != EventKind.kInspect) {
+        return;
+      }
+      unawaited(Future<void>.sync(onSelectionChanged));
+    });
+
+    await _vmService.streamListen(flutterInspectorSelectionEventStream);
   }
 
   @override

@@ -313,6 +313,8 @@ class RecordingFlutterInspectorClient implements FlutterInspectorClient {
   final selectedWidgets = <RecordedWidgetSelectionRequest>[];
   final _selectWidgetModeControllers =
       <String, StreamController<SelectWidgetModeStatus>>{};
+  final _widgetSelectionControllers =
+      <String, StreamController<WidgetSelectionStatus>>{};
   Exception? failure;
   bool? selectWidgetModeStatus;
 
@@ -391,6 +393,18 @@ class RecordingFlutterInspectorClient implements FlutterInspectorClient {
         .putIfAbsent(
           session.id,
           () => StreamController<SelectWidgetModeStatus>.broadcast(),
+        )
+        .stream;
+  }
+
+  @override
+  Stream<WidgetSelectionStatus> watchWidgetSelectionStatus(
+    BridgeSession session,
+  ) {
+    return _widgetSelectionControllers
+        .putIfAbsent(
+          session.id,
+          () => StreamController<WidgetSelectionStatus>.broadcast(),
         )
         .stream;
   }
