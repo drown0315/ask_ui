@@ -23,3 +23,20 @@ test('defines the Chat shell sections and initial Agent Status language', () => 
     composerDisabledReason: 'Agent Status is Waiting for agent.',
   });
 });
+
+test('keeps non-MVP Chat History controls out of the Chat panel contract', () => {
+  const serializedContent = JSON.stringify({
+    sections: CHAT_PANEL_SECTIONS,
+    initial: getInitialChatPanelState(),
+  }).toLowerCase();
+
+  for (const unsupportedControl of [
+    'search',
+    'clear',
+    'export',
+    'end session',
+    'resend',
+  ]) {
+    assert.equal(serializedContent.includes(unsupportedControl), false);
+  }
+});

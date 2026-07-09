@@ -1,4 +1,4 @@
-import type { WidgetTreeNode } from '../types/bridgeSession.ts';
+import type { WidgetBounds, WidgetTreeNode } from '../types/bridgeSession.ts';
 import type { SelectedWidgetTarget } from './selectionCommentTypes.ts';
 
 export function getSelectedWidgetTarget(
@@ -32,6 +32,16 @@ export function getLocatableWidgetIds(root: WidgetTreeNode): Set<string> {
   return locatableWidgetIds;
 }
 
+export function getLocatableWidgetBoundsById(
+  root: WidgetTreeNode,
+): Map<string, WidgetBounds> {
+  const boundsById = new Map<string, WidgetBounds>();
+
+  collectLocatableWidgetBounds(root, boundsById);
+
+  return boundsById;
+}
+
 function collectLocatableWidgetIds(
   node: WidgetTreeNode,
   locatableWidgetIds: Set<string>,
@@ -43,6 +53,35 @@ function collectLocatableWidgetIds(
   for (const child of children) {
     collectLocatableWidgetIds(child, locatableWidgetIds);
   }
+}
+
+function collectLocatableWidgetBounds(
+  node: WidgetTreeNode,
+  boundsById: Map<string, WidgetBounds>,
+) {
+  if (isValidWidgetBounds(node.bounds)) {
+    boundsById.set(node.id, node.bounds);
+  }
+
+  const children = Array.isArray(node.children) ? node.children : [];
+
+  for (const child of children) {
+    collectLocatableWidgetBounds(child, boundsById);
+  }
+}
+
+function isValidWidgetBounds(
+  bounds: WidgetTreeNode['bounds'],
+): bounds is WidgetBounds {
+  return (
+    bounds !== undefined &&
+    Number.isFinite(bounds.x) &&
+    Number.isFinite(bounds.y) &&
+    Number.isFinite(bounds.width) &&
+    Number.isFinite(bounds.height) &&
+    bounds.width > 0 &&
+    bounds.height > 0
+  );
 }
 
 function stringifyWidgetContextValue(value: unknown): string | undefined {

@@ -5,13 +5,19 @@ import {
   type SelectionCommentInputState,
 } from './selectionCommentTypes.ts';
 
+export type SelectionCommentTextareaInputPolicy = {
+  maxLength: number | undefined;
+};
+
 export function getSelectionCommentInputState({
+  isReadOnly = false,
   isSelectWidgetActive,
   selectedWidget,
   widgetTreeStatus,
   text,
   batchSize,
 }: {
+  isReadOnly?: boolean;
   isSelectWidgetActive: boolean;
   selectedWidget: SelectedWidgetTarget | null;
   widgetTreeStatus: 'loading' | 'loaded' | 'error';
@@ -19,6 +25,14 @@ export function getSelectionCommentInputState({
   batchSize: number;
 }): SelectionCommentInputState {
   const isTooLong = text.length > SELECTION_COMMENT_TEXT_LIMIT;
+
+  if (isReadOnly) {
+    return {
+      canAdd: false,
+      disabledReason: 'Read-only browser tabs cannot edit Selection Comments.',
+      isTooLong,
+    };
+  }
 
   if (!isSelectWidgetActive) {
     return {
@@ -76,5 +90,17 @@ export function getSelectionCommentInputState({
     canAdd: true,
     disabledReason: null,
     isTooLong,
+  };
+}
+
+/**
+ * Return DOM input constraints for Selection Comment textareas.
+ *
+ * The UI keeps over-limit text editable so the existing inline validation can
+ * explain why Add comment is disabled.
+ */
+export function getSelectionCommentTextareaInputPolicy(): SelectionCommentTextareaInputPolicy {
+  return {
+    maxLength: undefined,
   };
 }

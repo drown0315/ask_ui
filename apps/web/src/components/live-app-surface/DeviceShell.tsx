@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent } from 'react';
 import type { LiveAppSurfaceState } from '../../live-app-surface/liveAppSurfaceState';
+import type { SelectionCommentOverlayMarker } from '../../selection-comments/selectionCommentState';
 import {
   buildSystemKeyMessage,
   buildTouchMessage,
+  shouldSendDeviceControlMessage,
   type DeviceControlMessage,
   type DeviceSystemKey,
 } from '../../live-app-surface/deviceControlProtocol';
 import {
   calculateDeviceViewFit,
+  getSelectionMarkerPlacement,
   mapPointToDeviceCoordinates,
   type DeviceViewFit,
 } from '../../live-app-surface/deviceViewGeometry';
@@ -29,7 +32,11 @@ type DeviceShellProps = {
     LiveAppSurfaceState,
     { status: 'waitingForVideo' | 'renderingVideo' }
   >;
+  overlayMarkers?: SelectionCommentOverlayMarker[];
 };
+
+const SELECTION_MARKER_SIZE = 26;
+const SELECTION_MARKER_PADDING = 4;
 
 /**
  * Renders the interactive Device View and Android Surface Controls.
@@ -42,6 +49,7 @@ export function DeviceShell({
   isInputDisabled,
   onDeviceControlMessage,
   onDeviceVideoRendererChange,
+  overlayMarkers = [],
   surfaceState,
 }: DeviceShellProps) {
   const areaRef = useRef<HTMLDivElement | null>(null);
@@ -142,7 +150,13 @@ export function DeviceShell({
     action: 'down' | 'move' | 'up' | 'cancel',
     event: PointerEvent<HTMLDivElement>,
   ) => {
-    if (isInputDisabled || !fit || !metadata.controlReady) {
+    if (
+      !shouldSendDeviceControlMessage({
+        isInputDisabled,
+        controlReady: metadata.controlReady,
+      }) ||
+      !fit
+    ) {
       return;
     }
 
@@ -218,7 +232,12 @@ export function DeviceShell({
   };
 
   const sendSystemKey = (key: DeviceSystemKey) => {
-    if (isInputDisabled) {
+    if (
+      !shouldSendDeviceControlMessage({
+        isInputDisabled,
+        controlReady: metadata.controlReady,
+      })
+    ) {
       return;
     }
 
@@ -250,6 +269,30 @@ export function DeviceShell({
               className="device-view-canvas"
               ref={setCanvasElement}
             />
+            {overlayMarkers.length > 0 ? (
+              <div
+                aria-label="Selection Comment markers"
+                className="selection-marker-layer"
+              >
+                {getRenderableSelectionMarkers(overlayMarkers, fit).map(
+                  ({ marker, placement }) => (
+                    <div
+                      className="selection-marker"
+                      key={marker.id}
+                      style={{
+                        height: `${SELECTION_MARKER_SIZE}px`,
+                        left: `${placement.left}px`,
+                        top: `${placement.top}px`,
+                        width: `${SELECTION_MARKER_SIZE}px`,
+                      }}
+                      title={marker.widgetLabel}
+                    >
+                      {marker.number}
+                    </div>
+                  ),
+                )}
+              </div>
+            ) : null}
             {surfaceState.status === 'waitingForVideo' ? (
               <>
                 <div className="device-view-status">Waiting for video</div>
@@ -262,7 +305,12 @@ export function DeviceShell({
       <div className="surface-controls">
         <button
           aria-label="Back"
-          disabled={isInputDisabled || !metadata.controlReady}
+          disabled={
+            !shouldSendDeviceControlMessage({
+              isInputDisabled,
+              controlReady: metadata.controlReady,
+            })
+          }
           onClick={() => sendSystemKey('back')}
           title="Back"
           type="button"
@@ -271,7 +319,12 @@ export function DeviceShell({
         </button>
         <button
           aria-label="Home"
-          disabled={isInputDisabled || !metadata.controlReady}
+          disabled={
+            !shouldSendDeviceControlMessage({
+              isInputDisabled,
+              controlReady: metadata.controlReady,
+            })
+          }
           onClick={() => sendSystemKey('home')}
           title="Home"
           type="button"
@@ -280,7 +333,12 @@ export function DeviceShell({
         </button>
         <button
           aria-label="Recents"
-          disabled={isInputDisabled || !metadata.controlReady}
+          disabled={
+            !shouldSendDeviceControlMessage({
+              isInputDisabled,
+              controlReady: metadata.controlReady,
+            })
+          }
           onClick={() => sendSystemKey('recents')}
           title="Recents"
           type="button"
@@ -290,4 +348,27 @@ export function DeviceShell({
       </div>
     </div>
   );
+}
+
+function getRenderableSelectionMarkers(
+  overlayMarkers: SelectionCommentOverlayMarker[],
+  fit: DeviceViewFit,
+) {
+  const markerCountsByWidgetId = new Map<string, number>();
+
+  return overlayMarkers.map((marker) => {
+    const markerIndexForWidget = markerCountsByWidgetId.get(marker.widgetId) ?? 0;
+    markerCountsByWidgetId.set(marker.widgetId, markerIndexForWidget + 1);
+
+    return {
+      marker,
+      placement: getSelectionMarkerPlacement({
+        bounds: marker.bounds,
+        fit,
+        markerIndexForWidget,
+        markerSize: SELECTION_MARKER_SIZE,
+        padding: SELECTION_MARKER_PADDING,
+      }),
+    };
+  });
 }

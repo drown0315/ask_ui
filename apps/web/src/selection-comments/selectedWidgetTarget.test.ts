@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  getLocatableWidgetBoundsById,
   getLocatableWidgetIds,
   getSelectedWidgetTarget,
 } from './selectionCommentState.ts';
@@ -59,6 +60,67 @@ test('collects locatable widget ids from the current Widget Tree', () => {
   assert.deepEqual(
     getLocatableWidgetIds(root),
     new Set(['root', 'button', 'column', 'text']),
+  );
+});
+
+test('collects only valid widget bounds from the current Widget Tree', () => {
+  const root = {
+    id: 'root',
+    label: 'MaterialApp',
+    bounds: {
+      x: 0,
+      y: 0,
+      width: 300,
+      height: 600,
+    },
+    children: [
+      {
+        id: 'button',
+        label: 'PrimaryButton',
+        bounds: {
+          x: 20,
+          y: 40,
+          width: 120,
+          height: 44,
+        },
+        children: [],
+      },
+      {
+        id: 'stale',
+        label: 'StaleWidget',
+        bounds: {
+          x: 10,
+          y: 10,
+          width: 0,
+          height: 20,
+        },
+        children: [],
+      },
+    ],
+  } satisfies WidgetTreeNode;
+
+  assert.deepEqual(
+    getLocatableWidgetBoundsById(root),
+    new Map([
+      [
+        'root',
+        {
+          x: 0,
+          y: 0,
+          width: 300,
+          height: 600,
+        },
+      ],
+      [
+        'button',
+        {
+          x: 20,
+          y: 40,
+          width: 120,
+          height: 44,
+        },
+      ],
+    ]),
   );
 });
 

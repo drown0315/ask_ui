@@ -3,6 +3,7 @@ import type {
   SelectionCommentOverlayMarker,
   SelectionCommentState,
 } from './selectionCommentTypes.ts';
+import type { WidgetBounds } from '../types/bridgeSession.ts';
 
 export function getSelectionCommentAttachmentTokens(
   state: SelectionCommentState,
@@ -19,11 +20,11 @@ export function getSelectionCommentAttachmentTokens(
 
 export function getSelectionCommentOverlayMarkers({
   isSelectWidgetActive,
-  locatableWidgetIds,
+  locatableWidgetBoundsById,
   state,
 }: {
   isSelectWidgetActive: boolean;
-  locatableWidgetIds: ReadonlySet<string>;
+  locatableWidgetBoundsById: ReadonlyMap<string, WidgetBounds>;
   state: SelectionCommentState;
 }): SelectionCommentOverlayMarker[] {
   if (!isSelectWidgetActive) {
@@ -31,11 +32,19 @@ export function getSelectionCommentOverlayMarkers({
   }
 
   return state.comments
-    .map((comment, index) => ({
-      id: comment.id,
-      number: index + 1,
-      widgetId: comment.widgetId,
-      widgetLabel: comment.widgetLabel,
-    }))
-    .filter((marker) => locatableWidgetIds.has(marker.widgetId));
+    .map((comment, index) => {
+      const bounds = locatableWidgetBoundsById.get(comment.widgetId);
+      if (bounds === undefined) {
+        return null;
+      }
+
+      return {
+        id: comment.id,
+        number: index + 1,
+        widgetId: comment.widgetId,
+        widgetLabel: comment.widgetLabel,
+        bounds,
+      };
+    })
+    .filter((marker) => marker !== null);
 }

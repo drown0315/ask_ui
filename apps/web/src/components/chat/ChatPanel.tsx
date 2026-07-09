@@ -24,6 +24,7 @@ export function ChatPanel({
   activeSelectionCommentId,
   attachmentTokens,
   chatSessionState,
+  isReadOnly,
   isSelectWidgetActive,
   onAttachmentTokenClick,
   onSelectionCommentStateChange,
@@ -36,6 +37,7 @@ export function ChatPanel({
   activeSelectionCommentId: string | null;
   attachmentTokens: SelectionCommentAttachmentToken[];
   chatSessionState: ChatSessionState;
+  isReadOnly: boolean;
   isSelectWidgetActive: boolean;
   onAttachmentTokenClick: (token: SelectionCommentAttachmentToken) => void;
   onSelectionCommentStateChange: Dispatch<SetStateAction<SelectionCommentState>>;
@@ -49,6 +51,7 @@ export function ChatPanel({
   const selectionComments = useSelectionCommentPanelFlow({
     activeSelectionCommentId,
     attachmentTokens,
+    isReadOnly,
     isSelectWidgetActive,
     onSelectionCommentStateChange,
     selectedWidget,

@@ -6,6 +6,7 @@ import {
   buildTouchMessage,
   deviceSystemKeys,
   deviceTouchActions,
+  shouldSendDeviceControlMessage,
 } from './deviceControlProtocol.ts';
 
 test('builds touch messages with centralized action values', () => {
@@ -52,4 +53,28 @@ test('builds system key messages with centralized key values', () => {
     type: 'systemKey',
     key: 'recents',
   });
+});
+
+test('blocks Device control messages in read-only browser tabs', () => {
+  assert.equal(
+    shouldSendDeviceControlMessage({
+      isInputDisabled: true,
+      controlReady: true,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldSendDeviceControlMessage({
+      isInputDisabled: false,
+      controlReady: false,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldSendDeviceControlMessage({
+      isInputDisabled: false,
+      controlReady: true,
+    }),
+    true,
+  );
 });

@@ -1,4 +1,4 @@
-import { SELECTION_COMMENT_TEXT_LIMIT } from '../../selection-comments/selectionCommentState';
+import { getSelectionCommentTextareaInputPolicy } from '../../selection-comments/selectionCommentState';
 import type { useSelectionCommentPanelFlow } from './useSelectionCommentPanelFlow';
 
 type SelectionCommentPanelFlow = ReturnType<
@@ -15,6 +15,7 @@ export function SelectedWidgetSection({
   title: string;
 }) {
   const panelTarget = selectionComments.panelTarget;
+  const inputPolicy = getSelectionCommentTextareaInputPolicy();
 
   return (
     <section className="selected-widget-card" aria-labelledby="selected-widget-title">
@@ -61,7 +62,8 @@ export function SelectedWidgetSection({
                   <textarea
                     aria-label={`Selection Comment ${comment.number}`}
                     className="selection-comment-edit"
-                    maxLength={SELECTION_COMMENT_TEXT_LIMIT}
+                    disabled={selectionComments.isReadOnly}
+                    maxLength={inputPolicy.maxLength}
                     onChange={(event) => {
                       selectionComments.handleSelectionCommentTextChange(
                         comment.id,
@@ -74,6 +76,7 @@ export function SelectedWidgetSection({
                   <button
                     aria-label={`Delete Selection Comment ${comment.number}`}
                     className="selection-comment-delete"
+                    disabled={selectionComments.isReadOnly}
                     onClick={() =>
                       selectionComments.handleDeleteSelectionComment(comment.id)
                     }
@@ -90,8 +93,8 @@ export function SelectedWidgetSection({
             <textarea
               aria-label="Selection Comment"
               className="selection-comment-input"
-              disabled={panelTarget === null}
-              maxLength={SELECTION_COMMENT_TEXT_LIMIT}
+              disabled={panelTarget === null || selectionComments.isReadOnly}
+              maxLength={inputPolicy.maxLength}
               onChange={(event) => {
                 selectionComments.handleSelectionCommentDraftChange(
                   event.currentTarget.value,

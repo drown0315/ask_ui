@@ -24,6 +24,26 @@ export type DeviceCoordinates = {
   y: number;
 };
 
+export type DeviceBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type SelectionMarkerPlacementInput = {
+  bounds: DeviceBounds;
+  fit: DeviceViewFit;
+  markerIndexForWidget: number;
+  markerSize: number;
+  padding: number;
+};
+
+export type SelectionMarkerPlacement = {
+  left: number;
+  top: number;
+};
+
 /**
  * Fit bridge-reported device metadata inside the available UI area.
  *
@@ -73,4 +93,52 @@ export function mapPointToDeviceCoordinates({
     x: localX / fit.scale,
     y: localY / fit.scale,
   };
+}
+
+export function getSelectionMarkerPlacement({
+  bounds,
+  fit,
+  markerIndexForWidget,
+  markerSize,
+  padding,
+}: SelectionMarkerPlacementInput): SelectionMarkerPlacement {
+  const rect = {
+    left: bounds.x * fit.scale,
+    top: bounds.y * fit.scale,
+    width: bounds.width * fit.scale,
+    height: bounds.height * fit.scale,
+  };
+  const rectRight = rect.left + rect.width;
+  const rectBottom = rect.top + rect.height;
+  const markerOffset = markerIndexForWidget * (markerSize + padding);
+
+  const preferredLeft = rectRight - markerSize - padding - markerOffset;
+  const preferredTop = rect.top + padding;
+  const centeredLeft = rect.left + (rect.width - markerSize) / 2;
+  const centeredTop = rect.top + (rect.height - markerSize) / 2;
+
+  return {
+    left: Math.round(
+      clamp(
+        rect.width >= markerSize + padding * 2 ? preferredLeft : centeredLeft,
+        rect.left,
+        rectRight - markerSize,
+      ),
+    ),
+    top: Math.round(
+      clamp(
+        rect.height >= markerSize + padding * 2 ? preferredTop : centeredTop,
+        rect.top,
+        rectBottom - markerSize,
+      ),
+    ),
+  };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  if (min > max) {
+    return (min + max) / 2;
+  }
+
+  return Math.min(Math.max(value, min), max);
 }

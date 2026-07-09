@@ -11,6 +11,10 @@ export type ChatComposerState = {
   isTooLong: boolean;
 };
 
+export type ChatComposerTextareaInputPolicy = {
+  maxLength: number | undefined;
+};
+
 /**
  * Derive Chat composer sendability from Chat session state and attachments.
  *
@@ -80,6 +84,18 @@ export function getChatComposerState(
     canSend: true,
     disabledReason: null,
     isTooLong,
+  };
+}
+
+/**
+ * Return DOM input constraints for the Chat composer textarea.
+ *
+ * The composer intentionally does not set `maxLength`: over-limit text must
+ * remain in local state so inline validation can explain why Send is disabled.
+ */
+export function getChatComposerTextareaInputPolicy(): ChatComposerTextareaInputPolicy {
+  return {
+    maxLength: undefined,
   };
 }
 

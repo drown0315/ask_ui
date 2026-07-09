@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  getSelectionCommentTextareaInputPolicy,
   getSelectionCommentInputState,
   SELECTION_COMMENT_BATCH_LIMIT,
   SELECTION_COMMENT_TEXT_LIMIT,
@@ -52,6 +53,24 @@ test('enables Add comment only with Select Widget mode and reliable selected wid
       batchSize: 0,
     }).disabledReason,
     'Select a widget with a reliable label.',
+  );
+});
+
+test('disables Selection Comment authoring in read-only browser tabs', () => {
+  assert.deepEqual(
+    getSelectionCommentInputState({
+      isReadOnly: true,
+      isSelectWidgetActive: true,
+      selectedWidget: target,
+      widgetTreeStatus: 'loaded',
+      text: 'Make this primary.',
+      batchSize: 0,
+    }),
+    {
+      canAdd: false,
+      disabledReason: 'Read-only browser tabs cannot edit Selection Comments.',
+      isTooLong: false,
+    },
   );
 });
 
@@ -107,4 +126,10 @@ test('validates Selection Comment text, batch limit, and Widget Tree failure', (
     }).disabledReason,
     'Widget Tree is unavailable.',
   );
+});
+
+test('lets Selection Comment text exceed the limit so inline validation can explain it', () => {
+  assert.deepEqual(getSelectionCommentTextareaInputPolicy(), {
+    maxLength: undefined,
+  });
 });
