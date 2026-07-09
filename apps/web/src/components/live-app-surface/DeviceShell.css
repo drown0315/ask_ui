@@ -59,6 +59,27 @@
   height: 100%;
 }
 
+.selection-marker-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.selection-marker {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: var(--vue-green);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.22);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+}
+
 .surface-controls {
   display: flex;
   align-items: center;

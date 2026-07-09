@@ -1,3 +1,5 @@
+import type { WidgetBounds } from '../types/bridgeSession.ts';
+
 export const SELECTION_COMMENT_TEXT_LIMIT = 1000;
 export const SELECTION_COMMENT_BATCH_LIMIT = 20;
 
@@ -150,7 +152,9 @@ export type SelectionCommentAttachmentToken = {
  * Numbered marker shown on the Live App Surface for a locatable comment.
  *
  * Markers are derived from staged comments while Select Widget mode is active.
- * They do not store geometry because placement belongs to the Live App Surface.
+ * They include current widget bounds so the Live App Surface can place the
+ * marker inside the selected widget highlight without persisting coordinates in
+ * the Selection Comment payload.
  *
  * Example:
  * A marker with number `2` and widget label `PrimaryButton` is shown only while
@@ -169,6 +173,9 @@ export type SelectionCommentOverlayMarker = {
 
   /** Widget label available for marker accessibility or debugging. */
   widgetLabel: string;
+
+  /** Current widget rectangle in device-screen coordinates. */
+  bounds: WidgetBounds;
 };
 
 /**

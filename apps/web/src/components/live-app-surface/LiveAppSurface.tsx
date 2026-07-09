@@ -45,24 +45,9 @@ export function LiveAppSurface({
             isInputDisabled={isInputDisabled}
             onDeviceControlMessage={onDeviceControlMessage}
             onDeviceVideoRendererChange={onDeviceVideoRendererChange}
+            overlayMarkers={overlayMarkers}
             surfaceState={surfaceState}
           />
-          {overlayMarkers.length > 0 ? (
-            <div
-              className="selection-marker-layer"
-              aria-label="Selection Comment markers"
-            >
-              {overlayMarkers.map((marker) => (
-                <div
-                  className="selection-marker"
-                  key={marker.id}
-                  title={marker.widgetLabel}
-                >
-                  {marker.number}
-                </div>
-              ))}
-            </div>
-          ) : null}
         </div>
       ) : surfaceState.status === 'waitingForVideo' ? (
         <div className="live-app-surface-waiting-stack">

@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   getInitialSelectionCommentState,
+  getLocatableWidgetBoundsById,
   getLocatableWidgetIds,
   getSelectedWidgetTarget,
   getSelectionCommentAttachmentTokens,
@@ -45,6 +46,14 @@ export function useWorkbenchSelectionComments({
     return getLocatableWidgetIds(widgetTreeState.root);
   }, [widgetTreeState]);
 
+  const locatableWidgetBoundsById = useMemo(() => {
+    if (widgetTreeState.status !== 'loaded') {
+      return new Map();
+    }
+
+    return getLocatableWidgetBoundsById(widgetTreeState.root);
+  }, [widgetTreeState]);
+
   const attachmentTokens = useMemo(
     () =>
       getSelectionCommentAttachmentTokens(
@@ -58,10 +67,10 @@ export function useWorkbenchSelectionComments({
     () =>
       getSelectionCommentOverlayMarkers({
         isSelectWidgetActive,
-        locatableWidgetIds,
+        locatableWidgetBoundsById,
         state: selectionCommentState,
       }),
-    [isSelectWidgetActive, locatableWidgetIds, selectionCommentState],
+    [isSelectWidgetActive, locatableWidgetBoundsById, selectionCommentState],
   );
 
   const handleSelectedWidgetIdChange = useCallback((widgetId: string | null) => {

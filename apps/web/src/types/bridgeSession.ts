@@ -1,6 +1,14 @@
+export type WidgetBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export type WidgetTreeNode = {
   id: string;
   label: string;
+  bounds?: WidgetBounds;
   sourceLocation?: string;
   visibleText?: string;
   semanticInfo?: string;

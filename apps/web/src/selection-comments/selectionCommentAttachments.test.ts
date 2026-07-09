@@ -77,7 +77,17 @@ test('keeps unavailable Attachment Tokens sendable while hiding stale overlay ma
   assert.deepEqual(
     getSelectionCommentOverlayMarkers({
       isSelectWidgetActive: true,
-      locatableWidgetIds: new Set(['widget-1']),
+      locatableWidgetBoundsById: new Map([
+        [
+          'widget-1',
+          {
+            x: 10,
+            y: 20,
+            width: 100,
+            height: 40,
+          },
+        ],
+      ]),
       state,
     }),
     [
@@ -86,6 +96,59 @@ test('keeps unavailable Attachment Tokens sendable while hiding stale overlay ma
         number: 1,
         widgetId: 'widget-1',
         widgetLabel: 'PrimaryButton',
+        bounds: {
+          x: 10,
+          y: 20,
+          width: 100,
+          height: 40,
+        },
+      },
+    ],
+  );
+});
+
+test('includes widget bounds on overlay markers and hides markers without bounds', () => {
+  const otherTarget: SelectedWidgetTarget = {
+    id: 'widget-2',
+    displayLabel: 'SecondaryButton',
+  };
+  let state: SelectionCommentState = {
+    comments: [],
+    draftsByWidgetId: {},
+    nextCommentId: 1,
+  };
+
+  state = addSelectionComment(state, target, 'Place this on the button');
+  state = addSelectionComment(state, otherTarget, 'No bounds');
+
+  assert.deepEqual(
+    getSelectionCommentOverlayMarkers({
+      isSelectWidgetActive: true,
+      locatableWidgetBoundsById: new Map([
+        [
+          'widget-1',
+          {
+            x: 10,
+            y: 20,
+            width: 100,
+            height: 40,
+          },
+        ],
+      ]),
+      state,
+    }),
+    [
+      {
+        id: 'selection-comment-1',
+        number: 1,
+        widgetId: 'widget-1',
+        widgetLabel: 'PrimaryButton',
+        bounds: {
+          x: 10,
+          y: 20,
+          width: 100,
+          height: 40,
+        },
       },
     ],
   );
@@ -103,7 +166,17 @@ test('hides overlay markers while Select Widget mode is off without clearing sta
   assert.deepEqual(
     getSelectionCommentOverlayMarkers({
       isSelectWidgetActive: false,
-      locatableWidgetIds: new Set(['widget-1']),
+      locatableWidgetBoundsById: new Map([
+        [
+          'widget-1',
+          {
+            x: 10,
+            y: 20,
+            width: 100,
+            height: 40,
+          },
+        ],
+      ]),
       state,
     }),
     [],
