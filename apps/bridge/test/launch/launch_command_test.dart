@@ -32,6 +32,13 @@ void main() {
           '--no-open',
         ],
         listDevices: devices.listDevices,
+        appLauncher: _RecordingAppLauncher(
+          vmServiceUri: 'ws://127.0.0.1:12345/ws',
+        ),
+        bridgeLauncher: _RecordingBridgeLauncher(
+          bridgeUrl: Uri.parse('http://127.0.0.1:8787'),
+          sessionId: 'session-1',
+        ),
       );
 
       expect(result.exitCode, 0);
@@ -51,24 +58,187 @@ void main() {
           'projectRoot': '/workspace/app',
           'open': false,
         },
-        'flutterRunArguments': [
-          'run',
-          '--device-id',
-          'device-1',
-          '--flavor',
-          'staging',
-          '--target',
-          'lib/main_staging.dart',
-          '--dart-define',
-          'API_HOST=local',
-          '--dart-define',
-          'FEATURE_X=true',
-        ],
-        'nextStep': 'Launch Flutter app for selected device device-1.',
+        'bridgeUrl': 'http://127.0.0.1:8787',
+        'sessionId': 'session-1',
+        'vmServiceUri': 'ws://127.0.0.1:12345/ws',
+        'projectRoot': '/workspace/app',
+        'flavor': 'staging',
+        'target': 'lib/main_staging.dart',
+        'agentCommand':
+            'dart run ask_ui_bridge agent poll --base-url http://127.0.0.1:8787 --session-id session-1',
+        'nextStep': 'Run the returned agent poll command.',
       });
       expect(devices.calls, [
         ['devices', '--machine'],
       ]);
+    });
+
+    test('launches Flutter and creates a Bridge Session for a selected device',
+        () async {
+      final _FakeFlutterDevices devices = _FakeFlutterDevices([
+        {
+          'id': 'device-1',
+          'name': 'Pixel 6',
+          'targetPlatform': 'android-arm64',
+        },
+      ]);
+      final _RecordingAppLauncher appLauncher = _RecordingAppLauncher(
+        vmServiceUri: 'ws://127.0.0.1:44444/ws',
+      );
+      final _RecordingBridgeLauncher bridgeLauncher = _RecordingBridgeLauncher(
+        bridgeUrl: Uri.parse('http://127.0.0.1:9876'),
+        sessionId: 'session-7',
+      );
+
+      final LaunchCommandResult result = await runLaunchCommand(
+        const [
+          'launch',
+          '--device',
+          'device-1',
+          '--flavor',
+          'dev',
+          '--target',
+          'lib/main_dev.dart',
+          '--dart-define',
+          'API_HOST=local',
+          '--project-root',
+          '/workspace/app',
+        ],
+        listDevices: devices.listDevices,
+        appLauncher: appLauncher,
+        bridgeLauncher: bridgeLauncher,
+      );
+
+      expect(result.exitCode, 0);
+      expect(result.stderr, isEmpty);
+      expect(jsonDecode(result.stdout), {
+        'status': 'ready',
+        'selectedDevice': {
+          'id': 'device-1',
+          'name': 'Pixel 6',
+          'targetPlatform': 'android-arm64',
+        },
+        'launchIntent': {
+          'device': 'device-1',
+          'flavor': 'dev',
+          'target': 'lib/main_dev.dart',
+          'dartDefines': ['API_HOST=local'],
+          'projectRoot': '/workspace/app',
+          'open': true,
+        },
+        'bridgeUrl': 'http://127.0.0.1:9876',
+        'sessionId': 'session-7',
+        'vmServiceUri': 'ws://127.0.0.1:44444/ws',
+        'projectRoot': '/workspace/app',
+        'flavor': 'dev',
+        'target': 'lib/main_dev.dart',
+        'agentCommand':
+            'dart run ask_ui_bridge agent poll --base-url http://127.0.0.1:9876 --session-id session-7',
+        'nextStep': 'Run the returned agent poll command.',
+      });
+      expect(appLauncher.requests, hasLength(1));
+      expect(appLauncher.requests.single.projectRoot, '/workspace/app');
+      expect(appLauncher.requests.single.arguments, [
+        'run',
+        '--device-id',
+        'device-1',
+        '--flavor',
+        'dev',
+        '--target',
+        'lib/main_dev.dart',
+        '--dart-define',
+        'API_HOST=local',
+      ]);
+      expect(bridgeLauncher.requests, [
+        (
+          vmServiceUri: 'ws://127.0.0.1:44444/ws',
+          projectRoot: '/workspace/app',
+          deviceId: 'device-1',
+        ),
+      ]);
+    });
+
+    test('reports Flutter startup failures before session creation', () async {
+      final _FakeFlutterDevices devices = _FakeFlutterDevices([
+        {
+          'id': 'device-1',
+          'name': 'Pixel 6',
+          'targetPlatform': 'android-arm64',
+        },
+      ]);
+      final _FailingAppLauncher appLauncher = _FailingAppLauncher(
+        const LaunchAppException('flutter_run_failed'),
+      );
+      final _RecordingBridgeLauncher bridgeLauncher = _RecordingBridgeLauncher(
+        bridgeUrl: Uri.parse('http://127.0.0.1:9876'),
+        sessionId: 'session-7',
+      );
+
+      final LaunchCommandResult result = await runLaunchCommand(
+        const ['launch', '--device', 'device-1'],
+        listDevices: devices.listDevices,
+        appLauncher: appLauncher,
+        bridgeLauncher: bridgeLauncher,
+      );
+
+      expect(result.exitCode, 1);
+      expect(result.stdout, isEmpty);
+      expect(jsonDecode(result.stderr), {
+        'status': 'error',
+        'error': 'flutter_run_failed',
+      });
+      expect(bridgeLauncher.requests, isEmpty);
+    });
+
+    test('reports Bridge Session creation failures', () async {
+      final _FakeFlutterDevices devices = _FakeFlutterDevices([
+        {
+          'id': 'device-1',
+          'name': 'Pixel 6',
+          'targetPlatform': 'android-arm64',
+        },
+      ]);
+      final _RecordingAppLauncher appLauncher = _RecordingAppLauncher(
+        vmServiceUri: 'ws://127.0.0.1:44444/ws',
+      );
+      final _FailingBridgeLauncher bridgeLauncher = _FailingBridgeLauncher(
+        const LaunchBridgeException('session_creation_failed'),
+      );
+
+      final LaunchCommandResult result = await runLaunchCommand(
+        const ['launch', '--device', 'device-1'],
+        listDevices: devices.listDevices,
+        appLauncher: appLauncher,
+        bridgeLauncher: bridgeLauncher,
+      );
+
+      expect(result.exitCode, 1);
+      expect(result.stdout, isEmpty);
+      expect(jsonDecode(result.stderr), {
+        'status': 'error',
+        'error': 'session_creation_failed',
+      });
+    });
+
+    test('parses Flutter VM Service output into WebSocket URIs', () {
+      expect(
+        parseFlutterVmServiceUriFromOutput(
+          'A Dart VM Service is available at: '
+          'http://127.0.0.1:51234/abc_def=/',
+        ),
+        'ws://127.0.0.1:51234/abc_def=/ws',
+      );
+      expect(
+        parseFlutterVmServiceUriFromOutput(
+          'The Dart VM Service is listening on '
+          'ws://127.0.0.1:51234/abc_def=/ws',
+        ),
+        'ws://127.0.0.1:51234/abc_def=/ws',
+      );
+      expect(
+        parseFlutterVmServiceUriFromOutput('Build failed before service.'),
+        isNull,
+      );
     });
 
     test('returns one JSON error object when no usable devices exist',
@@ -90,6 +260,8 @@ void main() {
       final LaunchCommandResult result = await runLaunchCommand(
         const ['launch'],
         listDevices: devices.listDevices,
+        appLauncher: _FailingAppLauncher.unused(),
+        bridgeLauncher: _FailingBridgeLauncher.unused(),
       );
 
       expect(result.exitCode, 1);
@@ -129,6 +301,8 @@ void main() {
           '--no-open',
         ],
         listDevices: devices.listDevices,
+        appLauncher: _FailingAppLauncher.unused(),
+        bridgeLauncher: _FailingBridgeLauncher.unused(),
       );
 
       expect(result.exitCode, 0);
@@ -182,6 +356,13 @@ void main() {
       final LaunchCommandResult result = await runLaunchCommand(
         const ['launch', '--device', '19271FDF6007TY'],
         listDevices: devices.listDevices,
+        appLauncher: _RecordingAppLauncher(
+          vmServiceUri: 'ws://127.0.0.1:12345/ws',
+        ),
+        bridgeLauncher: _RecordingBridgeLauncher(
+          bridgeUrl: Uri.parse('http://127.0.0.1:8787'),
+          sessionId: 'session-1',
+        ),
       );
 
       expect(result.exitCode, 0);
@@ -210,10 +391,19 @@ void main() {
       final LaunchCommandResult named = await runLaunchCommand(
         const ['launch', '--device', 'Pixel 6'],
         listDevices: devices.listDevices,
+        appLauncher: _RecordingAppLauncher(
+          vmServiceUri: 'ws://127.0.0.1:12345/ws',
+        ),
+        bridgeLauncher: _RecordingBridgeLauncher(
+          bridgeUrl: Uri.parse('http://127.0.0.1:8787'),
+          sessionId: 'session-1',
+        ),
       );
       final LaunchCommandResult ambiguous = await runLaunchCommand(
         const ['launch', '--device', 'Pixel'],
         listDevices: devices.listDevices,
+        appLauncher: _FailingAppLauncher.unused(),
+        bridgeLauncher: _FailingBridgeLauncher.unused(),
       );
 
       expect(named.exitCode, 0);
@@ -229,6 +419,8 @@ void main() {
       final LaunchCommandResult result = await runLaunchCommand(
         const ['launch', '--flavor'],
         listDevices: devices.listDevices,
+        appLauncher: _FailingAppLauncher.unused(),
+        bridgeLauncher: _FailingBridgeLauncher.unused(),
       );
 
       expect(result.exitCode, 1);
@@ -263,6 +455,8 @@ void main() {
         listDevices: (executable, arguments) async {
           return ProcessResult(1, 0, '{"devices":[]}', '');
         },
+        appLauncher: _FailingAppLauncher.unused(),
+        bridgeLauncher: _FailingBridgeLauncher.unused(),
       );
 
       expect(result.exitCode, 1);
@@ -273,6 +467,91 @@ void main() {
       });
     });
   });
+}
+
+class _RecordingAppLauncher implements LaunchAppLauncher {
+  _RecordingAppLauncher({required this.vmServiceUri});
+
+  final String vmServiceUri;
+  final List<({List<String> arguments, String projectRoot})> requests =
+      <({List<String> arguments, String projectRoot})>[];
+
+  @override
+  Future<LaunchAppResult> launch({
+    required List<String> flutterRunArguments,
+    required String projectRoot,
+  }) async {
+    requests.add((
+      arguments: List<String>.from(flutterRunArguments),
+      projectRoot: projectRoot,
+    ));
+    return LaunchAppResult(vmServiceUri: vmServiceUri);
+  }
+}
+
+class _FailingAppLauncher implements LaunchAppLauncher {
+  const _FailingAppLauncher(this.exception);
+
+  const _FailingAppLauncher.unused()
+      : exception = const LaunchAppException('unexpected_app_launch');
+
+  final LaunchAppException exception;
+
+  @override
+  Future<LaunchAppResult> launch({
+    required List<String> flutterRunArguments,
+    required String projectRoot,
+  }) async {
+    throw exception;
+  }
+}
+
+class _RecordingBridgeLauncher implements LaunchBridgeLauncher {
+  _RecordingBridgeLauncher({
+    required this.bridgeUrl,
+    required this.sessionId,
+  });
+
+  final Uri bridgeUrl;
+  final String sessionId;
+  final List<({String vmServiceUri, String projectRoot, String deviceId})>
+      requests =
+      <({String vmServiceUri, String projectRoot, String deviceId})>[];
+
+  @override
+  Future<LaunchBridgeSession> createSession({
+    required String vmServiceUri,
+    required String projectRoot,
+    required String deviceId,
+  }) async {
+    requests.add((
+      vmServiceUri: vmServiceUri,
+      projectRoot: projectRoot,
+      deviceId: deviceId,
+    ));
+    return LaunchBridgeSession(
+      bridgeUrl: bridgeUrl,
+      sessionId: sessionId,
+    );
+  }
+}
+
+class _FailingBridgeLauncher implements LaunchBridgeLauncher {
+  const _FailingBridgeLauncher(this.exception);
+
+  const _FailingBridgeLauncher.unused()
+      : exception = const LaunchBridgeException('unexpected_bridge_launch');
+
+  final LaunchBridgeException exception;
+
+  @override
+  Future<LaunchBridgeSession> createSession({
+    required String vmServiceUri,
+    required String projectRoot,
+    required String deviceId,
+  }) async {
+    throw exception;
+  }
 }
 
 class _FakeFlutterDevices {

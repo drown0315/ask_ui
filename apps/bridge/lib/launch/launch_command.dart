@@ -1,10 +1,67 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
+
+import '../app_controller/flutter_app_controller.dart';
+import '../inspector/flutter_inspector_client.dart';
+import '../logging/bridge_logger.dart';
+import '../server/ask_ui_bridge_server.dart';
+import '../sessions/session_store.dart';
 
 typedef FlutterDevicesRunner = Future<ProcessResult> Function(
   String executable,
   List<String> arguments,
 );
+
+/// Starts the target Flutter app and returns the VM Service URI it exposes.
+abstract interface class LaunchAppLauncher {
+  Future<LaunchAppResult> launch({
+    required List<String> flutterRunArguments,
+    required String projectRoot,
+  });
+}
+
+/// VM Service details captured from a successful Flutter app startup.
+class LaunchAppResult {
+  const LaunchAppResult({required this.vmServiceUri});
+
+  final String vmServiceUri;
+}
+
+/// Normalized Flutter startup failure for launch command JSON output.
+class LaunchAppException implements Exception {
+  const LaunchAppException(this.code);
+
+  final String code;
+}
+
+/// Starts or reuses the local Bridge Server and creates a Bridge Session.
+abstract interface class LaunchBridgeLauncher {
+  Future<LaunchBridgeSession> createSession({
+    required String vmServiceUri,
+    required String projectRoot,
+    required String deviceId,
+  });
+}
+
+/// Bridge Session connection details returned to the launcher.
+class LaunchBridgeSession {
+  const LaunchBridgeSession({
+    required this.bridgeUrl,
+    required this.sessionId,
+  });
+
+  final Uri bridgeUrl;
+  final String sessionId;
+}
+
+/// Normalized Bridge startup/session failure for launch command JSON output.
+class LaunchBridgeException implements Exception {
+  const LaunchBridgeException(this.code);
+
+  final String code;
+}
 
 /// Result returned by the launch command runner.
 ///
@@ -30,6 +87,8 @@ class LaunchCommandResult {
 Future<LaunchCommandResult> runLaunchCommand(
   List<String> args, {
   FlutterDevicesRunner listDevices = Process.run,
+  LaunchAppLauncher? appLauncher,
+  LaunchBridgeLauncher? bridgeLauncher,
 }) async {
   late final _LaunchOptions options;
   try {
@@ -56,7 +115,12 @@ Future<LaunchCommandResult> runLaunchCommand(
     options.requestedDevice,
   );
   if (matchingDevices.length == 1) {
-    return _LaunchOutput.ready(options, matchingDevices.single);
+    return _launchSelectedDevice(
+      options: options,
+      selectedDevice: matchingDevices.single,
+      appLauncher: appLauncher ?? const _FlutterRunAppLauncher(),
+      bridgeLauncher: bridgeLauncher ?? _LocalBridgeLauncher(),
+    );
   }
 
   if (options.requestedDevice != null && matchingDevices.isEmpty) {
@@ -64,12 +128,55 @@ Future<LaunchCommandResult> runLaunchCommand(
   }
 
   if (usableDevices.length == 1 && options.requestedDevice == null) {
-    return _LaunchOutput.ready(options, usableDevices.single);
+    return _launchSelectedDevice(
+      options: options,
+      selectedDevice: usableDevices.single,
+      appLauncher: appLauncher ?? const _FlutterRunAppLauncher(),
+      bridgeLauncher: bridgeLauncher ?? _LocalBridgeLauncher(),
+    );
   }
 
   return _LaunchOutput.needsDeviceSelection(
     options,
     matchingDevices.isEmpty ? usableDevices : matchingDevices,
+  );
+}
+
+Future<LaunchCommandResult> _launchSelectedDevice({
+  required _LaunchOptions options,
+  required _LaunchDevice selectedDevice,
+  required LaunchAppLauncher appLauncher,
+  required LaunchBridgeLauncher bridgeLauncher,
+}) async {
+  final String projectRoot =
+      options.projectRoot ?? Directory.current.absolute.path;
+  late final LaunchAppResult appResult;
+  try {
+    appResult = await appLauncher.launch(
+      flutterRunArguments: options.flutterRunArguments(selectedDevice.id),
+      projectRoot: projectRoot,
+    );
+  } on LaunchAppException catch (error) {
+    return _LaunchOutput.failure(error.code);
+  }
+
+  late final LaunchBridgeSession bridgeSession;
+  try {
+    bridgeSession = await bridgeLauncher.createSession(
+      vmServiceUri: appResult.vmServiceUri,
+      projectRoot: projectRoot,
+      deviceId: selectedDevice.id,
+    );
+  } on LaunchBridgeException catch (error) {
+    return _LaunchOutput.failure(error.code);
+  }
+
+  return _LaunchOutput.ready(
+    options: options,
+    selectedDevice: selectedDevice,
+    appResult: appResult,
+    bridgeSession: bridgeSession,
+    projectRoot: projectRoot,
   );
 }
 
@@ -260,6 +367,181 @@ class _FlutterDeviceDiscovery {
   }
 }
 
+class _FlutterRunAppLauncher implements LaunchAppLauncher {
+  const _FlutterRunAppLauncher();
+
+  @override
+  Future<LaunchAppResult> launch({
+    required List<String> flutterRunArguments,
+    required String projectRoot,
+  }) async {
+    late final Process process;
+    try {
+      process = await Process.start(
+        'flutter',
+        flutterRunArguments,
+        workingDirectory: projectRoot,
+      );
+    } catch (_) {
+      throw const LaunchAppException('flutter_run_failed');
+    }
+
+    final Completer<LaunchAppResult> vmServiceCompleter =
+        Completer<LaunchAppResult>();
+    final StringBuffer startupOutput = StringBuffer();
+
+    void observeOutput(List<int> data) {
+      final String text = utf8.decode(data, allowMalformed: true);
+      startupOutput.write(text);
+      final String? vmServiceUri =
+          parseFlutterVmServiceUriFromOutput(startupOutput.toString());
+      if (vmServiceUri != null && !vmServiceCompleter.isCompleted) {
+        vmServiceCompleter
+            .complete(LaunchAppResult(vmServiceUri: vmServiceUri));
+      }
+    }
+
+    process.stdout.listen(observeOutput);
+    process.stderr.listen(observeOutput);
+    process.exitCode.then((int exitCode) {
+      if (!vmServiceCompleter.isCompleted) {
+        vmServiceCompleter.completeError(
+          const LaunchAppException('flutter_run_failed'),
+        );
+      }
+    });
+
+    try {
+      return await vmServiceCompleter.future.timeout(
+        const Duration(minutes: 2),
+      );
+    } on LaunchAppException {
+      rethrow;
+    } on TimeoutException {
+      process.kill();
+      throw const LaunchAppException('flutter_vm_service_not_found');
+    } catch (_) {
+      throw const LaunchAppException('flutter_run_failed');
+    }
+  }
+}
+
+/// Extract the VM Service WebSocket URI from Flutter startup output.
+///
+/// Flutter commonly prints an HTTP service URI ending in the auth-code path,
+/// while the existing Bridge Session contract stores the WebSocket URI. Already
+/// normalized `ws` and `wss` URIs are returned unchanged.
+String? parseFlutterVmServiceUriFromOutput(String output) {
+  final RegExp uriPattern = RegExp(r'(wss?|https?)://[^\s]+');
+  for (final RegExpMatch match in uriPattern.allMatches(output)) {
+    final String rawUri = match.group(0)!.replaceFirst(RegExp(r'[),.;]+$'), '');
+    final Uri? uri = Uri.tryParse(rawUri);
+    if (uri == null || uri.host.isEmpty) {
+      continue;
+    }
+    if (uri.scheme == 'ws' || uri.scheme == 'wss') {
+      return uri.toString();
+    }
+    if (uri.scheme == 'http' || uri.scheme == 'https') {
+      final String websocketScheme = uri.scheme == 'https' ? 'wss' : 'ws';
+      final String normalizedPath = uri.path.endsWith('/ws')
+          ? uri.path
+          : '${uri.path.endsWith('/') ? uri.path : '${uri.path}/'}ws';
+      return uri
+          .replace(
+            scheme: websocketScheme,
+            path: normalizedPath,
+          )
+          .toString();
+    }
+  }
+
+  return null;
+}
+
+class _LocalBridgeLauncher implements LaunchBridgeLauncher {
+  _LocalBridgeLauncher({HttpClient? httpClient})
+      : _httpClient = httpClient ?? HttpClient();
+
+  final HttpClient _httpClient;
+  AskUiBridgeServer? _server;
+
+  @override
+  Future<LaunchBridgeSession> createSession({
+    required String vmServiceUri,
+    required String projectRoot,
+    required String deviceId,
+  }) async {
+    final Uri bridgeUrl = await _startOrReuseServer();
+    final Uri sessionUri = bridgeUrl.resolve('/api/sessions');
+
+    try {
+      final HttpClientRequest request = await _httpClient.postUrl(sessionUri);
+      request.headers.contentType = ContentType.json;
+      request.write(
+        jsonEncode({
+          'vmServiceUri': vmServiceUri,
+          'projectRoot': projectRoot,
+          'deviceId': deviceId,
+        }),
+      );
+      final HttpClientResponse response = await request.close();
+      final String responseBody = await utf8.decodeStream(response);
+      final Object? decoded = jsonDecode(responseBody);
+      if (decoded is! Map<String, Object?>) {
+        throw const FormatException('Expected session JSON object');
+      }
+      if (response.statusCode != HttpStatus.ok) {
+        throw const LaunchBridgeException('session_creation_failed');
+      }
+      final Object? sessionId = decoded['sessionId'];
+      if (sessionId is! String || sessionId.trim().isEmpty) {
+        throw const LaunchBridgeException('session_creation_failed');
+      }
+      return LaunchBridgeSession(
+        bridgeUrl: bridgeUrl,
+        sessionId: sessionId,
+      );
+    } on LaunchBridgeException {
+      rethrow;
+    } catch (_) {
+      throw const LaunchBridgeException('session_creation_failed');
+    }
+  }
+
+  Future<Uri> _startOrReuseServer() async {
+    final Uri bridgeUrl = Uri.parse('http://127.0.0.1:8787');
+    if (_server != null) {
+      return bridgeUrl;
+    }
+
+    final BridgeLogger logger = BridgeLogger(write: stderr.writeln);
+    final Directory packagedWebRoot = await _resolvePackagedWebRoot();
+    final AskUiBridgeServer server = AskUiBridgeServer(
+      sessionStore: SessionStore(),
+      inspectorClient: VmServiceFlutterInspectorClient(
+        vmServiceFactory: VmServiceFactory(),
+      ),
+      appController: VmServiceFlutterAppController(
+        vmServiceFactory: VmServiceFactory(),
+        logger: logger,
+      ),
+      packagedWebRoot: packagedWebRoot,
+      logger: logger,
+    );
+
+    try {
+      await server.start(host: '127.0.0.1', port: 8787);
+      _server = server;
+      return bridgeUrl;
+    } on SocketException {
+      return bridgeUrl;
+    } catch (_) {
+      throw const LaunchBridgeException('bridge_start_failed');
+    }
+  }
+}
+
 class _LaunchDevice {
   const _LaunchDevice({
     required this.id,
@@ -309,19 +591,38 @@ class _LaunchDevice {
 class _LaunchOutput {
   _LaunchOutput._();
 
-  static LaunchCommandResult ready(
-    _LaunchOptions options,
-    _LaunchDevice selectedDevice,
-  ) {
+  static LaunchCommandResult ready({
+    required _LaunchOptions options,
+    required _LaunchDevice selectedDevice,
+    required LaunchAppResult appResult,
+    required LaunchBridgeSession bridgeSession,
+    required String projectRoot,
+  }) {
+    final String agentCommand = _commandString([
+      'dart',
+      'run',
+      'ask_ui_bridge',
+      'agent',
+      'poll',
+      '--base-url',
+      bridgeSession.bridgeUrl.toString(),
+      '--session-id',
+      bridgeSession.sessionId,
+    ]);
     return LaunchCommandResult(
       exitCode: 0,
       stdout: jsonEncode({
         'status': 'ready',
         'selectedDevice': selectedDevice.toJson(),
         'launchIntent': options.toJson(),
-        'flutterRunArguments': options.flutterRunArguments(selectedDevice.id),
-        'nextStep':
-            'Launch Flutter app for selected device ${selectedDevice.id}.',
+        'bridgeUrl': bridgeSession.bridgeUrl.toString(),
+        'sessionId': bridgeSession.sessionId,
+        'vmServiceUri': appResult.vmServiceUri,
+        'projectRoot': projectRoot,
+        'flavor': options.flavor,
+        'target': options.target,
+        'agentCommand': agentCommand,
+        'nextStep': 'Run the returned agent poll command.',
       }),
     );
   }
@@ -387,4 +688,15 @@ class _LaunchValidationError implements Exception {
 
 class _DeviceDiscoveryException implements Exception {
   const _DeviceDiscoveryException();
+}
+
+Future<Directory> _resolvePackagedWebRoot() async {
+  final Uri? serverLibraryUri = await Isolate.resolvePackageUri(
+    Uri.parse('package:ask_ui_bridge/server/ask_ui_bridge_server.dart'),
+  );
+  if (serverLibraryUri == null) {
+    return Directory('web');
+  }
+
+  return Directory.fromUri(serverLibraryUri.resolve('../../web'));
 }
