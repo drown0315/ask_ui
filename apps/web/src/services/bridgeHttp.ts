@@ -37,9 +37,17 @@ export async function parseBridgeJsonResponse<T>(
   }
 }
 
-export const bridgeOrigin = resolveBridgeOrigin(
+export let bridgeOrigin = resolveBridgeOrigin(
   import.meta.env?.VITE_ASK_UI_BRIDGE_ORIGIN,
 );
+
+export function setBridgeOriginOverride(origin: string): void {
+  bridgeOrigin = resolveBridgeOrigin(origin);
+}
+
+export function resetBridgeOriginOverride(): void {
+  bridgeOrigin = resolveBridgeOrigin(import.meta.env?.VITE_ASK_UI_BRIDGE_ORIGIN);
+}
 
 export function bridgeRequestError(
   body: { error?: string; message?: string },

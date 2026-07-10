@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import { createBridgeSession } from '../services/askUiBridgeClient';
+import {
+  resetBridgeOriginOverride,
+  setBridgeOriginOverride,
+} from '../services/bridgeHttp';
 import type { BridgeSessionState } from '../types/bridgeSession';
 import { readSessionBootstrap } from './sessionBootstrap';
 
@@ -7,12 +11,28 @@ function initialBridgeSessionState(locationHref: string): BridgeSessionState {
   const bootstrap = readSessionBootstrap(locationHref);
 
   if (bootstrap.status === 'incomplete') {
+    if (bootstrap.mode === 'create') {
+      resetBridgeOriginOverride();
+    }
     return {
       status: 'incomplete',
       missing: bootstrap.missing,
     };
   }
 
+  if (bootstrap.mode === 'attach') {
+    setBridgeOriginOverride(bootstrap.bridgeUrl);
+    return {
+      status: 'ready',
+      sessionId: bootstrap.sessionId,
+      projectRoot: bootstrap.projectRoot ?? '',
+      targetDeviceId: bootstrap.deviceId,
+      clientId: getBridgeClientId(),
+      readOnly: false,
+    };
+  }
+
+  resetBridgeOriginOverride();
   return {
     status: 'creating',
   };
@@ -61,6 +81,9 @@ export function useBridgeSession(locationHref: string): {
     let isCurrent = true;
 
     if (bootstrap.status === 'incomplete') {
+      if (bootstrap.mode === 'create') {
+        resetBridgeOriginOverride();
+      }
       setBridgeSessionState({
         status: 'incomplete',
         missing: bootstrap.missing,
@@ -68,6 +91,20 @@ export function useBridgeSession(locationHref: string): {
       return;
     }
 
+    if (bootstrap.mode === 'attach') {
+      setBridgeOriginOverride(bootstrap.bridgeUrl);
+      setBridgeSessionState({
+        status: 'ready',
+        sessionId: bootstrap.sessionId,
+        projectRoot: bootstrap.projectRoot ?? '',
+        targetDeviceId: bootstrap.deviceId,
+        clientId: getBridgeClientId(),
+        readOnly: false,
+      });
+      return;
+    }
+
+    resetBridgeOriginOverride();
     setBridgeSessionState({ status: 'creating' });
     const clientId = getBridgeClientId();
 

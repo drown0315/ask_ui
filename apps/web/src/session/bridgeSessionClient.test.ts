@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { BridgeRequestError } from '../services/bridgeHttp.ts';
+ import {
+  resetBridgeOriginOverride,
+  setBridgeOriginOverride,
+} from '../services/bridgeHttp.ts';
 import { createBridgeSession } from './bridgeSessionClient.ts';
 import { getDeviceWebSocketUrl } from './deviceBridgeUrl.ts';
 
@@ -34,8 +38,10 @@ test('can request fixture video on the device WebSocket URL', () => {
 
 test('creates bridge session with target device id', async () => {
   const requestedBodies: unknown[] = [];
+  const requestedUrls: string[] = [];
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (_input, init) => {
+  globalThis.fetch = async (input, init) => {
+    requestedUrls.push(String(input));
     requestedBodies.push(JSON.parse(String(init?.body)));
     return new Response(
       JSON.stringify({
@@ -62,6 +68,9 @@ test('creates bridge session with target device id', async () => {
         deviceId: '19271FDF6007TY',
       },
     ]);
+    assert.deepEqual(requestedUrls, [
+      'http://127.0.0.1:8787/api/sessions',
+    ]);
     assert.deepEqual(result, {
       sessionId: 'session-1',
       targetDevice: {
@@ -72,6 +81,36 @@ test('creates bridge session with target device id', async () => {
     });
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test('creates bridge session through the runtime bridge origin override', async () => {
+  const requestedUrls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  resetBridgeOriginOverride();
+  setBridgeOriginOverride('http://127.0.0.1:9000');
+  globalThis.fetch = async (input) => {
+    requestedUrls.push(String(input));
+    return new Response(
+      JSON.stringify({
+        sessionId: 'session-1',
+      }),
+    );
+  };
+
+  try {
+    await createBridgeSession({
+      vmServiceUri: 'ws://127.0.0.1:12345/ws',
+      projectRoot: '/Users/example/app',
+      deviceId: '19271FDF6007TY',
+    });
+
+    assert.deepEqual(requestedUrls, [
+      'http://127.0.0.1:9000/api/sessions',
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    resetBridgeOriginOverride();
   }
 });
 

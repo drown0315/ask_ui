@@ -74,3 +74,18 @@ test('falls back to the target device id when display name is missing', () => {
     },
   );
 });
+
+test('describes an attached session without Target Device metadata', () => {
+  assert.deepEqual(
+    getTargetDeviceDisplay({
+      status: 'ready',
+      sessionId: 'session-1',
+    }),
+    {
+      topBarLabel: 'Attached session',
+      surfaceLabel: 'Attached session',
+      title: 'Attached bridge session',
+      status: 'ready',
+    },
+  );
+});
