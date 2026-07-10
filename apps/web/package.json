@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run typecheck && vite build",
+    "build:bridge": "npm run build && node scripts/copy-dist-to-bridge.mjs",
     "lint": "eslint . --max-warnings 0",
-    "test": "node --test \"src/**/*.test.ts\"",
+    "test": "node --test \"src/**/*.test.ts\" \"scripts/**/*.test.mjs\"",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview"
   },

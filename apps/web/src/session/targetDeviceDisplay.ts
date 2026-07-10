@@ -58,19 +58,30 @@ export function getTargetDeviceDisplay(
   }
 
   const displayName = state.targetDeviceDisplayName?.trim() ?? '';
+  const targetDeviceId = state.targetDeviceId?.trim() ?? '';
+
+  if (!targetDeviceId) {
+    return {
+      topBarLabel: 'Attached session',
+      surfaceLabel: 'Attached session',
+      title: 'Attached bridge session',
+      status: 'ready',
+    };
+  }
+
   if (displayName) {
     return {
       topBarLabel: displayName,
-      surfaceLabel: state.targetDeviceId,
-      title: `${displayName} (${state.targetDeviceId})`,
+      surfaceLabel: targetDeviceId,
+      title: `${displayName} (${targetDeviceId})`,
       status: 'ready',
     };
   }
 
   return {
-    topBarLabel: `Device ${state.targetDeviceId}`,
-    surfaceLabel: state.targetDeviceId,
-    title: state.targetDeviceId,
+    topBarLabel: `Device ${targetDeviceId}`,
+    surfaceLabel: targetDeviceId,
+    title: targetDeviceId,
     status: 'ready',
   };
 }

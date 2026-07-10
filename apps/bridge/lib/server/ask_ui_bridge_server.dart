@@ -26,6 +26,7 @@ class AskUiBridgeServer {
     FlutterDeviceChecker? flutterDeviceChecker,
     DeviceStreamFactory? deviceStreamFactory,
     SnapshotCapture? snapshotCapture,
+    Directory? packagedWebRoot,
     bool Function(String path)? snapshotFileExists,
     bool Function(String projectRoot)? projectRootExists,
     Duration sessionEventsHeartbeatInterval = const Duration(seconds: 15),
@@ -47,6 +48,7 @@ class AskUiBridgeServer {
           logger: logger ?? BridgeLogger(write: print),
         ),
         _snapshotCapture = snapshotCapture ?? AdbSnapshotCapture().capture,
+        _packagedWebRoot = packagedWebRoot,
         _snapshotFileExists =
             snapshotFileExists ?? ((path) => File(path).existsSync()),
         _chatIngress = ChatIngress(
@@ -66,6 +68,7 @@ class AskUiBridgeServer {
   final BridgeSessionCreator _sessionCreator;
   final DeviceWebSocketSession _deviceWebSocketSession;
   final SnapshotCapture _snapshotCapture;
+  final Directory? _packagedWebRoot;
   final bool Function(String path) _snapshotFileExists;
   final ChatIngress _chatIngress;
   final BridgeSessionEventStream _sessionEventStream;
@@ -245,11 +248,111 @@ class AskUiBridgeServer {
       return;
     }
 
+    if (_isApiRequest(request)) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notFound,
+        body: {'error': 'not_found'},
+      );
+      return;
+    }
+
+    if ((request.method == 'GET' || request.method == 'HEAD') &&
+        await _servePackagedWeb(request)) {
+      return;
+    }
+
     await _writeJson(
       request.response,
       statusCode: HttpStatus.notFound,
       body: {'error': 'not_found'},
     );
+  }
+
+  bool _isApiRequest(HttpRequest request) {
+    return request.uri.pathSegments.isNotEmpty &&
+        request.uri.pathSegments.first == 'api';
+  }
+
+  Future<bool> _servePackagedWeb(HttpRequest request) async {
+    final Directory? webRoot = _packagedWebRoot;
+    if (webRoot == null) {
+      return false;
+    }
+
+    final File indexFile =
+        File('${webRoot.path}${Platform.pathSeparator}index.html');
+    if (!webRoot.existsSync() || !indexFile.existsSync()) {
+      await _writeJson(
+        request.response,
+        statusCode: HttpStatus.notFound,
+        body: {'error': 'packaged_web_not_found'},
+      );
+      return true;
+    }
+
+    File file = indexFile;
+    if (request.uri.path != '/') {
+      final List<String> pathSegments = request.uri.pathSegments;
+      if (pathSegments.every((segment) => segment != '..')) {
+        final String path = [
+          webRoot.path,
+          ...pathSegments,
+        ].join(Platform.pathSeparator);
+        final File candidate = File(path);
+        if (candidate.existsSync()) {
+          file = candidate;
+        } else if (_isPackagedAssetRequest(pathSegments)) {
+          await _writeJson(
+            request.response,
+            statusCode: HttpStatus.notFound,
+            body: {'error': 'packaged_web_asset_not_found'},
+          );
+          return true;
+        }
+      }
+    }
+
+    request.response.statusCode = HttpStatus.ok;
+    request.response.headers.contentType = _contentTypeFor(file.path);
+    if (request.method == 'GET') {
+      await request.response.addStream(file.openRead());
+    }
+    await request.response.close();
+    return true;
+  }
+
+  bool _isPackagedAssetRequest(List<String> pathSegments) {
+    if (pathSegments.isEmpty) {
+      return false;
+    }
+
+    return pathSegments.first == 'assets' || pathSegments.last.contains('.');
+  }
+
+  ContentType _contentTypeFor(String path) {
+    if (path.endsWith('.html')) {
+      return ContentType.html;
+    }
+    if (path.endsWith('.js')) {
+      return ContentType('application', 'javascript', charset: 'utf-8');
+    }
+    if (path.endsWith('.css')) {
+      return ContentType('text', 'css', charset: 'utf-8');
+    }
+    if (path.endsWith('.json')) {
+      return ContentType.json;
+    }
+    if (path.endsWith('.svg')) {
+      return ContentType('image', 'svg+xml');
+    }
+    if (path.endsWith('.png')) {
+      return ContentType('image', 'png');
+    }
+    if (path.endsWith('.ico')) {
+      return ContentType('image', 'x-icon');
+    }
+    return ContentType.binary;
   }
 
   Future<void> _createSession(HttpRequest request) async {
