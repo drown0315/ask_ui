@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:ask_ui_bridge/agent_command/agent_session_command.dart';
 import 'package:ask_ui_bridge/app_controller/flutter_app_controller.dart';
@@ -23,6 +24,7 @@ Future<void> main(List<String> args) async {
   final host = _readOption(args, '--host') ?? InternetAddress.loopbackIPv4.host;
   final port = int.tryParse(_readOption(args, '--port') ?? '') ?? 8787;
   final logger = BridgeLogger(write: stdout.writeln);
+  final packagedWebRoot = await _resolvePackagedWebRoot();
 
   final server = AskUiBridgeServer(
     sessionStore: SessionStore(),
@@ -33,6 +35,7 @@ Future<void> main(List<String> args) async {
       vmServiceFactory: VmServiceFactory(),
       logger: logger,
     ),
+    packagedWebRoot: packagedWebRoot,
     logger: logger,
   );
   final boundPort = await server.start(host: host, port: port);
@@ -50,4 +53,15 @@ String? _readOption(List<String> args, String name) {
     return null;
   }
   return args[index + 1];
+}
+
+Future<Directory> _resolvePackagedWebRoot() async {
+  final Uri? serverLibraryUri = await Isolate.resolvePackageUri(
+    Uri.parse('package:ask_ui_bridge/server/ask_ui_bridge_server.dart'),
+  );
+  if (serverLibraryUri == null) {
+    return Directory('web');
+  }
+
+  return Directory.fromUri(serverLibraryUri.resolve('../../web'));
 }
