@@ -15,6 +15,7 @@ void main() {
           'targetPlatform': 'android-arm64',
         },
       ]);
+      final _RecordingBrowserOpener browserOpener = _RecordingBrowserOpener();
 
       final LaunchCommandResult result = await runLaunchCommand(
         const [
@@ -39,6 +40,7 @@ void main() {
           bridgeUrl: Uri.parse('http://127.0.0.1:8787'),
           sessionId: 'session-1',
         ),
+        browserOpener: browserOpener,
       );
 
       expect(result.exitCode, 0);
@@ -66,8 +68,12 @@ void main() {
         'target': 'lib/main_staging.dart',
         'agentCommand':
             'dart run ask_ui_bridge agent poll --base-url http://127.0.0.1:8787 --session-id session-1',
+        'workbenchUrl':
+            'http://127.0.0.1:8787/?bridgeUrl=http%3A%2F%2F127.0.0.1%3A8787&sessionId=session-1&deviceId=device-1&projectRoot=%2Fworkspace%2Fapp&flavor=staging&target=lib%2Fmain_staging.dart',
+        'browserOpened': false,
         'nextStep': 'Run the returned agent poll command.',
       });
+      expect(browserOpener.openedUrls, isEmpty);
       expect(devices.calls, [
         ['devices', '--machine'],
       ]);
@@ -89,6 +95,7 @@ void main() {
         bridgeUrl: Uri.parse('http://127.0.0.1:9876'),
         sessionId: 'session-7',
       );
+      final _RecordingBrowserOpener browserOpener = _RecordingBrowserOpener();
 
       final LaunchCommandResult result = await runLaunchCommand(
         const [
@@ -107,6 +114,7 @@ void main() {
         listDevices: devices.listDevices,
         appLauncher: appLauncher,
         bridgeLauncher: bridgeLauncher,
+        browserOpener: browserOpener,
       );
 
       expect(result.exitCode, 0);
@@ -134,8 +142,16 @@ void main() {
         'target': 'lib/main_dev.dart',
         'agentCommand':
             'dart run ask_ui_bridge agent poll --base-url http://127.0.0.1:9876 --session-id session-7',
+        'workbenchUrl':
+            'http://127.0.0.1:9876/?bridgeUrl=http%3A%2F%2F127.0.0.1%3A9876&sessionId=session-7&deviceId=device-1&projectRoot=%2Fworkspace%2Fapp&flavor=dev&target=lib%2Fmain_dev.dart',
+        'browserOpened': true,
         'nextStep': 'Run the returned agent poll command.',
       });
+      expect(browserOpener.openedUrls, [
+        Uri.parse(
+          'http://127.0.0.1:9876/?bridgeUrl=http%3A%2F%2F127.0.0.1%3A9876&sessionId=session-7&deviceId=device-1&projectRoot=%2Fworkspace%2Fapp&flavor=dev&target=lib%2Fmain_dev.dart',
+        ),
+      ]);
       expect(appLauncher.requests, hasLength(1));
       expect(appLauncher.requests.single.projectRoot, '/workspace/app');
       expect(appLauncher.requests.single.arguments, [
@@ -156,6 +172,59 @@ void main() {
           deviceId: 'device-1',
         ),
       ]);
+    });
+
+    test('workbench URL uses attach bootstrap parameters', () async {
+      final Uri workbenchUrl = buildLaunchWorkbenchUrl(
+        bridgeUrl: Uri.parse('http://127.0.0.1:8787/'),
+        sessionId: 'session-1',
+        selectedDeviceId: '19271FDF6007TY',
+        projectRoot: '/Users/example app',
+        flavor: 'qa flavor',
+        target: null,
+      );
+
+      expect(workbenchUrl.origin, 'http://127.0.0.1:8787');
+      expect(workbenchUrl.path, '/');
+      expect(workbenchUrl.queryParameters, {
+        'bridgeUrl': 'http://127.0.0.1:8787',
+        'sessionId': 'session-1',
+        'deviceId': '19271FDF6007TY',
+        'projectRoot': '/Users/example app',
+        'flavor': 'qa flavor',
+      });
+    });
+
+    test('reports browser open failures without losing launch details',
+        () async {
+      final _FakeFlutterDevices devices = _FakeFlutterDevices([
+        {
+          'id': 'device-1',
+          'name': 'Pixel 6',
+          'targetPlatform': 'android-arm64',
+        },
+      ]);
+
+      final LaunchCommandResult result = await runLaunchCommand(
+        const ['launch', '--device', 'device-1'],
+        listDevices: devices.listDevices,
+        appLauncher: _RecordingAppLauncher(
+          vmServiceUri: 'ws://127.0.0.1:12345/ws',
+        ),
+        bridgeLauncher: _RecordingBridgeLauncher(
+          bridgeUrl: Uri.parse('http://127.0.0.1:8787'),
+          sessionId: 'session-1',
+        ),
+        browserOpener: const _FailingBrowserOpener(),
+      );
+
+      final decoded = jsonDecode(result.stdout) as Map<String, Object?>;
+      expect(result.exitCode, 0);
+      expect(result.stderr, isEmpty);
+      expect(decoded['status'], 'ready');
+      expect(decoded['workbenchUrl'], isA<String>());
+      expect(decoded['browserOpened'], false);
+      expect(decoded['browserOpenError'], 'browser_open_failed');
     });
 
     test('reports Flutter startup failures before session creation', () async {
@@ -551,6 +620,24 @@ class _FailingBridgeLauncher implements LaunchBridgeLauncher {
     required String deviceId,
   }) async {
     throw exception;
+  }
+}
+
+class _RecordingBrowserOpener implements LaunchBrowserOpener {
+  final List<Uri> openedUrls = <Uri>[];
+
+  @override
+  Future<void> open(Uri url) async {
+    openedUrls.add(url);
+  }
+}
+
+class _FailingBrowserOpener implements LaunchBrowserOpener {
+  const _FailingBrowserOpener();
+
+  @override
+  Future<void> open(Uri url) async {
+    throw const LaunchBrowserOpenException('browser_open_failed');
   }
 }
 

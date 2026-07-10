@@ -63,6 +63,18 @@ class LaunchBridgeException implements Exception {
   final String code;
 }
 
+/// Opens the packaged workbench URL after a launch creates a Bridge Session.
+abstract interface class LaunchBrowserOpener {
+  Future<void> open(Uri url);
+}
+
+/// Normalized browser-open failure recorded in successful launch output.
+class LaunchBrowserOpenException implements Exception {
+  const LaunchBrowserOpenException(this.code);
+
+  final String code;
+}
+
 /// Result returned by the launch command runner.
 ///
 /// The binary writes `stdout`, `stderr`, and `exitCode` directly. Tests use the
@@ -79,16 +91,17 @@ class LaunchCommandResult {
   final String stderr;
 }
 
-/// Parses the first Ask UI launch contract and selects a Flutter device.
+/// Runs the Ask UI launch command and returns machine-readable JSON.
 ///
-/// This slice does not start Flutter yet. It returns machine-readable launch
-/// intent and device-selection output so later launch phases can continue from
-/// the same CLI contract.
+/// The command selects a usable Flutter device, starts the app, creates a
+/// Bridge Session, builds the packaged workbench attach URL, and opens it
+/// unless `--no-open` is present.
 Future<LaunchCommandResult> runLaunchCommand(
   List<String> args, {
   FlutterDevicesRunner listDevices = Process.run,
   LaunchAppLauncher? appLauncher,
   LaunchBridgeLauncher? bridgeLauncher,
+  LaunchBrowserOpener? browserOpener,
 }) async {
   late final _LaunchOptions options;
   try {
@@ -120,6 +133,7 @@ Future<LaunchCommandResult> runLaunchCommand(
       selectedDevice: matchingDevices.single,
       appLauncher: appLauncher ?? const _FlutterRunAppLauncher(),
       bridgeLauncher: bridgeLauncher ?? _LocalBridgeLauncher(),
+      browserOpener: browserOpener ?? const _PlatformBrowserOpener(),
     );
   }
 
@@ -133,6 +147,7 @@ Future<LaunchCommandResult> runLaunchCommand(
       selectedDevice: usableDevices.single,
       appLauncher: appLauncher ?? const _FlutterRunAppLauncher(),
       bridgeLauncher: bridgeLauncher ?? _LocalBridgeLauncher(),
+      browserOpener: browserOpener ?? const _PlatformBrowserOpener(),
     );
   }
 
@@ -147,6 +162,7 @@ Future<LaunchCommandResult> _launchSelectedDevice({
   required _LaunchDevice selectedDevice,
   required LaunchAppLauncher appLauncher,
   required LaunchBridgeLauncher bridgeLauncher,
+  required LaunchBrowserOpener browserOpener,
 }) async {
   final String projectRoot =
       options.projectRoot ?? Directory.current.absolute.path;
@@ -171,12 +187,67 @@ Future<LaunchCommandResult> _launchSelectedDevice({
     return _LaunchOutput.failure(error.code);
   }
 
+  final Uri workbenchUrl = buildLaunchWorkbenchUrl(
+    bridgeUrl: bridgeSession.bridgeUrl,
+    sessionId: bridgeSession.sessionId,
+    selectedDeviceId: selectedDevice.id,
+    projectRoot: projectRoot,
+    flavor: options.flavor,
+    target: options.target,
+  );
+  bool browserOpened = false;
+  String? browserOpenError;
+  if (options.open) {
+    try {
+      await browserOpener.open(workbenchUrl);
+      browserOpened = true;
+    } on LaunchBrowserOpenException catch (error) {
+      browserOpenError = error.code;
+    } catch (_) {
+      browserOpenError = 'browser_open_failed';
+    }
+  }
+
   return _LaunchOutput.ready(
     options: options,
     selectedDevice: selectedDevice,
     appResult: appResult,
     bridgeSession: bridgeSession,
     projectRoot: projectRoot,
+    workbenchUrl: workbenchUrl,
+    browserOpened: browserOpened,
+    browserOpenError: browserOpenError,
+  );
+}
+
+/// Build the packaged workbench URL that attaches to an existing session.
+///
+/// The bridge server serves the React workbench from `/`, while the query
+/// parameters select Web attach mode with the already-created Bridge Session.
+Uri buildLaunchWorkbenchUrl({
+  required Uri bridgeUrl,
+  required String sessionId,
+  required String selectedDeviceId,
+  required String projectRoot,
+  required String? flavor,
+  required String? target,
+}) {
+  final Map<String, String> queryParameters = <String, String>{
+    'bridgeUrl': _withoutTrailingSlash(bridgeUrl.toString()),
+    'sessionId': sessionId,
+    'deviceId': selectedDeviceId,
+    'projectRoot': projectRoot,
+  };
+  if (flavor != null) {
+    queryParameters['flavor'] = flavor;
+  }
+  if (target != null) {
+    queryParameters['target'] = target;
+  }
+
+  return bridgeUrl.replace(
+    path: '/',
+    queryParameters: queryParameters,
   );
 }
 
@@ -542,6 +613,30 @@ class _LocalBridgeLauncher implements LaunchBridgeLauncher {
   }
 }
 
+class _PlatformBrowserOpener implements LaunchBrowserOpener {
+  const _PlatformBrowserOpener();
+
+  @override
+  Future<void> open(Uri url) async {
+    final List<String> command = _browserOpenCommand(url);
+    try {
+      await Process.start(command.first, command.sublist(1));
+    } catch (_) {
+      throw const LaunchBrowserOpenException('browser_open_failed');
+    }
+  }
+
+  List<String> _browserOpenCommand(Uri url) {
+    if (Platform.isMacOS) {
+      return <String>['open', url.toString()];
+    }
+    if (Platform.isWindows) {
+      return <String>['cmd', '/c', 'start', '', url.toString()];
+    }
+    return <String>['xdg-open', url.toString()];
+  }
+}
+
 class _LaunchDevice {
   const _LaunchDevice({
     required this.id,
@@ -597,6 +692,9 @@ class _LaunchOutput {
     required LaunchAppResult appResult,
     required LaunchBridgeSession bridgeSession,
     required String projectRoot,
+    required Uri workbenchUrl,
+    required bool browserOpened,
+    required String? browserOpenError,
   }) {
     final String agentCommand = _commandString([
       'dart',
@@ -622,6 +720,9 @@ class _LaunchOutput {
         'flavor': options.flavor,
         'target': options.target,
         'agentCommand': agentCommand,
+        'workbenchUrl': workbenchUrl.toString(),
+        'browserOpened': browserOpened,
+        if (browserOpenError != null) 'browserOpenError': browserOpenError,
         'nextStep': 'Run the returned agent poll command.',
       }),
     );
@@ -665,6 +766,8 @@ String _commandString(List<String> arguments) {
   return arguments.map(_shellQuote).join(' ');
 }
 
+
+
 String _shellQuote(String argument) {
   if (RegExp(r'^[A-Za-z0-9_./:=@+-]+$').hasMatch(argument)) {
     return argument;
@@ -680,6 +783,10 @@ String? _emptyToNull(String? value) {
   }
 
   return trimmed;
+}
+
+String _withoutTrailingSlash(String value) {
+  return value.replaceFirst(RegExp(r'/+$'), '');
 }
 
 class _LaunchValidationError implements Exception {
