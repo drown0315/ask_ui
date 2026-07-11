@@ -3,6 +3,11 @@ import 'package:vm_service/vm_service_io.dart';
 
 import 'protocol.dart';
 
+abstract interface class ControlBackend {
+  Future<void> send(PointerMessage message);
+  Future<void> close();
+}
+
 abstract interface class VmServiceAdapter {
   Future<Map<String, Object?>> callPointerExtension(
     Map<String, String> arguments,
@@ -11,7 +16,7 @@ abstract interface class VmServiceAdapter {
   Future<void> close();
 }
 
-final class FlutterRuntimeControl {
+final class FlutterRuntimeControl implements ControlBackend {
   FlutterRuntimeControl({required this.metadata, required this.adapter});
 
   static const extensionName = 'ext.ios_screen_mvp.pointer';

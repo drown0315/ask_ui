@@ -5,6 +5,14 @@ import 'dart:typed_data';
 
 import 'protocol.dart';
 
+abstract interface class CaptureSession {
+  Future<DeviceMetadata> get metadata;
+  Stream<VideoFrameEnvelope> get frames;
+  Future<String> get diagnostics;
+  Future<void> get completion;
+  Future<void> close();
+}
+
 final class CaptureDevice {
   const CaptureDevice({
     required this.id,
@@ -129,7 +137,7 @@ final class NativeHelperStream {
   }
 }
 
-final class NativeCaptureSession {
+final class NativeCaptureSession implements CaptureSession {
   NativeCaptureSession._(this._process, this._temporaryDirectory, this._stream);
 
   static Future<NativeCaptureSession> start({
