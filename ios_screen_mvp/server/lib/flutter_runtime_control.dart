@@ -1,7 +1,13 @@
 import 'package:vm_service/vm_service.dart';
 import 'package:vm_service/vm_service_io.dart';
+import 'package:vm_service/utils.dart';
 
 import 'protocol.dart';
+
+Uri vmServiceWebSocketUri(Uri serviceUri) =>
+    serviceUri.scheme == 'ws' || serviceUri.scheme == 'wss'
+    ? serviceUri
+    : convertToWebSocketUrl(serviceProtocolUrl: serviceUri);
 
 abstract interface class ControlBackend {
   Future<void> send(PointerMessage message);
@@ -55,7 +61,9 @@ final class LiveVmServiceAdapter implements VmServiceAdapter {
   LiveVmServiceAdapter._(this._service, this._isolateId);
 
   static Future<LiveVmServiceAdapter> connect(Uri vmServiceUri) async {
-    final service = await vmServiceConnectUri(vmServiceUri.toString());
+    final service = await vmServiceConnectUri(
+      vmServiceWebSocketUri(vmServiceUri).toString(),
+    );
     try {
       final vm = await service.getVM();
       final isolates = vm.isolates ?? const <IsolateRef>[];

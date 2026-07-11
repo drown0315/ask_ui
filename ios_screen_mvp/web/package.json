@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test": "vitest"
+    "test": "vitest",
+    "verify": "vitest --run && npm run build"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.6.0",
@@ -21,4 +22,3 @@
     "vitest": "^3.2.4"
   }
 }
-

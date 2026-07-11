@@ -68,6 +68,13 @@ void main() {
 
     expect(adapter.closed, isTrue);
   });
+
+  test('converts a Flutter HTTP service URI to its WebSocket endpoint', () {
+    expect(
+      vmServiceWebSocketUri(Uri.parse('http://127.0.0.1:1234/token=/')),
+      Uri.parse('ws://127.0.0.1:1234/token=/ws'),
+    );
+  });
 }
 
 final class FakeVmServiceAdapter implements VmServiceAdapter {
