@@ -26,7 +26,8 @@ dart run bin/ask_ui_bridge.dart launch \
   --device <device-id-or-name> \
   --flavor <flavor> \
   --target <path> \
-  --dart-define <key=value>
+  --dart-define <key=value> \
+  --project-root <flutter-project-root>
 ```
 
 Use packaged Web by default when validating the release-style path.

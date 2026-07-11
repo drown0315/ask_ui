@@ -94,7 +94,8 @@ The coding-agent skills stay thin. They call `launch`, handle `needs_device_sele
 - Keep the source entrypoint as the Ask UI maintainer development fallback.
 - Keep the coding-agent skill thin; it calls the launcher and follows returned next-step instructions.
 - Use machine-readable JSON as the launch command output contract.
-- Use stable launch statuses such as ready, needs-device-selection, and error.
+- Use stable launch statuses such as `ready`, `needs_device_selection`, and
+  `error`.
 - Include stable launch error codes for missing devices, ambiguous device selection, Flutter startup failure, bridge startup failure, session creation failure, packaged Web missing, browser open failure where appropriate, and invalid arguments.
 - Discover devices through Flutter's machine-readable device listing.
 - Match explicit device ids exactly after trimming.

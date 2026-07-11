@@ -57,7 +57,8 @@ ask_ui_bridge launch \
   --device <device-id-or-name> \
   --flavor <flavor> \
   --target <path> \
-  --dart-define <key=value>
+  --dart-define <key=value> \
+  --project-root <flutter-project-root>
 ```
 
 ## Handle Launch Output

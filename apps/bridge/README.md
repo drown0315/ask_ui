@@ -26,7 +26,8 @@ ask_ui_bridge launch \
   --device <device-id> \
   --flavor <flavor> \
   --target lib/main_dev.dart \
-  --dart-define API_BASE_URL=http://localhost:3000
+  --dart-define API_BASE_URL=http://localhost:3000 \
+  --project-root /path/to/flutter_app
 ```
 
 Use `--no-open` when the command should print the workbench URL without opening
@@ -60,3 +61,7 @@ dart pub publish --dry-run
 
 The published package must include `web/index.html` and the generated Web
 assets under `web/assets`.
+
+The repository publish workflow runs the same release validation for
+`ask_ui_bridge-v<version>` tags, verifies the packaged Web files are committed,
+and publishes to pub.dev after `dart pub publish --dry-run` succeeds.
