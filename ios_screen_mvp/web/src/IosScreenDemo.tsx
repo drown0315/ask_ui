@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react'
 
+import { fitVideoRect, normalizePoint } from './geometry/deviceViewGeometry'
+import { PointerGestureState, type PointerSample } from './gestures/pointerGestureState'
 import { DeviceVideoPipeline } from './video/deviceVideoPipeline'
 import './IosScreenDemo.css'
 
@@ -22,10 +24,12 @@ interface ErrorMessage {
 
 export function IosScreenDemo() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const gestureRef = useRef<PointerGestureState>(null)
   const [metadata, setMetadata] = useState<ReadyMetadata>()
   const [status, setStatus] = useState('Connecting')
   const [error, setError] = useState<ErrorMessage>()
   const [fps, setFps] = useState(0)
+  const [longPressActive, setLongPressActive] = useState(false)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -41,6 +45,10 @@ export function IosScreenDemo() {
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
     const socket = new WebSocket(`${scheme}://${location.host}/session`)
     socket.binaryType = 'arraybuffer'
+    const gesture = new PointerGestureState((message) => {
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message))
+    }, setLongPressActive)
+    gestureRef.current = gesture
     let frameCount = 0
     let fpsStartedAt = performance.now()
     socket.onopen = () => setStatus('Waiting for device')
@@ -74,14 +82,37 @@ export function IosScreenDemo() {
       }
     }
     socket.onerror = () => setError({ type: 'error', code: 'connection_failed', message: 'Unable to connect to the local session.' })
-    socket.onclose = () => setStatus((current) => current === 'Error' ? current : 'Disconnected')
+    socket.onclose = () => {
+      gesture.socketClosed()
+      setStatus((current) => current === 'Error' ? current : 'Disconnected')
+    }
     return () => {
+      gesture.socketClosed()
+      gestureRef.current = null
       socket.close()
       pipeline.close()
     }
   }, [])
 
   const aspectRatio = metadata ? `${metadata.screenWidth} / ${metadata.screenHeight}` : '390 / 844'
+
+  function pointerSample(event: ReactPointerEvent<HTMLCanvasElement>): PointerSample | null {
+    if (!metadata) return null
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const fitted = fitVideoRect(bounds.width, bounds.height, metadata.screenWidth, metadata.screenHeight)
+    const point = normalizePoint(event.clientX, event.clientY, {
+      ...fitted,
+      x: fitted.x + bounds.left,
+      y: fitted.y + bounds.top,
+    })
+    return point && {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      ...point,
+    }
+  }
+
   return (
     <main className="workbench">
       <header className="toolbar">
@@ -97,7 +128,29 @@ export function IosScreenDemo() {
       </header>
       <section className="stage">
         <div className="device" style={{ aspectRatio }}>
-          <canvas ref={canvasRef} aria-label="Live iPhone screen" />
+          <canvas
+            ref={canvasRef}
+            aria-label="Live iPhone screen"
+            onPointerDown={(event) => {
+              const sample = pointerSample(event)
+              if (sample && gestureRef.current?.pointerDown(sample)) {
+                event.currentTarget.setPointerCapture(event.pointerId)
+              }
+            }}
+            onPointerMove={(event) => {
+              const sample = pointerSample(event)
+              if (sample) gestureRef.current?.pointerMove(sample)
+            }}
+            onPointerUp={(event) => {
+              const sample = pointerSample(event)
+              if (sample) gestureRef.current?.pointerUp(sample)
+            }}
+            onPointerCancel={(event) => {
+              const sample = pointerSample(event)
+              if (sample) gestureRef.current?.pointerCancel(sample)
+            }}
+          />
+          {longPressActive && <div className="long-press" aria-hidden="true" />}
           {error && <div className="error"><strong>{error.code}</strong><span>{error.message}</span></div>}
         </div>
       </section>
