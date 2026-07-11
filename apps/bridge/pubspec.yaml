@@ -1,12 +1,17 @@
 name: ask_ui_bridge
-description: Local bridge server for Ask UI.
-publish_to: none
+description: Local bridge server and launcher for Ask UI.
+version: 0.0.4
+repository: https://github.com/drown0315/ask_ui
+homepage: https://github.com/drown0315/ask_ui
+
+executables:
+  ask_ui_bridge: ask_ui_bridge
 
 environment:
   sdk: '>=3.4.0 <4.0.0'
 
 dependencies:
-  vm_service: 14.3.1
+  vm_service: ^14.3.1
 
 dev_dependencies:
   file_testkit: 1.0.0

@@ -1,0 +1,6 @@
+.dart_tool/
+build/
+coverage/
+test/
+*.log
+.DS_Store
