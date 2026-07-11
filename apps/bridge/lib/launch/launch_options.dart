@@ -103,8 +103,6 @@ class _LaunchOptions {
 
   List<String> rerunArguments(String deviceId) {
     final List<String> arguments = <String>[
-      'dart',
-      'run',
       'ask_ui_bridge',
       'launch',
       '--device',

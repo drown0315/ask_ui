@@ -69,7 +69,7 @@ void main() {
         'flavor': 'staging',
         'target': 'lib/main_staging.dart',
         'agentCommand':
-            'dart run ask_ui_bridge agent poll --base-url http://127.0.0.1:8787 --session-id session-1',
+            'ask_ui_bridge agent poll --base-url http://127.0.0.1:8787 --session-id session-1',
         'workbenchUrl':
             'http://127.0.0.1:8787/?bridgeUrl=http%3A%2F%2F127.0.0.1%3A8787&sessionId=session-1&deviceId=device-1&projectRoot=%2Fworkspace%2Fapp&flavor=staging&target=lib%2Fmain_staging.dart',
         'browserOpened': false,
@@ -144,7 +144,7 @@ void main() {
         'flavor': 'dev',
         'target': 'lib/main_dev.dart',
         'agentCommand':
-            'dart run ask_ui_bridge agent poll --base-url http://127.0.0.1:9876 --session-id session-7',
+            'ask_ui_bridge agent poll --base-url http://127.0.0.1:9876 --session-id session-7',
         'workbenchUrl':
             'http://127.0.0.1:9876/?bridgeUrl=http%3A%2F%2F127.0.0.1%3A9876&sessionId=session-7&deviceId=device-1&projectRoot=%2Fworkspace%2Fapp&flavor=dev&target=lib%2Fmain_dev.dart',
         'browserOpened': true,
@@ -239,7 +239,7 @@ void main() {
         'flavor': null,
         'target': null,
         'agentCommand':
-            'dart run ask_ui_bridge agent poll --base-url http://127.0.0.1:9876 --session-id session-7',
+            'ask_ui_bridge agent poll --base-url http://127.0.0.1:9876 --session-id session-7',
         'workbenchUrl':
             'http://127.0.0.1:5174/?bridgeUrl=http%3A%2F%2F127.0.0.1%3A9876&sessionId=session-7&deviceId=device-1&projectRoot=%2Fworkspace%2Fapp',
         'browserOpened': true,
@@ -586,14 +586,14 @@ void main() {
             'name': 'Pixel API 35',
             'targetPlatform': 'android-x64',
             'suggestedCommand':
-                'dart run ask_ui_bridge launch --device emulator-5554 --flavor dev --target lib/main_dev.dart --dart-define A=B --project-root /workspace/app --no-open',
+                'ask_ui_bridge launch --device emulator-5554 --flavor dev --target lib/main_dev.dart --dart-define A=B --project-root /workspace/app --no-open',
           },
           {
             'id': '19271FDF6007TY',
             'name': 'Pixel 6',
             'targetPlatform': 'android-arm64',
             'suggestedCommand':
-                'dart run ask_ui_bridge launch --device 19271FDF6007TY --flavor dev --target lib/main_dev.dart --dart-define A=B --project-root /workspace/app --no-open',
+                'ask_ui_bridge launch --device 19271FDF6007TY --flavor dev --target lib/main_dev.dart --dart-define A=B --project-root /workspace/app --no-open',
           },
         ],
         'launchIntent': {

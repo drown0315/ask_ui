@@ -14,8 +14,6 @@ class _LaunchOutput {
     required String? browserOpenError,
   }) {
     final String agentCommand = _commandString([
-      'dart',
-      'run',
       'ask_ui_bridge',
       'agent',
       'poll',

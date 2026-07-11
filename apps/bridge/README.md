@@ -7,23 +7,22 @@ agents.
 
 ## Installed Usage
 
-Add the package as a dev dependency in a Flutter project:
-
-```yaml
-dev_dependencies:
-  ask_ui_bridge: ^0.0.4
-```
-
-Start Ask UI from the Flutter project:
+Globally activate the bridge CLI:
 
 ```sh
-dart run ask_ui_bridge launch
+dart pub global activate ask_ui_bridge
+```
+
+Start Ask UI from a Flutter project that has registered `ask_ui_runtime`:
+
+```sh
+ask_ui_bridge launch
 ```
 
 Pass Flutter launch options when needed:
 
 ```sh
-dart run ask_ui_bridge launch \
+ask_ui_bridge launch \
   --device <device-id> \
   --flavor <flavor> \
   --target lib/main_dev.dart \
@@ -32,6 +31,17 @@ dart run ask_ui_bridge launch \
 
 Use `--no-open` when the command should print the workbench URL without opening
 a browser.
+
+## Coding-Agent Skill
+
+The Ask UI repository includes launch workflow skills at `../../skills/ask-ui`
+and `../../skills/ask-ui-dev`. Install `ask-ui` for normal Flutter projects, or
+`ask-ui-dev` when developing this repository. The skills let Codex, Claude Code,
+or a similar agent run the appropriate launch command, handle device selection,
+run the returned Agent Session Command, and continue polling for Ask UI Chat
+messages.
+
+This version does not include an automatic skill installer command.
 
 ## Release Validation
 
