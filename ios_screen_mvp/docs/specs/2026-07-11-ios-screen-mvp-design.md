@@ -25,7 +25,8 @@ The first phase supports:
 - one physical iPhone connected over USB;
 - an unlocked iPhone that trusts the host Mac;
 - a browser running on the same Mac;
-- a Flutter debug application that registers `ask_ui_runtime`;
+- the included Flutter debug demo application, which registers an MVP-only VM
+  Service control extension;
 - live video, click, long-press, and single-finger swipe;
 - one active browser/controller at a time.
 
@@ -52,6 +53,9 @@ ios_screen_mvp/
     lib/video_stream.dart
     lib/control_backend.dart
     lib/flutter_runtime_control.dart
+  flutter_demo/
+    lib/mvp_runtime_control.dart
+    lib/main.dart
   web/
     src/IosScreenDemo.tsx
     src/video/
@@ -101,10 +105,12 @@ browser Pointer Events
   -> Flutter PointerEvent dispatch
 ```
 
-The runtime control extension is debug-only and handles down, move, up, and
-cancel actions. Gesture semantics remain primarily in Flutter: the browser sends
-a pointer stream rather than high-level tap or swipe commands. This lets Flutter
-recognizers decide whether a stream is a tap, long press, drag, or scroll.
+The runtime control extension lives inside the standalone Flutter demo, is
+debug-only, and handles down, move, up, and cancel actions. It does not modify
+the Ask UI runtime package during the spike. Gesture semantics remain primarily
+in Flutter: the browser sends a pointer stream rather than high-level tap or
+swipe commands. This lets Flutter recognizers decide whether a stream is a tap,
+long press, drag, or scroll.
 
 The browser still recognizes a long-press threshold for visible interaction
 feedback, but it does not replace the pointer stream with a `longPress` command.
