@@ -27,7 +27,8 @@ class _FlutterRunAppLauncher implements LaunchAppLauncher {
       final String text = utf8.decode(data, allowMalformed: true);
       startupOutput.write(text);
       final String? vmServiceUri =
-          parseFlutterVmServiceUriFromOutput(startupOutput.toString());
+          parseFlutterVmServiceUriFromMachineOutput(startupOutput.toString()) ??
+              parseFlutterVmServiceUriFromOutput(startupOutput.toString());
       if (vmServiceUri != null && !vmServiceCompleter.isCompleted) {
         vmServiceCompleter
             .complete(LaunchAppResult(vmServiceUri: vmServiceUri));
@@ -59,34 +60,111 @@ class _FlutterRunAppLauncher implements LaunchAppLauncher {
   }
 }
 
+/// Extract the VM Service WebSocket URI from `flutter run --machine` output.
+String? parseFlutterVmServiceUriFromMachineOutput(String output) {
+  for (final String line in const LineSplitter().convert(output)) {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(line);
+    } catch (_) {
+      continue;
+    }
+    final Map<String, Object?>? message = _flutterMachineMessage(decoded);
+    if (message == null) {
+      continue;
+    }
+
+    final Object? params = message['params'];
+    if (message['event'] == 'app.debugPort' && params is Map<String, Object?>) {
+      final String? vmServiceUri = _stringValue(params['wsUri']) ??
+          _stringValue(params['vmServiceUri']) ??
+          _stringValue(params['uri']);
+      final String? normalized = _normalizeVmServiceUri(vmServiceUri);
+      if (normalized != null) {
+        return normalized;
+      }
+    }
+
+    final Object? result = message['result'];
+    if (result is Map<String, Object?>) {
+      final String? normalized = _normalizeVmServiceUri(
+        _stringValue(result['vmServiceUri']),
+      );
+      if (normalized != null) {
+        return normalized;
+      }
+    }
+  }
+
+  return null;
+}
+
+Map<String, Object?>? _flutterMachineMessage(Object? decoded) {
+  if (decoded is Map<String, Object?>) {
+    return decoded;
+  }
+  if (decoded is List && decoded.length == 1) {
+    final Object? first = decoded.single;
+    if (first is Map<String, Object?>) {
+      return first;
+    }
+  }
+
+  return null;
+}
+
 /// Extract the VM Service WebSocket URI from Flutter startup output.
 ///
 /// Flutter commonly prints an HTTP service URI ending in the auth-code path,
 /// while the existing Bridge Session contract stores the WebSocket URI. Already
 /// normalized `ws` and `wss` URIs are returned unchanged.
 String? parseFlutterVmServiceUriFromOutput(String output) {
-  final RegExp uriPattern = RegExp(r'(wss?|https?)://[^\s]+');
+  final RegExp uriPattern = RegExp(
+    r'(?:A Dart VM Service is available at:|The Dart VM Service is listening on)\s+'
+    r'((?:wss?|https?)://[^\s]+)',
+  );
   for (final RegExpMatch match in uriPattern.allMatches(output)) {
-    final String rawUri = match.group(0)!.replaceFirst(RegExp(r'[),.;]+$'), '');
+    final String rawUri = match.group(1)!.replaceFirst(RegExp(r'[),.;]+$'), '');
     final Uri? uri = Uri.tryParse(rawUri);
     if (uri == null || uri.host.isEmpty) {
       continue;
     }
-    if (uri.scheme == 'ws' || uri.scheme == 'wss') {
-      return uri.toString();
+    final String? normalized = _normalizeVmServiceUri(uri.toString());
+    if (normalized != null) {
+      return normalized;
     }
-    if (uri.scheme == 'http' || uri.scheme == 'https') {
-      final String websocketScheme = uri.scheme == 'https' ? 'wss' : 'ws';
-      final String normalizedPath = uri.path.endsWith('/ws')
-          ? uri.path
-          : '${uri.path.endsWith('/') ? uri.path : '${uri.path}/'}ws';
-      return uri
-          .replace(
-            scheme: websocketScheme,
-            path: normalizedPath,
-          )
-          .toString();
-    }
+  }
+
+  return null;
+}
+
+String? _normalizeVmServiceUri(String? value) {
+  final Uri? uri = Uri.tryParse(value ?? '');
+  if (uri == null || uri.host.isEmpty) {
+    return null;
+  }
+  if (uri.scheme == 'ws' || uri.scheme == 'wss') {
+    return uri.toString();
+  }
+  if (uri.scheme == 'http' || uri.scheme == 'https') {
+    final String websocketScheme = uri.scheme == 'https' ? 'wss' : 'ws';
+    final String normalizedPath = uri.path.endsWith('/ws')
+        ? uri.path
+        : '${uri.path.endsWith('/') ? uri.path : '${uri.path}/'}ws';
+    return uri
+        .replace(
+          scheme: websocketScheme,
+          path: normalizedPath,
+        )
+        .toString();
+  }
+
+  return null;
+}
+
+String? _stringValue(Object? value) {
+  if (value is String && value.trim().isNotEmpty) {
+    return value.trim();
   }
 
   return null;

@@ -84,6 +84,7 @@ class _LaunchOptions {
   List<String> flutterRunArguments(String deviceId) {
     final List<String> arguments = <String>[
       'run',
+      '--machine',
       '--device-id',
       deviceId,
     ];

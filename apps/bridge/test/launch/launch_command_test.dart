@@ -159,6 +159,7 @@ void main() {
       expect(appLauncher.requests.single.projectRoot, '/workspace/app');
       expect(appLauncher.requests.single.arguments, [
         'run',
+        '--machine',
         '--device-id',
         'device-1',
         '--flavor',
@@ -456,7 +457,67 @@ void main() {
         'ws://127.0.0.1:51234/abc_def=/ws',
       );
       expect(
+        parseFlutterVmServiceUriFromOutput(
+          'See https://flutter.dev/to/flutter-gradle-plugin-apply '
+          'for migration details.',
+        ),
+        isNull,
+      );
+      expect(
+        parseFlutterVmServiceUriFromOutput(
+          'See https://flutter.dev/to/flutter-gradle-plugin-apply '
+          'for migration details.\n'
+          'A Dart VM Service is available at: '
+          'http://127.0.0.1:51234/abc_def=/',
+        ),
+        'ws://127.0.0.1:51234/abc_def=/ws',
+      );
+      expect(
         parseFlutterVmServiceUriFromOutput('Build failed before service.'),
+        isNull,
+      );
+    });
+
+    test('parses Flutter machine output into WebSocket URIs', () {
+      expect(
+        parseFlutterVmServiceUriFromMachineOutput(
+          jsonEncode([
+            {
+              'event': 'app.debugPort',
+              'params': {
+                'wsUri': 'ws://127.0.0.1:51234/abc_def=/ws',
+              },
+            },
+          ]),
+        ),
+        'ws://127.0.0.1:51234/abc_def=/ws',
+      );
+      expect(
+        parseFlutterVmServiceUriFromMachineOutput(
+          jsonEncode([
+            {
+              'id': 0,
+              'result': {
+                'started': true,
+                'vmServiceUri': 'http://127.0.0.1:51234/abc_def=/',
+              },
+            },
+          ]),
+        ),
+        'ws://127.0.0.1:51234/abc_def=/ws',
+      );
+      expect(
+        parseFlutterVmServiceUriFromMachineOutput(
+          jsonEncode([
+            {
+              'event': 'daemon.logMessage',
+              'params': {
+                'message':
+                    'See https://flutter.dev/to/flutter-gradle-plugin-apply',
+              },
+            },
+          ]),
+        ),
         isNull,
       );
     });
