@@ -8,8 +8,7 @@ Add the package to your Flutter app:
 
 ```yaml
 dependencies:
-  ask_ui_runtime:
-    path: /path/to/ask_ui/packages/ask_ui_runtime
+  ask_ui_runtime: ^0.0.1
 ```
 
 Register the runtime before `runApp`:

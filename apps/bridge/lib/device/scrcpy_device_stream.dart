@@ -73,16 +73,40 @@ const _vendoredScrcpyServerPath = 'vendor/scrcpy/4.0/scrcpy-server-v4.0';
 /// The bridge is commonly launched either from `apps/bridge` during local
 /// development or from the repository root by automation. Prefer the bridge
 /// package-local path when present and fall back to the repo-root path.
-String defaultScrcpyServerPath({Directory? currentDirectory}) {
+String defaultScrcpyServerPath({Directory? currentDirectory, Uri? scriptUri}) {
   final cwd = currentDirectory ?? Directory.current;
-  final bridgeLocalArtifact = File('${cwd.path}/$_vendoredScrcpyServerPath');
-  if (bridgeLocalArtifact.existsSync()) {
-    return bridgeLocalArtifact.absolute.path;
+  final candidates = <File>[
+    ..._scrcpyServerCandidatesForScript(scriptUri ?? Platform.script),
+    File('${cwd.path}/$_vendoredScrcpyServerPath'),
+    File('${cwd.path}/apps/bridge/$_vendoredScrcpyServerPath'),
+  ];
+
+  for (final candidate in candidates) {
+    if (candidate.existsSync()) {
+      return candidate.absolute.path;
+    }
   }
 
-  return File('${cwd.path}/apps/bridge/$_vendoredScrcpyServerPath')
-      .absolute
-      .path;
+  return candidates.first.absolute.path;
+}
+
+List<File> _scrcpyServerCandidatesForScript(Uri scriptUri) {
+  if (scriptUri.scheme != 'file') {
+    return const <File>[];
+  }
+
+  final scriptFile = File.fromUri(scriptUri);
+  final scriptDirectory = scriptFile.parent;
+  final scriptDirectorySegments =
+      scriptDirectory.uri.pathSegments.where((segment) => segment.isNotEmpty);
+  if (scriptDirectorySegments.isEmpty ||
+      scriptDirectorySegments.last != 'bin') {
+    return const <File>[];
+  }
+
+  return <File>[
+    File('${scriptDirectory.parent.path}/$_vendoredScrcpyServerPath'),
+  ];
 }
 
 /// Result from a completed local command.

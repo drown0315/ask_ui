@@ -107,6 +107,34 @@ void main() {
     expect(config.serverPath, isNot('/tmp/ignored-scrcpy-server'));
   });
 
+  test('resolves the vendored scrcpy server relative to the bridge package',
+      () async {
+    final externalProject = await Directory.systemTemp.createTemp(
+      'ask_ui_external_flutter_project_',
+    );
+    addTearDown(() async {
+      if (externalProject.existsSync()) {
+        await externalProject.delete(recursive: true);
+      }
+    });
+
+    final bridgeRoot = Directory.current.absolute;
+    final bridgeEntrypoint = bridgeRoot.uri.resolve('bin/ask_ui_bridge.dart');
+    final serverPath = defaultScrcpyServerPath(
+      currentDirectory: externalProject,
+      scriptUri: bridgeEntrypoint,
+    );
+
+    expect(serverPath, isNot(contains(externalProject.path)));
+    expect(
+      serverPath,
+      bridgeRoot.uri
+          .resolve('vendor/scrcpy/4.0/scrcpy-server-v4.0')
+          .toFilePath(),
+    );
+    expect(File(serverPath).existsSync(), isTrue);
+  });
+
   test('generates a fresh scrcpy socket id for each factory start', () async {
     final runner = FakeScrcpyCommandRunner();
     final sink = RecordingDeviceStreamSink();

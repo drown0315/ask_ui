@@ -1,0 +1,73 @@
+name: Publish Bridge Package
+
+on:
+  push:
+    tags:
+      - "ask_ui_bridge-v[0-9]+.[0-9]+.[0-9]+"
+
+jobs:
+  publish:
+    name: Publish ask_ui_bridge to pub.dev
+    runs-on: ubuntu-latest
+    environment: pub.dev
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Set up Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Verify tag matches bridge version
+        working-directory: apps/bridge
+        run: |
+          tag="${GITHUB_REF_NAME#ask_ui_bridge-v}"
+          version="$(sed -n 's/^version: //p' pubspec.yaml)"
+          test "$tag" = "$version"
+
+      - name: Install web dependencies
+        working-directory: apps/web
+        run: npm ci --legacy-peer-deps
+
+      - name: Build packaged Web workbench
+        working-directory: apps/web
+        run: npm run build:bridge
+
+      - name: Verify packaged Web is committed
+        run: git diff --exit-code -- apps/bridge/web
+
+      - name: Install bridge dependencies
+        working-directory: apps/bridge
+        run: dart pub get
+
+      - name: Analyze bridge
+        working-directory: apps/bridge
+        run: dart analyze
+
+      - name: Test bridge
+        working-directory: apps/bridge
+        run: dart test
+
+      - name: Validate bridge package layout
+        working-directory: apps/bridge
+        run: dart tool/validate_release_layout.dart
+
+      - name: Dry-run pub publish
+        working-directory: apps/bridge
+        run: dart pub publish --dry-run
+
+      - name: Publish to pub.dev
+        working-directory: apps/bridge
+        run: dart pub publish --force

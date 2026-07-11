@@ -6,7 +6,7 @@ Ask UI is intended to be started from the same Codex, Claude Code, or similar co
 
 That manual chain is fragile. It exposes implementation details such as the React/Vite development server to installed users, makes the Agent Session depend on browser-created session state, and leaves too much room for mismatched device, flavor, VM Service, Bridge Session, and poll command parameters.
 
-Ask UI needs a single launch contract that coding agents can run reliably. The installed-user path should work from a Flutter project with an `ask_ui_bridge` dev dependency, serve the packaged Web workbench from the local bridge, open the browser, and return the exact Agent Session Command needed to keep receiving Chat messages from Ask UI.
+Ask UI needs a single launch contract that coding agents can run reliably. The installed-user path should work from a Flutter project that integrates `ask_ui_runtime`, use a globally activated `ask_ui_bridge` CLI, serve the packaged Web workbench from the local bridge, open the browser, and return the exact Agent Session Command needed to keep receiving Chat messages from Ask UI.
 
 ## Solution
 
@@ -17,19 +17,20 @@ The launch command discovers or accepts a Target Device, supports Flutter flavor
 Installed users should run Ask UI through the pub package:
 
 - Add the runtime package to the Flutter app.
-- Add the bridge package as a dev dependency.
-- Run the bridge executable through Dart.
+- Register the runtime before `runApp`.
+- Globally activate the bridge package.
+- Run the `ask_ui_bridge` executable from the Flutter project.
 
 The React/TypeScript Web app remains the implementation of the workbench, but users do not install or run the Web source. Release preparation builds the Web app into static files and includes those files inside the bridge package artifact. The Bridge Server serves those static files from the same local origin as the API.
 
-The coding-agent skill stays thin. It calls `launch`, handles `needs_device_selection` JSON by asking the user to choose a device, runs the returned Agent Session Command when launch is ready, treats polled Ask UI messages as current task input, writes replies through the Agent Session Command, and continues polling until the user stops.
+The coding-agent skills stay thin. They call `launch`, handle `needs_device_selection` JSON by asking the user to choose a device, run the returned Agent Session Command when launch is ready, treat polled Ask UI messages as current task input, write replies through the Agent Session Command, and continue polling until the user stops.
 
 ## User Stories
 
 1. As a Flutter developer, I want to start Ask UI with one command from my coding-agent session, so that I do not manually coordinate several local processes.
 2. As a Flutter developer, I want the launch command to use the same Agent Session that will later edit code, so that UI feedback returns to the right coding agent.
-3. As a Flutter developer, I want the installed-user command to run from my Flutter project, so that Ask UI startup is project-local and reproducible.
-4. As a Flutter developer, I want to install the bridge as a dev dependency, so that the project controls the Ask UI bridge version.
+3. As a Flutter developer, I want the installed-user command to run from my Flutter project, so that Ask UI starts against the app I am inspecting.
+4. As a Flutter developer, I want the bridge as a globally activated development CLI, so that my app only needs the runtime integration.
 5. As a Flutter developer, I want the runtime package to remain separate from the bridge dev tool, so that production app dependencies stay minimal.
 6. As a Flutter developer, I want launch to discover Flutter devices when I do not specify one, so that I can choose from the devices currently visible to Flutter.
 7. As a Flutter developer, I want launch to proceed automatically when exactly one usable device exists, so that common single-device setups are fast.
@@ -67,7 +68,7 @@ The coding-agent skill stays thin. It calls `launch`, handles `needs_device_sele
 39. As a coding agent, I want launch success output to include a clear next step, so that I run the Agent Session Command rather than replying too early.
 40. As a coding agent, I want launch failures to use stable error codes, so that I can decide whether to ask the user, retry, or stop.
 41. As a coding agent, I want the launch skill to stay thin, so that fragile process orchestration lives in tested CLI code.
-42. As a coding agent, I want the skill to prefer the installed bridge command, so that project-local package versions are honored.
+42. As a coding agent, I want the skill to prefer the installed bridge command, so that the documented CLI contract is honored.
 43. As a coding agent, I want the skill to support the monorepo development fallback, so that Ask UI can dogfood its own source checkout.
 44. As a coding agent, I want the skill to ask the user only when device selection is needed, so that startup remains mostly automatic.
 45. As a coding agent, I want polled Ask UI messages to become current task input, so that selected widgets, comments, and snapshots drive normal code edits.
@@ -79,8 +80,8 @@ The coding-agent skill stays thin. It calls `launch`, handles `needs_device_sele
 51. As a Flutter developer, I want launch to preserve existing Bridge Session API behavior, so that current Web features continue working.
 52. As a Flutter developer, I want existing URL bootstrap by VM Service, project root, and device id to keep working, so that current development and tests are not broken.
 53. As a Flutter developer, I want the new session attach URL to be additive, so that launch can improve startup without removing the older bootstrap path.
-54. As a Flutter developer, I want launch to avoid global installation as the default, so that version mismatch between runtime, bridge, and skill is less likely.
-55. As a Flutter developer, I want a global command to remain possible later, so that convenience installs can be added without changing the core contract.
+54. As a Flutter developer, I want the bridge CLI to stay separate from my app dependencies, so that production dependency graphs stay focused on runtime code.
+55. As a Flutter developer, I want the global bridge command to be explicit, so that installation and upgrade behavior is easy to explain.
 56. As an Ask UI maintainer, I want launch modules to be deep and testable, so that device discovery, Flutter startup, static serving, and browser opening can evolve independently.
 57. As an Ask UI maintainer, I want packaging validation, so that releases do not accidentally omit the Web workbench.
 58. As an Ask UI maintainer, I want launch to match the existing Agent Chat Long-Poll model, so that browser feedback keeps flowing through the original Agent Session.
@@ -89,11 +90,12 @@ The coding-agent skill stays thin. It calls `launch`, handles `needs_device_sele
 
 - Add `launch` as a bridge CLI command alongside the existing server start path and Agent Session Command.
 - Keep `agent poll` as the canonical command for receiving Ask UI Chat messages and writing replies or command-level errors.
-- Make the installed-user default command project-local through Dart package execution.
-- Treat global installation as optional convenience, not the default skill path.
+- Make the installed-user default command the globally activated `ask_ui_bridge` executable.
+- Keep the source entrypoint as the Ask UI maintainer development fallback.
 - Keep the coding-agent skill thin; it calls the launcher and follows returned next-step instructions.
 - Use machine-readable JSON as the launch command output contract.
-- Use stable launch statuses such as ready, needs-device-selection, and error.
+- Use stable launch statuses such as `ready`, `needs_device_selection`, and
+  `error`.
 - Include stable launch error codes for missing devices, ambiguous device selection, Flutter startup failure, bridge startup failure, session creation failure, packaged Web missing, browser open failure where appropriate, and invalid arguments.
 - Discover devices through Flutter's machine-readable device listing.
 - Match explicit device ids exactly after trimming.
@@ -157,7 +159,7 @@ The coding-agent skill stays thin. It calls `launch`, handles `needs_device_sele
 - Multiple active Agent Session pollers for one Bridge Session.
 - Automatic installation of Flutter, Dart, Node, or platform device tooling.
 - Project-specific flavor-to-target configuration in the first version.
-- Global CLI installation as the default documented skill path.
+- Project-local `ask_ui_bridge` dev dependency as the default documented skill path.
 - Detached daemon lifecycle, launch status, and launch stop commands.
 - Automatic recovery from Flutter process crashes after a successful launch.
 - Port scanning by the Agent Session Command.
