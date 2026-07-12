@@ -41,11 +41,12 @@ Future<void> main(List<String> arguments) async {
   final mvp = MvpServer(
     webRoot: webRoot,
     captureFactory: () => captureLauncher.start(deviceId),
-    controlFactory: (metadata) async => FlutterRuntimeControl(
+    controlFactory: (metadata, requestedUri) async => FlutterRuntimeControl(
       metadata: metadata,
-      adapter: await LiveVmServiceAdapter.connect(vmServiceUri),
+      adapter: await LiveVmServiceAdapter.connect(requestedUri),
     ),
   );
+  await mvp.attachControl(vmServiceUri);
   final server = await shelf_io.serve(mvp.handler, '127.0.0.1', port);
   stdout.writeln('iOS Screen MVP listening on http://127.0.0.1:${server.port}');
 
