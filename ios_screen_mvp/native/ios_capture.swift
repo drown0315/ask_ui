@@ -30,6 +30,9 @@ func enableIOSScreenCaptureDevices() {
         UInt32(MemoryLayout.size(ofValue: allow)),
         &allow
     )
+    // CoreMediaIO publishes iOS screen devices asynchronously after opt-in.
+    // A fixed settle matches the proven physical recorder helper behavior.
+    Thread.sleep(forTimeInterval: 1.0)
 }
 
 func currentIOSDevices() -> [IOSCaptureDevice] {
@@ -51,6 +54,10 @@ func currentIOSDevices() -> [IOSCaptureDevice] {
         }
 }
 
+func waitForCaptureDeviceEvents(until deadline: Date) {
+    RunLoop.current.run(until: min(deadline, Date().addingTimeInterval(0.25)))
+}
+
 func discoverIOSDevices(timeout: TimeInterval = 10) -> [IOSCaptureDevice] {
     enableIOSScreenCaptureDevices()
     let deadline = Date().addingTimeInterval(timeout)
@@ -59,7 +66,7 @@ func discoverIOSDevices(timeout: TimeInterval = 10) -> [IOSCaptureDevice] {
         if !devices.isEmpty {
             return devices
         }
-        Thread.sleep(forTimeInterval: 0.25)
+        waitForCaptureDeviceEvents(until: deadline)
     } while Date() < deadline
     return []
 }
@@ -85,7 +92,7 @@ func resolveIOSDevice(
                 return nameMatch
             }
         }
-        Thread.sleep(forTimeInterval: 0.25)
+        waitForCaptureDeviceEvents(until: deadline)
     } while Date() < deadline
     return nil
 }
