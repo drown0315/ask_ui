@@ -93,6 +93,53 @@ The helper sends status separately from video bytes so logs cannot corrupt the
 binary stream. The server owns helper startup, protocol parsing, browser fanout,
 and cleanup.
 
+### Validated Capture Adaptation
+
+The physical `screen_recorder` package is the proven starting point for device
+discovery and `AVCaptureSession` lifecycle. The MVP retains its CoreMediaIO
+screen-capture enablement, `AVCaptureDeviceInput`, and
+`AVCaptureVideoDataOutput` setup. It replaces only the file sink:
+
+```text
+screen_recorder: CMSampleBuffer -> AVAssetWriter -> MOV file
+iOS Screen MVP:  CMSampleBuffer -> VTCompressionSession -> Annex B stream
+```
+
+The MVP is real-time streaming. It does not create a MOV file or wait for a
+recording to finish before delivering frames.
+
+The Dart server remains the orchestration process. Go is not used in this
+phase: Dart already owns the official `vm_service` integration, and binary
+WebSocket forwarding is not the expected performance bottleneck.
+
+### Device Discovery Contract
+
+Device discovery crosses two different macOS boundaries:
+
+- `xcrun xctrace list devices` reports connected Xcode development devices and
+  their 40-character UDIDs;
+- AVFoundation/CoreMediaIO reports recordable `AVCaptureDevice` instances and
+  their capture-specific unique IDs.
+
+An xctrace result proves that an iPhone is connected, but it is not itself a
+video source and its UDID must not be assumed to equal
+`AVCaptureDevice.uniqueID`. The Dart discovery flow must:
+
+1. compile the Swift helper once for the server process;
+2. run helper `list` to request CoreMediaIO screen-capture devices;
+3. run `xcrun xctrace list devices` for connected-device metadata;
+4. resolve the requested selector by capture ID, development UDID, exact name,
+   or case-insensitive name prefix;
+5. start `stream` with both the selected ID and device name;
+6. let Swift match capture ID first and exact device name second while polling
+   AVFoundation for a bounded interval;
+7. report `capture_device_not_found` with separate connected-device and
+   recordable-device diagnostics if no `AVCaptureDevice` appears.
+
+This preserves the browser and server protocol while removing dependence on a
+single fixed one-second discovery delay. Multiple phones with the same display
+name are rejected as ambiguous unless a capture ID is supplied.
+
 ### Control
 
 ```text
@@ -121,12 +168,13 @@ The helper supports these commands:
 
 ```text
 ios_capture list
-ios_capture stream --device-id ID --socket PATH --max-fps 30 --bit-rate 6000000
+ios_capture stream --device-id ID --device-name NAME --max-fps 30 --bit-rate 6000000
 ```
 
-`list` prints recordable iOS capture devices. `stream` connects to a Unix domain
-socket created by the Dart server and sends metadata followed by framed H.264
-access units.
+`list` prints recordable iOS capture devices. `stream` writes one metadata line
+followed by framed H.264 access units to stdout. Diagnostics go only to stderr.
+The Dart server owns the child process and forwards complete frame envelopes to
+the browser WebSocket.
 
 Initial encoder configuration:
 
@@ -242,7 +290,7 @@ Stable first-phase error codes include:
 - `invalid_control_message`.
 
 Browser disconnect closes its active pointer with `cancel`, disconnects the VM
-Service client, stops the Swift helper, closes the Unix socket, and releases the
+Service client, stops the Swift helper and its stdout stream, and releases the
 AVCapture device. Helper failure closes the WebSocket after sending a diagnostic
 error. Reconnection is manual in the MVP.
 

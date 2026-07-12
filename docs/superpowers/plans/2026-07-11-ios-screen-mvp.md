@@ -115,7 +115,7 @@ Expected: FAIL because the adapter and fake are not defined.
   scrollable list so each acceptance gesture has an observable result.
 
 - [ ] **Step 4: Implement the Dart VM Service adapter.** Connect to the demo
-  `vmServiceUri`, find the main isolate, call `ext.ios.screenMvp.pointer` with
+  `vmServiceUri`, find the main isolate, call `ext.ios_screen_mvp.pointer` with
   JSON parameters, and expose a small `FlutterRuntimeControl` interface so tests
   never depend on a live device.
 
@@ -141,10 +141,13 @@ Run: `git add ios_screen_mvp/flutter_demo ios_screen_mvp/server && git commit -m
 - Modify: `ios_screen_mvp/server/lib/protocol.dart`
 - Create: `ios_screen_mvp/server/test/video_stream_test.dart`
 
-- [ ] **Step 1: Write helper parser tests.** Feed a fake helper byte stream
+- [ ] **Step 1: Write helper and discovery tests.** Feed a fake helper byte stream
   containing a metadata line and complete/truncated frame envelopes. Assert
   complete frames are emitted in order, a truncated frame reports
-  `capture_start_failed`, and stderr text is retained as diagnostics.
+  `capture_start_failed`, and stderr text is retained as diagnostics. Test
+  xctrace parsing separately from recordable helper output. Test selector
+  resolution by capture ID, development UDID, exact name, and name prefix, and
+  reject ambiguous duplicate names.
 
 - [ ] **Step 2: Run tests and verify RED.**
 
@@ -156,21 +159,32 @@ Expected: FAIL because the helper stream parser is missing.
   discovery logic from `screen_recorder` and keep the `iOS Device` plus
   `Apple Inc.` filter. Add `list` output with machine-readable tab-separated
   `id`, `name`, `model`, and `manufacturer`. Set
-  `kCMIOHardwarePropertyAllowScreenCaptureDevices` before discovery.
+  `kCMIOHardwarePropertyAllowScreenCaptureDevices` before discovery. For
+  `stream`, accept both `--device-id` and `--device-name`, match capture ID
+  first and exact name second, and poll discovery for a bounded interval rather
+  than relying on one fixed sleep. Reject duplicate name matches.
 
-- [ ] **Step 4: Implement Swift streaming.** Add `stream --device-id --max-fps
-  --bit-rate` arguments. Configure `AVCaptureSession` and
+- [ ] **Step 4: Implement Swift streaming.** Retain the proven
+  `screen_recorder` `AVCaptureSession`, `AVCaptureDeviceInput`, and
+  `AVCaptureVideoDataOutput` lifecycle, but replace `AVAssetWriter` with a
+  real-time stream. Add `stream --device-id --device-name --max-fps --bit-rate`
+  arguments. Configure `AVCaptureSession` and
   `AVCaptureVideoDataOutput` with late-frame discarding. Create a
   `VTCompressionSession`, set realtime/no-reordering/Constrained Baseline
   properties, convert AVCC NAL lengths to Annex B start codes, prepend SPS/PPS
   to IDR frames, and write metadata plus the 13-byte frame envelope to stdout.
   Write diagnostics only to stderr. On SIGTERM stop capture and exit cleanly.
 
-- [ ] **Step 5: Implement Dart helper startup and parsing.** Compile the Swift
-  file with `swiftc` into a temp executable, launch it with `Process.start`, parse
-  metadata and frame bytes, expose `Stream<VideoFrameEnvelope>`, and terminate
-  the process/socket on cancellation. Translate missing executable, permission,
-  busy device, and non-zero helper exit into stable error codes.
+- [ ] **Step 5: Implement Dart discovery, helper startup, and parsing.** Compile
+  the Swift file with `swiftc` into a temp executable once. Run helper `list`
+  for recordable capture devices and `xcrun xctrace list devices` for connected
+  development devices. Resolve the CLI selector without treating an xctrace
+  UDID as an AVFoundation capture ID, then launch `stream` with the selected ID
+  and name. Parse metadata and frame bytes, expose
+  `Stream<VideoFrameEnvelope>`, and terminate the process on cancellation.
+  Translate missing executable, permission, busy device, discovery mismatch,
+  and non-zero helper exit into stable error codes with both discovery outputs
+  retained as diagnostics.
 
 - [ ] **Step 6: Run parser tests and a compile-only native check.**
 
