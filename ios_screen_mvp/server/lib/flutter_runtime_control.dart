@@ -10,6 +10,7 @@ Uri vmServiceWebSocketUri(Uri serviceUri) =>
     : convertToWebSocketUrl(serviceProtocolUrl: serviceUri);
 
 abstract interface class ControlBackend {
+  Future<DeviceMetadata> resolveMetadata();
   Future<void> send(PointerMessage message);
   Future<void> close();
 }
@@ -27,8 +28,40 @@ final class FlutterRuntimeControl implements ControlBackend {
 
   static const extensionName = 'ext.ios_screen_mvp.pointer';
 
-  final DeviceMetadata metadata;
+  DeviceMetadata metadata;
   final VmServiceAdapter adapter;
+
+  Future<DeviceMetadata> resolveMetadata() async {
+    try {
+      final response = await adapter.callPointerExtension(const {
+        'action': 'view',
+      });
+      if (response case {
+        'ok': true,
+        'logicalWidth': final num logicalWidth,
+        'logicalHeight': final num logicalHeight,
+        'devicePixelRatio': final num devicePixelRatio,
+      }) {
+        metadata = DeviceMetadata(
+          deviceId: metadata.deviceId,
+          screenWidth: metadata.screenWidth,
+          screenHeight: metadata.screenHeight,
+          logicalWidth: logicalWidth.toDouble(),
+          logicalHeight: logicalHeight.toDouble(),
+          devicePixelRatio: devicePixelRatio.toDouble(),
+          videoCodec: metadata.videoCodec,
+          controlBackend: metadata.controlBackend,
+        );
+        return metadata;
+      }
+      throw const FormatException('Missing Flutter view dimensions.');
+    } catch (error) {
+      throw ControlError(
+        code: 'runtime_control_unavailable',
+        message: 'Unable to read Flutter view dimensions: $error',
+      );
+    }
+  }
 
   Future<void> send(PointerMessage message) async {
     try {

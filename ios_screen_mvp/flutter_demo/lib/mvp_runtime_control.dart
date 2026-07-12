@@ -5,6 +5,18 @@ import 'package:flutter/gestures.dart';
 
 const mvpPointerExtension = 'ext.ios_screen_mvp.pointer';
 
+Map<String, Object> encodeViewMetrics({
+  required double physicalWidth,
+  required double physicalHeight,
+  required double devicePixelRatio,
+}) =>
+    {
+      'ok': true,
+      'logicalWidth': physicalWidth / devicePixelRatio,
+      'logicalHeight': physicalHeight / devicePixelRatio,
+      'devicePixelRatio': devicePixelRatio,
+    };
+
 void registerMvpRuntimeControl() {
   assert(() {
     final dispatcher = _PointerDispatcher();
@@ -22,6 +34,18 @@ final class _PointerDispatcher {
   ) async {
     try {
       final action = parameters['action'];
+      if (action == 'view') {
+        final view = GestureBinding.instance.platformDispatcher.views.first;
+        return developer.ServiceExtensionResponse.result(
+          jsonEncode(
+            encodeViewMetrics(
+              physicalWidth: view.physicalSize.width,
+              physicalHeight: view.physicalSize.height,
+              devicePixelRatio: view.devicePixelRatio,
+            ),
+          ),
+        );
+      }
       final x = double.parse(parameters['x'] ?? '');
       final y = double.parse(parameters['y'] ?? '');
       final pointerId = int.parse(parameters['pointerId'] ?? '');

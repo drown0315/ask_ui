@@ -499,7 +499,24 @@ final class NativeCaptureSession implements CaptureSession {
   final NativeHelperStream _stream;
   bool _closed = false;
 
-  Future<DeviceMetadata> get metadata => _stream.metadata;
+  Future<DeviceMetadata> get metadata async {
+    try {
+      return await _stream.metadata;
+    } catch (_) {
+      final exitCode = await _process.exitCode;
+      final diagnostic = await diagnostics;
+      if (exitCode != 0 || diagnostic.trim().isNotEmpty) {
+        throw ControlError(
+          code: _errorCodeFor(diagnostic),
+          message: diagnostic.trim().isEmpty
+              ? 'Native capture helper exited with code $exitCode.'
+              : diagnostic.trim(),
+        );
+      }
+      rethrow;
+    }
+  }
+
   Stream<VideoFrameEnvelope> get frames => _stream.frames;
   Future<String> get diagnostics => _stream.diagnostics;
 

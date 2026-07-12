@@ -228,6 +228,43 @@ Test iPhone (15.8.8) (269bfd1ccaa634d5f2250efe6a22016b18fd16da)
       expect(runner.process.killed, isTrue);
     },
   );
+
+  test(
+    'session preserves the helper error when metadata never starts',
+    () async {
+      final runner = FakeCaptureCommandRunner(
+        helperListOutput: 'id\tname\tmodel\tmanufacturer\n',
+        xctraceOutput: '''
+== Devices ==
+Test iPhone (15.8.8) (269bfd1ccaa634d5f2250efe6a22016b18fd16da)
+''',
+        streamOutput: const [],
+        streamError:
+            'capture_device_not_found: no capture device matched Test iPhone\n',
+        streamExitCode: 4,
+      );
+      final launcher = NativeCaptureLauncher(
+        helperPath: '/tmp/ios_capture',
+        runner: runner,
+      );
+
+      final session = await launcher.start('Test iPhone');
+
+      await expectLater(
+        session.metadata,
+        throwsA(
+          isA<ControlError>()
+              .having((error) => error.code, 'code', 'capture_device_not_found')
+              .having(
+                (error) => error.message,
+                'message',
+                contains('no capture device matched'),
+              ),
+        ),
+      );
+      await session.close();
+    },
+  );
 }
 
 List<List<int>> chunk(List<int> bytes, List<int> sizes) {
@@ -248,7 +285,13 @@ final class FakeCaptureCommandRunner implements CaptureCommandRunner {
     required this.helperListOutput,
     required this.xctraceOutput,
     required List<int> streamOutput,
-  }) : process = FakeCaptureProcess(streamOutput);
+    String streamError = '',
+    int streamExitCode = 0,
+  }) : process = FakeCaptureProcess(
+         streamOutput,
+         error: streamError,
+         exitCode: streamExitCode,
+       );
 
   final String helperListOutput;
   final String xctraceOutput;
@@ -287,18 +330,23 @@ final class FakeCaptureCommandRunner implements CaptureCommandRunner {
 }
 
 final class FakeCaptureProcess implements CaptureProcess {
-  FakeCaptureProcess(List<int> output) : stdout = Stream.value(output);
+  FakeCaptureProcess(List<int> output, {String error = '', int exitCode = 0})
+    : stdout = Stream.value(output),
+      stderr = Stream.value(utf8.encode(error)),
+      _exitCode = exitCode;
 
   @override
   final Stream<List<int>> stdout;
 
   @override
-  Stream<List<int>> get stderr => const Stream.empty();
+  final Stream<List<int>> stderr;
+
+  final int _exitCode;
 
   bool killed = false;
 
   @override
-  Future<int> get exitCode async => 0;
+  Future<int> get exitCode async => _exitCode;
 
   @override
   bool kill([ProcessSignal signal = ProcessSignal.sigterm]) {

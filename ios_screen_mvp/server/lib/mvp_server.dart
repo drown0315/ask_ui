@@ -61,8 +61,9 @@ final class MvpServer {
     PointerMessage? activePointer;
     try {
       capture = await captureFactory();
-      final metadata = await capture.metadata;
-      control = await controlFactory(metadata);
+      final captureMetadata = await capture.metadata;
+      control = await controlFactory(captureMetadata);
+      final metadata = await control.resolveMetadata();
       channel.sink.add(jsonEncode(metadata.toJson()));
       frameSubscription = capture.frames.listen(
         (frame) => channel.sink.add(frame.encode()),

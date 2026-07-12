@@ -69,6 +69,61 @@ void main() {
     expect(adapter.closed, isTrue);
   });
 
+  test(
+    'replaces capture guesses with Flutter runtime view dimensions',
+    () async {
+      final adapter = FakeVmServiceAdapter(
+        response: {
+          'ok': true,
+          'logicalWidth': 375.0,
+          'logicalHeight': 667.0,
+          'devicePixelRatio': 2.0,
+        },
+      );
+      final control = FlutterRuntimeControl(
+        metadata: metadata,
+        adapter: adapter,
+      );
+
+      final resolved = await control.resolveMetadata();
+
+      expect(resolved.logicalWidth, 375);
+      expect(resolved.logicalHeight, 667);
+      expect(resolved.devicePixelRatio, 2);
+      expect(adapter.calls.single, {'action': 'view'});
+    },
+  );
+
+  test(
+    'maps pointers with resolved runtime dimensions after view query',
+    () async {
+      final adapter = FakeVmServiceAdapter(
+        response: {
+          'ok': true,
+          'logicalWidth': 375.0,
+          'logicalHeight': 667.0,
+          'devicePixelRatio': 2.0,
+        },
+      );
+      final control = FlutterRuntimeControl(
+        metadata: metadata,
+        adapter: adapter,
+      );
+      await control.resolveMetadata();
+
+      await control.send(
+        const PointerMessage(action: 'down', x: 0.5, y: 0.5, pointerId: 0),
+      );
+
+      expect(adapter.calls.last, {
+        'action': 'down',
+        'x': '187.5',
+        'y': '333.5',
+        'pointerId': '0',
+      });
+    },
+  );
+
   test('converts a Flutter HTTP service URI to its WebSocket endpoint', () {
     expect(
       vmServiceWebSocketUri(Uri.parse('http://127.0.0.1:1234/token=/')),

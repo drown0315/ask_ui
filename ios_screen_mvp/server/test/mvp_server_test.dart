@@ -35,7 +35,11 @@ void main() {
       );
       final firstMessages = StreamIterator(first.stream);
       expect(await firstMessages.moveNext(), isTrue);
-      expect(jsonDecode(firstMessages.current as String)['type'], 'ready');
+      final ready = jsonDecode(firstMessages.current as String);
+      expect(ready['type'], 'ready');
+      expect(ready['logicalWidth'], 375);
+      expect(ready['logicalHeight'], 667);
+      expect(ready['devicePixelRatio'], 2);
 
       capture.framesController.add(
         VideoFrameEnvelope(
@@ -99,6 +103,20 @@ final class FakeCaptureSession implements CaptureSession {
 final class FakeControlBackend implements ControlBackend {
   final messages = <PointerMessage>[];
   bool closed = false;
+
+  @override
+  Future<DeviceMetadata> resolveMetadata() async {
+    return DeviceMetadata(
+      deviceId: testMetadata.deviceId,
+      screenWidth: testMetadata.screenWidth,
+      screenHeight: testMetadata.screenHeight,
+      logicalWidth: 375,
+      logicalHeight: 667,
+      devicePixelRatio: 2,
+      videoCodec: testMetadata.videoCodec,
+      controlBackend: testMetadata.controlBackend,
+    );
+  }
 
   @override
   Future<void> send(PointerMessage message) async => messages.add(message);
