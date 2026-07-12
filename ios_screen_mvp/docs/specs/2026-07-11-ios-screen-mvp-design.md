@@ -123,22 +123,25 @@ Device discovery crosses two different macOS boundaries:
 
 An xctrace result proves that an iPhone is connected, but it is not itself a
 video source and its UDID must not be assumed to equal
-`AVCaptureDevice.uniqueID`. The Dart discovery flow must:
+`AVCaptureDevice.uniqueID`. The final, physical-device-validated discovery flow
+must:
 
 1. compile the Swift helper once for the server process;
-2. run helper `list` to request CoreMediaIO screen-capture devices;
-3. run `xcrun xctrace list devices` for connected-device metadata;
-4. resolve the requested selector by capture ID, development UDID, exact name,
-   or case-insensitive name prefix;
-5. start `stream` with both the selected ID and device name;
-6. let Swift match capture ID first and exact device name second while polling
-   AVFoundation for a bounded interval;
-7. report `capture_device_not_found` with separate connected-device and
-   recordable-device diagnostics if no `AVCaptureDevice` appears.
+2. run `xcrun xctrace list devices` for connected-device metadata;
+3. resolve a development UDID or device-name selector to an exact device name
+   when possible;
+4. pass an unmatched selector through as a possible AVFoundation capture ID;
+5. start exactly one `stream` helper, including the device name only when
+   xctrace resolved it;
+6. let that same Swift process enable CoreMediaIO, wait for publication, match
+   capture ID first and exact device name second, and own `AVCaptureSession`;
+7. report `capture_device_not_found` only after bounded in-process discovery.
 
-This preserves the browser and server protocol while removing dependence on a
-single fixed one-second discovery delay. Multiple phones with the same display
-name are rejected as ambiguous unless a capture ID is supplied.
+The server must not run helper `list` as a preflight before `stream`. Physical
+testing showed that a successful short-lived AVFoundation discovery can be
+followed by `capture_device_not_found` in a new process. Keeping discovery and
+capture in the same stream helper avoids that cross-process publication issue.
+The standalone `list` command remains a manual diagnostic only.
 
 ### Control
 
@@ -229,8 +232,10 @@ ios_capture list
 ios_capture stream --device-id ID --device-name NAME --max-fps 30 --bit-rate 6000000
 ```
 
-`list` prints recordable iOS capture devices. `stream` writes one metadata line
-followed by framed H.264 access units to stdout. Diagnostics go only to stderr.
+`list` prints recordable iOS capture devices for manual diagnostics; the server
+does not call it before streaming. `stream` performs its own discovery and
+writes one metadata line followed by framed H.264 access units to stdout.
+Diagnostics go only to stderr.
 The Dart server owns the child process and forwards complete frame envelopes to
 the browser WebSocket.
 

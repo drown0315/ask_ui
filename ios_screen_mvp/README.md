@@ -4,6 +4,10 @@ This standalone macOS proof of concept streams a trusted USB iPhone to a local
 browser and forwards pointer input to the included Flutter debug application.
 It does not modify Ask UI applications or `packages/ask_ui_runtime`.
 
+For a standalone implementation description that does not require this source
+tree, see
+[`docs/specs/2026-07-12-ios-screen-projection-implementation-guide.md`](docs/specs/2026-07-12-ios-screen-projection-implementation-guide.md).
+
 ## Prerequisites
 
 - macOS with Xcode Command Line Tools (`xcode-select --install`)
@@ -95,10 +99,12 @@ Both the printed HTTP URI and its `ws://.../ws` form are accepted. The page
 reports video and control states separately, capture dimensions, and rendered
 FPS. One browser controller is supported at a time.
 
-The server runs helper `list` and `xcrun xctrace list devices` before starting
-the stream. It resolves the selector to an AVFoundation capture device by
-capture ID first and exact device name second; an Xcode development UDID is not
-assumed to equal `AVCaptureDevice.uniqueID`.
+The server uses `xcrun xctrace list devices` to map a Flutter/Xcode UDID to a
+device name, then starts one Swift stream helper. That same helper performs
+AVFoundation discovery and owns capture. The server deliberately does not run
+helper `list` as a preflight because cross-process CoreMediaIO publication is
+not reliable. An Xcode development UDID is not assumed to equal
+`AVCaptureDevice.uniqueID`.
 
 ## Troubleshooting
 
