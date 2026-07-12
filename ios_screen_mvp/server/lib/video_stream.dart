@@ -382,38 +382,35 @@ final class NativeCaptureLauncher {
     int maxFps = 30,
     int bitRate = 6000000,
   }) async {
-    final helperList = await runner.run(helperPath, const ['list']);
-    if (helperList.exitCode != 0) {
-      throw ControlError(
-        code: 'capture_start_failed',
-        message: 'Native capture discovery failed: ${helperList.stderr}',
-      );
-    }
     final xctrace = await runner.run('xcrun', const [
       'xctrace',
       'list',
       'devices',
     ]);
-    final recordableDevices = CaptureDevice.parseList(helperList.stdout);
     final developmentDevices = xctrace.exitCode == 0
         ? DevelopmentDevice.parseXctrace(xctrace.stdout)
         : const <DevelopmentDevice>[];
-    final target = CaptureTarget.resolve(
-      selector,
-      recordableDevices: recordableDevices,
-      developmentDevices: developmentDevices,
-    );
-    final process = await runner.start(helperPath, [
+    CaptureTarget? target;
+    try {
+      target = CaptureTarget.resolve(
+        selector,
+        recordableDevices: const [],
+        developmentDevices: developmentDevices,
+      );
+    } on ControlError catch (error) {
+      if (error.code != 'capture_device_not_found') rethrow;
+    }
+    final streamArguments = <String>[
       'stream',
       '--device-id',
-      target.captureId ?? target.developmentId!,
-      '--device-name',
-      target.name,
+      target?.developmentId ?? selector,
+      if (target != null) ...['--device-name', target.name],
       '--max-fps',
       '$maxFps',
       '--bit-rate',
       '$bitRate',
-    ]);
+    ];
+    final process = await runner.start(helperPath, streamArguments);
     return NativeCaptureSession._(
       process,
       NativeHelperStream.parse(stdout: process.stdout, stderr: process.stderr),

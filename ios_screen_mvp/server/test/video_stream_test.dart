@@ -209,7 +209,6 @@ Test iPhone (15.8.8) (269bfd1ccaa634d5f2250efe6a22016b18fd16da)
       );
       expect(await session.metadata, metadata);
       expect(runner.runCalls, [
-        ['/tmp/ios_capture', 'list'],
         ['xcrun', 'xctrace', 'list', 'devices'],
       ]);
       expect(runner.startCalls.single, [
@@ -228,6 +227,37 @@ Test iPhone (15.8.8) (269bfd1ccaa634d5f2250efe6a22016b18fd16da)
       expect(runner.process.killed, isTrue);
     },
   );
+
+  test('launcher passes a capture id directly without helper preflight', () async {
+    final runner = FakeCaptureCommandRunner(
+      helperListOutput: 'id\tname\tmodel\tmanufacturer\n',
+      xctraceOutput: '== Devices ==\nTest Mac (mac-id)\n',
+      streamOutput: utf8.encode('${jsonEncode(metadata.toJson())}\n'),
+    );
+    final launcher = NativeCaptureLauncher(
+      helperPath: '/tmp/ios_capture',
+      runner: runner,
+    );
+
+    final session = await launcher.start(
+      '086CB555-1500-48BB-8F7A-51BF5F6C90C5',
+    );
+    expect(await session.metadata, metadata);
+    expect(runner.runCalls, [
+      ['xcrun', 'xctrace', 'list', 'devices'],
+    ]);
+    expect(runner.startCalls.single, [
+      '/tmp/ios_capture',
+      'stream',
+      '--device-id',
+      '086CB555-1500-48BB-8F7A-51BF5F6C90C5',
+      '--max-fps',
+      '30',
+      '--bit-rate',
+      '6000000',
+    ]);
+    await session.close();
+  });
 
   test(
     'session preserves the helper error when metadata never starts',
