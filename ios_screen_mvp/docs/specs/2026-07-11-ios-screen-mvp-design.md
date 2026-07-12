@@ -162,6 +162,64 @@ long press, drag, or scroll.
 The browser still recognizes a long-press threshold for visible interaction
 feedback, but it does not replace the pointer stream with a `longPress` command.
 
+### Independent Lifecycles
+
+Starting the iPhone screen capture can terminate or disconnect a Flutter debug
+application the first time the capture device is activated. Video and control
+therefore have independent lifecycles:
+
+```text
+Dart server lifetime
+  -> one persistent CaptureSession
+     -> zero or one BrowserSession
+  -> zero or one replaceable ControlSession
+```
+
+The server starts capture initialization with the HTTP service and keeps
+consuming the hot frame stream until server shutdown. HTTP remains available
+while capture is connecting or failed so the browser can render diagnostics.
+Browser disconnect cancels its active pointer and removes only the browser sink;
+it does not restart or stop capture. A newly connected browser waits at most one
+keyframe interval for a decodable IDR.
+
+`--vm-service-uri` is optional. When supplied, the server attempts an initial
+control attachment after capture starts, but attachment failure does not stop
+capture or HTTP service. The normal first-activation workflow is:
+
+1. start the server and let capture stabilize;
+2. launch or relaunch the Flutter demo;
+3. attach its current VM Service URI through `PUT /control`;
+4. open or reconnect the browser.
+
+The loopback-only control endpoint accepts:
+
+```http
+PUT /control
+Content-Type: application/json
+
+{"vmServiceUri":"http://127.0.0.1:62076/token=/"}
+```
+
+A successful response reports `{"state":"ready"}`. `DELETE /control` closes
+the current VM Service connection without affecting video. Repeated `PUT`
+atomically replaces the previous control backend after canceling any active
+pointer. Invalid or unreachable URIs return a diagnostic response while the
+previous ready backend, if any, remains usable.
+
+WebSocket clients receive control state messages independently of video:
+
+```json
+{"type":"control","state":"unavailable"}
+{"type":"control","state":"connecting"}
+{"type":"control","state":"ready"}
+```
+
+Capture metadata may initially contain only video dimensions. When control
+attaches, the server queries Flutter view dimensions, updates its logical
+metadata, and sends a new `ready` message before reporting control `ready`.
+Pointer messages received without a ready backend fail with
+`runtime_control_unavailable` and never tear down the video session.
+
 ## Capture Helper
 
 The helper supports these commands:
@@ -289,10 +347,13 @@ Stable first-phase error codes include:
 - `runtime_control_unavailable`;
 - `invalid_control_message`.
 
-Browser disconnect closes its active pointer with `cancel`, disconnects the VM
-Service client, stops the Swift helper and its stdout stream, and releases the
-AVCapture device. Helper failure closes the WebSocket after sending a diagnostic
-error. Reconnection is manual in the MVP.
+Browser disconnect closes its active pointer with `cancel` and removes its frame
+sink. It does not stop capture or disconnect a ready control backend. Control
+replacement or deletion cancels an active pointer before closing VM Service.
+Server shutdown closes browser and control resources, stops the Swift helper and
+its stdout stream, and releases the AVCapture device. Helper failure closes the
+WebSocket after sending a diagnostic error. Browser and control reconnection are
+manual in the MVP.
 
 ## Testing
 
@@ -306,7 +367,9 @@ Automated tests cover:
 - video rectangle fitting and normalized coordinate mapping;
 - click, long-press, swipe, and cancellation pointer sequences;
 - malformed or out-of-range control messages;
-- helper and VM Service cleanup after browser disconnect;
+- persistent capture across browser disconnect and reconnect;
+- control attachment, replacement, failure isolation, and deletion;
+- helper and VM Service cleanup at their owning lifecycle boundaries;
 - user-facing mapping of missing permission, missing device, and busy device
   failures.
 
@@ -326,11 +389,16 @@ The first phase is complete when:
 6. A single-finger swipe scrolls a Flutter `Scrollable` in the expected
    direction.
 7. Input remains aligned after fitting the video into the browser viewport.
-8. Closing the browser releases native capture and VM Service resources.
+8. Closing and reopening the browser does not restart capture and receives a
+   decodable keyframe within one second.
 9. Missing, untrusted, permission-denied, and busy-device conditions produce a
    diagnostic page state.
 10. A future `BluetoothHidControlBackend` can replace the runtime backend without
     changing the browser pointer protocol.
+11. Capture remains live when Flutter exits; attaching the relaunched demo's new
+    VM Service URI restores click, long press, and swipe without restarting the
+    server or helper.
+12. Server shutdown releases native capture and VM Service resources.
 
 ## Phase Two Boundary
 
