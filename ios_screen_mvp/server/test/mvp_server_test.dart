@@ -12,6 +12,44 @@ import 'package:test/test.dart';
 import 'package:web_socket_channel/io.dart';
 
 void main() {
+  test('server close does not wait for a pending capture start', () async {
+    final webRoot = await Directory.systemTemp.createTemp('mvp_web_test_');
+    await File('${webRoot.path}/index.html').writeAsString('MVP');
+    addTearDown(() => webRoot.delete(recursive: true));
+    final pendingCapture = Completer<CaptureSession>();
+    final mvp = MvpServer(
+      webRoot: webRoot.path,
+      captureFactory: () => pendingCapture.future,
+      controlFactory: (_, _) => throw StateError('unused'),
+    );
+
+    await mvp.close().timeout(const Duration(milliseconds: 100));
+  });
+
+  test('capture failure after browser disconnect does not escape', () async {
+    final webRoot = await Directory.systemTemp.createTemp('mvp_web_test_');
+    await File('${webRoot.path}/index.html').writeAsString('MVP');
+    final pendingCapture = Completer<CaptureSession>();
+    final mvp = MvpServer(
+      webRoot: webRoot.path,
+      captureFactory: () => pendingCapture.future,
+      controlFactory: (_, _) => throw StateError('unused'),
+    );
+    final server = await shelf_io.serve(mvp.handler, '127.0.0.1', 0);
+    addTearDown(() async {
+      await server.close(force: true);
+      await mvp.close();
+      await webRoot.delete(recursive: true);
+    });
+    await WebSocket.connect(
+      'ws://127.0.0.1:${server.port}/session',
+    );
+    await mvp.close();
+
+    pendingCapture.completeError(StateError('capture stopped'));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  });
+
   test('starts capture once and reuses it across browser reconnects', () async {
     final harness = await TestHarness.start();
     addTearDown(harness.close);
@@ -32,23 +70,26 @@ void main() {
     expect(harness.capture.closed, isTrue);
   });
 
-  test('PUT control attaches after capture and publishes ready state', () async {
-    final harness = await TestHarness.start();
-    addTearDown(harness.close);
-    final browser = await harness.connect();
-    await nextJson(browser);
-    await nextJson(browser);
+  test(
+    'PUT control attaches after capture and publishes ready state',
+    () async {
+      final harness = await TestHarness.start();
+      addTearDown(harness.close);
+      final browser = await harness.connect();
+      await nextJson(browser);
+      await nextJson(browser);
 
-    final uri = Uri.parse('http://127.0.0.1:62076/token=/');
-    final response = await putControl(harness.port, uri);
-    expect(response.statusCode, HttpStatus.ok);
-    expect(harness.controlUris, [uri]);
-    expect((await nextJson(browser))['state'], 'connecting');
-    final ready = await nextJson(browser);
-    expect(ready['type'], 'ready');
-    expect(ready['logicalWidth'], 375);
-    expect((await nextJson(browser))['state'], 'ready');
-  });
+      final uri = Uri.parse('http://127.0.0.1:62076/token=/');
+      final response = await putControl(harness.port, uri);
+      expect(response.statusCode, HttpStatus.ok);
+      expect(harness.controlUris, [uri]);
+      expect((await nextJson(browser))['state'], 'connecting');
+      final ready = await nextJson(browser);
+      expect(ready['type'], 'ready');
+      expect(ready['logicalWidth'], 375);
+      expect((await nextJson(browser))['state'], 'ready');
+    },
+  );
 
   test('failed replacement preserves the previous ready control', () async {
     final harness = await TestHarness.start();
@@ -56,7 +97,10 @@ void main() {
     final firstUri = Uri.parse('http://127.0.0.1:62076/first=/');
     final secondUri = Uri.parse('http://127.0.0.1:62077/second=/');
 
-    expect((await putControl(harness.port, firstUri)).statusCode, HttpStatus.ok);
+    expect(
+      (await putControl(harness.port, firstUri)).statusCode,
+      HttpStatus.ok,
+    );
     final firstControl = harness.controls.single;
     harness.controlFactoryError = StateError('new VM unavailable');
     final response = await putControl(harness.port, secondUri);
@@ -71,10 +115,7 @@ void main() {
     final browser = await harness.connect();
     await nextJson(browser);
     await nextJson(browser);
-    await putControl(
-      harness.port,
-      Uri.parse('http://127.0.0.1:62076/token=/'),
-    );
+    await putControl(harness.port, Uri.parse('http://127.0.0.1:62076/token=/'));
     await nextJson(browser);
     await nextJson(browser);
     await nextJson(browser);
@@ -126,11 +167,7 @@ final class TestHarness {
         return control;
       },
     );
-    harness.server = await shelf_io.serve(
-      harness.mvp.handler,
-      '127.0.0.1',
-      0,
-    );
+    harness.server = await shelf_io.serve(harness.mvp.handler, '127.0.0.1', 0);
     return harness;
   }
 

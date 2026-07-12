@@ -57,18 +57,7 @@ and check Camera permission before retrying.
 
 ## Run
 
-Launch the included Flutter app on the iPhone in debug mode:
-
-```sh
-cd ios_screen_mvp/flutter_demo
-flutter devices
-flutter run -d <flutter-device-id>
-```
-
-Keep `flutter run` active and copy its VM Service URI. Both the printed HTTP URI
-and its `ws://.../ws` form are accepted.
-
-Build the browser client and start the local server in another terminal:
+Build the browser client, then start capture before launching Flutter:
 
 ```sh
 cd ios_screen_mvp/web
@@ -76,14 +65,40 @@ npm run build
 
 cd ../server
 dart run bin/server.dart \
-  --device-id '<capture-device-id>' \
-  --vm-service-uri 'http://127.0.0.1:<port>/<token>=/' \
+  --device-id '<capture-id, Flutter UDID, device name, or name prefix>' \
   --web-root ../web/dist \
   --port 8765
 ```
 
-Open `http://127.0.0.1:8765`. The page reports capture dimensions, connection
-state, and rendered FPS. One browser controller is supported at a time.
+Open `http://127.0.0.1:8765` and confirm that video is live. The first capture
+activation can terminate an already-running Flutter debug app, which is why
+capture starts first and remains owned by the server.
+
+Launch the included Flutter app on the iPhone in another terminal:
+
+```sh
+cd ios_screen_mvp/flutter_demo
+flutter devices
+flutter run -d '<flutter-device-id>'
+```
+
+Keep `flutter run` active, copy its VM Service URI, and attach control without
+restarting capture or the browser:
+
+```sh
+curl -X PUT http://127.0.0.1:8765/control \
+  -H 'content-type: application/json' \
+  -d '{"vmServiceUri":"http://127.0.0.1:<port>/<token>=/"}'
+```
+
+Both the printed HTTP URI and its `ws://.../ws` form are accepted. The page
+reports video and control states separately, capture dimensions, and rendered
+FPS. One browser controller is supported at a time.
+
+The server runs helper `list` and `xcrun xctrace list devices` before starting
+the stream. It resolves the selector to an AVFoundation capture device by
+capture ID first and exact device name second; an Xcode development UDID is not
+assumed to equal `AVCaptureDevice.uniqueID`.
 
 ## Troubleshooting
 
@@ -95,12 +110,16 @@ state, and rendered FPS. One browser controller is supported at a time.
 | `capture_device_busy` | Close QuickTime, OBS, and other capture clients. |
 | `capture_start_failed` | Read server stderr, reconnect USB, and rerun device discovery. |
 | `video_encode_failed` | Restart capture and check that the phone remains unlocked. |
-| `vm_service_unavailable` | Keep `flutter run` active and pass its current service URI. |
+| `vm_service_unavailable` | Keep `flutter run` active and PUT its current service URI to `/control`. |
 | `runtime_control_unavailable` | Confirm the standalone demo is a debug build. |
 | `invalid_control_message` | Reload the bundled web client so protocol versions match. |
 
-Closing the browser cancels any active pointer, disconnects VM Service, sends
-SIGTERM to the helper, and releases the capture device. Reconnection is manual.
+Closing the browser cancels any active pointer but keeps video capture and VM
+control alive. Reopen the browser to resume the same capture session. A Flutter
+restart only requires another `PUT /control` with the new URI. Use
+`DELETE /control` to detach control without stopping video. Press `Ctrl+C` in
+the server terminal to disconnect VM Service, stop the helper, and release the
+capture device.
 
 ## Manual Acceptance Record
 
@@ -109,16 +128,17 @@ phone used for acceptance:
 
 | Check | Result |
 | --- | --- |
-| Device / iOS version | Pending real-device run |
-| Ready metadata and moving video | Pending real-device run |
+| Device / iOS version | Pass: 钟惠彬的 iPhone, iOS 15.8.8 |
+| Ready metadata and moving video | Pass: 750x1334 capture, 375x667 logical, DPR 2; consecutive H.264 binary frames received |
 | First keyframe latency (target <= 1 s) | Pending measurement |
 | Sustained rendered FPS | Pending measurement |
-| Button click | Pending real-device run |
-| 600 ms long press | Pending real-device run |
-| Single-finger list scroll | Pending real-device run |
-| Pointer alignment after video fitting | Pending real-device run |
-| Browser close releases helper | Pending real-device run |
-| Lock / permission / busy / USB failure paths | Pending real-device run |
+| Button click | Pass: WebSocket down/up changed `_clicks` from 0 to 1 |
+| 600 ms long press | Pass: 700 ms pointer hold changed `_longPresses` from 0 to 1 |
+| Single-finger list scroll | Pass: upward pointer sequence changed scroll pixels from 0.0 to 266.8 |
+| Pointer alignment after video fitting | Pass for button and long-press target using normalized fitted coordinates |
+| Browser reconnect preserves helper | Pending persistent-helper PID verification |
+| Flutter restart replaces control | Pending replacement with a second VM Service URI |
+| Lock / permission / busy / USB failure paths | Partial: controller busy and missing capture device verified; lock, permission revocation, and USB removal pending |
 
 Bluetooth HID, WDA, ReplayKit, iPhone Mirroring, audio, multitouch, keyboard,
 and arbitrary native-app control are outside this phase.

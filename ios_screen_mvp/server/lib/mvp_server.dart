@@ -13,10 +13,7 @@ import 'video_stream.dart';
 
 typedef CaptureSessionFactory = Future<CaptureSession> Function();
 typedef ControlBackendFactory =
-    Future<ControlBackend> Function(
-      DeviceMetadata metadata,
-      Uri vmServiceUri,
-    );
+    Future<ControlBackend> Function(DeviceMetadata metadata, Uri vmServiceUri);
 
 final class MvpServer {
   MvpServer({
@@ -56,8 +53,16 @@ final class MvpServer {
   Future<void> _startCapture(CaptureSessionFactory captureFactory) async {
     try {
       final capture = await captureFactory();
+      if (_closed) {
+        await capture.close();
+        return;
+      }
       _capture = capture;
       final captureMetadata = await capture.metadata;
+      if (_closed) {
+        await capture.close();
+        return;
+      }
       _captureMetadata = captureMetadata;
       _metadata = captureMetadata;
       _frameSubscription = capture.frames.listen(
@@ -273,10 +278,10 @@ final class MvpServer {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
-    await _captureStarted;
     await _cancelActivePointer();
-    await _browser?.sink.close();
+    final browser = _browser;
     _browser = null;
+    await browser?.sink.close();
     await _frameSubscription?.cancel();
     await _control?.close();
     await _capture?.close();
@@ -286,6 +291,10 @@ final class MvpServer {
     final controlError = error is ControlError
         ? error
         : ControlError(code: 'capture_start_failed', message: '$error');
-    channel.sink.add(jsonEncode(controlError.toJson()));
+    try {
+      channel.sink.add(jsonEncode(controlError.toJson()));
+    } on StateError {
+      // A browser can disconnect while capture or control is still settling.
+    }
   }
 }

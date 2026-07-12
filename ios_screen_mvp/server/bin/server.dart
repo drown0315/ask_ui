@@ -9,7 +9,7 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 
 Future<void> main(List<String> arguments) async {
   final parser = ArgParser()
-    ..addOption('vm-service-uri', mandatory: true)
+    ..addOption('vm-service-uri')
     ..addOption('device-id', mandatory: true)
     ..addOption('web-root')
     ..addOption('port', defaultsTo: '8765');
@@ -26,7 +26,7 @@ Future<void> main(List<String> arguments) async {
   final mvpRoot = File.fromUri(Platform.script).parent.parent.parent;
   final sourcePath = '${mvpRoot.path}/native/ios_capture.swift';
   final webRoot = options.option('web-root') ?? '${mvpRoot.path}/web/dist';
-  final vmServiceUri = Uri.parse(options.option('vm-service-uri')!);
+  final initialVmServiceUri = options.option('vm-service-uri');
   final deviceId = options.option('device-id')!;
   final port = int.tryParse(options.option('port')!);
   if (port == null || port < 0 || port > 65535) {
@@ -46,9 +46,16 @@ Future<void> main(List<String> arguments) async {
       adapter: await LiveVmServiceAdapter.connect(requestedUri),
     ),
   );
-  await mvp.attachControl(vmServiceUri);
   final server = await shelf_io.serve(mvp.handler, '127.0.0.1', port);
   stdout.writeln('iOS Screen MVP listening on http://127.0.0.1:${server.port}');
+  if (initialVmServiceUri != null) {
+    try {
+      await mvp.attachControl(Uri.parse(initialVmServiceUri));
+      stdout.writeln('Flutter runtime control attached.');
+    } catch (error) {
+      stderr.writeln('Unable to attach initial Flutter control: $error');
+    }
+  }
 
   final stopping = Completer<void>();
   late final StreamSubscription<ProcessSignal> interrupt;
@@ -56,6 +63,8 @@ Future<void> main(List<String> arguments) async {
   Future<void> stop(ProcessSignal _) async {
     if (stopping.isCompleted) return;
     await server.close(force: true);
+    await mvp.close();
+    await captureLauncher.close();
     stopping.complete();
   }
 
@@ -64,5 +73,4 @@ Future<void> main(List<String> arguments) async {
   await stopping.future;
   await interrupt.cancel();
   await terminate.cancel();
-  await captureLauncher.close();
 }
