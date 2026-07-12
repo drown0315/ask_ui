@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ios_screen_mvp_server/protocol.dart';
@@ -91,6 +92,142 @@ malformed
       ),
     ]);
   });
+
+  group('capture discovery', () {
+    const recordable = CaptureDevice(
+      id: '086CB555-1500-48BB-8F7A-51BF5F6C90C5',
+      name: 'Test iPhone',
+      model: 'iOS Device',
+      manufacturer: 'Apple Inc.',
+    );
+    const connected = DevelopmentDevice(
+      id: '269bfd1ccaa634d5f2250efe6a22016b18fd16da',
+      name: 'Test iPhone',
+    );
+
+    test('parses physical iPhones from xctrace device output', () {
+      final devices = DevelopmentDevice.parseXctrace('''
+== Devices ==
+Test Mac (413457E0-CF99-52D4-A082-30349AC884F5)
+Test iPhone (15.8.8) (269bfd1ccaa634d5f2250efe6a22016b18fd16da)
+
+== Simulators ==
+iPhone 17 Simulator (26.4) (58CC29EF-4758-4E4E-A79A-398E4A26C91F)
+''');
+
+      expect(devices, [connected]);
+    });
+
+    test('maps a development UDID to the matching recordable capture ID', () {
+      final target = CaptureTarget.resolve(
+        connected.id,
+        recordableDevices: const [recordable],
+        developmentDevices: const [connected],
+      );
+
+      expect(target.captureId, recordable.id);
+      expect(target.developmentId, connected.id);
+      expect(target.name, 'Test iPhone');
+    });
+
+    test('resolves exact names and case-insensitive name prefixes', () {
+      for (final selector in ['Test iPhone', 'test iph']) {
+        final target = CaptureTarget.resolve(
+          selector,
+          recordableDevices: const [recordable],
+          developmentDevices: const [connected],
+        );
+
+        expect(target.captureId, recordable.id);
+      }
+    });
+
+    test(
+      'retains a development target while capture publication is pending',
+      () {
+        final target = CaptureTarget.resolve(
+          connected.id,
+          recordableDevices: const [],
+          developmentDevices: const [connected],
+        );
+
+        expect(target.captureId, isNull);
+        expect(target.developmentId, connected.id);
+        expect(target.name, connected.name);
+      },
+    );
+
+    test('rejects ambiguous duplicate device names', () {
+      expect(
+        () => CaptureTarget.resolve(
+          'Shared iPhone',
+          recordableDevices: const [
+            CaptureDevice(
+              id: 'capture-1',
+              name: 'Shared iPhone',
+              model: 'iOS Device',
+              manufacturer: 'Apple Inc.',
+            ),
+            CaptureDevice(
+              id: 'capture-2',
+              name: 'Shared iPhone',
+              model: 'iOS Device',
+              manufacturer: 'Apple Inc.',
+            ),
+          ],
+          developmentDevices: const [],
+        ),
+        throwsA(
+          isA<ControlError>().having(
+            (error) => error.code,
+            'code',
+            'capture_device_not_found',
+          ),
+        ),
+      );
+    });
+  });
+
+  test(
+    'launcher discovers a development device before starting its stream',
+    () async {
+      final runner = FakeCaptureCommandRunner(
+        helperListOutput: 'id\tname\tmodel\tmanufacturer\n',
+        xctraceOutput: '''
+== Devices ==
+Test iPhone (15.8.8) (269bfd1ccaa634d5f2250efe6a22016b18fd16da)
+''',
+        streamOutput: utf8.encode('${jsonEncode(metadata.toJson())}\n'),
+      );
+      final launcher = NativeCaptureLauncher(
+        helperPath: '/tmp/ios_capture',
+        runner: runner,
+      );
+
+      final session = await launcher.start(
+        '269bfd1ccaa634d5f2250efe6a22016b18fd16da',
+      );
+      expect(await session.metadata, metadata);
+      expect(runner.runCalls, [
+        ['/tmp/ios_capture', 'list'],
+        ['xcrun', 'xctrace', 'list', 'devices'],
+      ]);
+      expect(runner.startCalls.single, [
+        '/tmp/ios_capture',
+        'stream',
+        '--device-id',
+        '269bfd1ccaa634d5f2250efe6a22016b18fd16da',
+        '--device-name',
+        'Test iPhone',
+        '--max-fps',
+        '30',
+        '--bit-rate',
+        '6000000',
+      ]);
+      await session.close();
+      expect(runner.process.killed, isTrue);
+    },
+  );
 }
 
 List<List<int>> chunk(List<int> bytes, List<int> sizes) {
@@ -104,4 +241,68 @@ List<List<int>> chunk(List<int> bytes, List<int> sizes) {
   }
   if (offset < bytes.length) chunks.add(bytes.sublist(offset));
   return chunks;
+}
+
+final class FakeCaptureCommandRunner implements CaptureCommandRunner {
+  FakeCaptureCommandRunner({
+    required this.helperListOutput,
+    required this.xctraceOutput,
+    required List<int> streamOutput,
+  }) : process = FakeCaptureProcess(streamOutput);
+
+  final String helperListOutput;
+  final String xctraceOutput;
+  final FakeCaptureProcess process;
+  final List<List<String>> runCalls = [];
+  final List<List<String>> startCalls = [];
+
+  @override
+  Future<CaptureCommandResult> run(
+    String executable,
+    List<String> arguments,
+  ) async {
+    runCalls.add([executable, ...arguments]);
+    if (executable == 'xcrun') {
+      return CaptureCommandResult(
+        exitCode: 0,
+        stdout: xctraceOutput,
+        stderr: '',
+      );
+    }
+    return CaptureCommandResult(
+      exitCode: 0,
+      stdout: helperListOutput,
+      stderr: '',
+    );
+  }
+
+  @override
+  Future<CaptureProcess> start(
+    String executable,
+    List<String> arguments,
+  ) async {
+    startCalls.add([executable, ...arguments]);
+    return process;
+  }
+}
+
+final class FakeCaptureProcess implements CaptureProcess {
+  FakeCaptureProcess(List<int> output) : stdout = Stream.value(output);
+
+  @override
+  final Stream<List<int>> stdout;
+
+  @override
+  Stream<List<int>> get stderr => const Stream.empty();
+
+  bool killed = false;
+
+  @override
+  Future<int> get exitCode async => 0;
+
+  @override
+  bool kill([ProcessSignal signal = ProcessSignal.sigterm]) {
+    killed = true;
+    return true;
+  }
 }

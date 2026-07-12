@@ -35,10 +35,12 @@ Future<void> main(List<String> arguments) async {
     return;
   }
 
+  final captureLauncher = await NativeCaptureLauncher.build(
+    sourcePath: sourcePath,
+  );
   final mvp = MvpServer(
     webRoot: webRoot,
-    captureFactory: () =>
-        NativeCaptureSession.start(sourcePath: sourcePath, deviceId: deviceId),
+    captureFactory: () => captureLauncher.start(deviceId),
     controlFactory: (metadata) async => FlutterRuntimeControl(
       metadata: metadata,
       adapter: await LiveVmServiceAdapter.connect(vmServiceUri),
@@ -61,4 +63,5 @@ Future<void> main(List<String> arguments) async {
   await stopping.future;
   await interrupt.cancel();
   await terminate.cancel();
+  await captureLauncher.close();
 }

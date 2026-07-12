@@ -30,11 +30,9 @@ func enableIOSScreenCaptureDevices() {
         UInt32(MemoryLayout.size(ofValue: allow)),
         &allow
     )
-    Thread.sleep(forTimeInterval: 1)
 }
 
-func discoverIOSDevices() -> [IOSCaptureDevice] {
-    enableIOSScreenCaptureDevices()
+func currentIOSDevices() -> [IOSCaptureDevice] {
     let discovery = AVCaptureDevice.DiscoverySession(
         deviceTypes: [.external, .builtInWideAngleCamera],
         mediaType: nil,
@@ -51,6 +49,45 @@ func discoverIOSDevices() -> [IOSCaptureDevice] {
                 device: $0
             )
         }
+}
+
+func discoverIOSDevices(timeout: TimeInterval = 10) -> [IOSCaptureDevice] {
+    enableIOSScreenCaptureDevices()
+    let deadline = Date().addingTimeInterval(timeout)
+    repeat {
+        let devices = currentIOSDevices()
+        if !devices.isEmpty {
+            return devices
+        }
+        Thread.sleep(forTimeInterval: 0.25)
+    } while Date() < deadline
+    return []
+}
+
+func resolveIOSDevice(
+    id: String,
+    name: String?,
+    timeout: TimeInterval = 10
+) throws -> IOSCaptureDevice? {
+    enableIOSScreenCaptureDevices()
+    let deadline = Date().addingTimeInterval(timeout)
+    repeat {
+        let devices = currentIOSDevices()
+        if let idMatch = devices.first(where: { $0.id == id }) {
+            return idMatch
+        }
+        if let name {
+            let nameMatches = devices.filter { $0.name == name }
+            if nameMatches.count > 1 {
+                throw CaptureError("capture_device_not_found: multiple capture devices matched name \(name); use a capture id")
+            }
+            if let nameMatch = nameMatches.first {
+                return nameMatch
+            }
+        }
+        Thread.sleep(forTimeInterval: 0.25)
+    } while Date() < deadline
+    return nil
 }
 
 final class CaptureStreamer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
@@ -307,8 +344,16 @@ enum IOSCaptureMain {
             eprint("capture_permission_denied: camera permission denied")
             exit(3)
         }
-        guard let device = discoverIOSDevices().first(where: { $0.id == deviceID }) else {
-            eprint("capture_device_not_found: no trusted physical iOS capture device matched \(deviceID)")
+        let deviceName = value(after: "--device-name", in: arguments)
+        let device: IOSCaptureDevice
+        do {
+            guard let resolved = try resolveIOSDevice(id: deviceID, name: deviceName) else {
+                eprint("capture_device_not_found: no trusted physical iOS capture device matched id \(deviceID) or name \(deviceName ?? "<none>")")
+                exit(4)
+            }
+            device = resolved
+        } catch {
+            eprint(String(describing: error))
             exit(4)
         }
 
