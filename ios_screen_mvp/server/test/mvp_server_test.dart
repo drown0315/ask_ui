@@ -19,14 +19,19 @@ void main() {
       await File('${webRoot.path}/index.html').writeAsString('MVP');
       final capture = FakeCaptureSession();
       final control = FakeControlBackend();
+      var captureFactoryCalls = 0;
       final mvp = MvpServer(
         webRoot: webRoot.path,
-        captureFactory: () async => capture,
+        captureFactory: () async {
+          captureFactoryCalls++;
+          return capture;
+        },
         controlFactory: (_) async => control,
       );
       final server = await shelf_io.serve(mvp.handler, '127.0.0.1', 0);
       addTearDown(() async {
         await server.close(force: true);
+        await mvp.close();
         await webRoot.delete(recursive: true);
       });
 
@@ -71,8 +76,25 @@ void main() {
       await second.sink.close();
 
       await first.sink.close();
-      await pumpUntil(() => capture.closed && control.closed);
+      await pumpUntil(() => control.messages.last.action == 'cancel');
       expect(control.messages.last.action, 'cancel');
+      expect(capture.closed, isFalse);
+      expect(control.closed, isFalse);
+
+      final reconnected = IOWebSocketChannel.connect(
+        Uri.parse('ws://127.0.0.1:${server.port}/session'),
+      );
+      final reconnectedReady = jsonDecode(
+        await reconnected.stream.first as String,
+      );
+      expect(reconnectedReady['type'], 'ready');
+      expect(captureFactoryCalls, 1);
+      expect(capture.closed, isFalse);
+      await reconnected.sink.close();
+
+      await mvp.close();
+      expect(capture.closed, isTrue);
+      expect(control.closed, isTrue);
     },
   );
 }

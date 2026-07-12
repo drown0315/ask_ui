@@ -19,30 +19,66 @@ final class MvpServer {
     required String webRoot,
     required CaptureSessionFactory captureFactory,
     required ControlBackendFactory controlFactory,
-  }) : handler = Cascade()
-           .add(_sessionHandler(captureFactory, controlFactory))
-           .add(createStaticHandler(webRoot, defaultDocument: 'index.html'))
-           .handler;
+  }) : _controlFactory = controlFactory {
+    handler = Cascade()
+        .add(_sessionHandler())
+        .add(createStaticHandler(webRoot, defaultDocument: 'index.html'))
+        .handler;
+    _captureStarted = _startCapture(captureFactory);
+  }
 
-  final Handler handler;
+  late final Handler handler;
+  late final Future<void> _captureStarted;
+  final ControlBackendFactory _controlFactory;
 
-  static bool _controllerActive = false;
+  CaptureSession? _capture;
+  StreamSubscription<VideoFrameEnvelope>? _frameSubscription;
+  DeviceMetadata? _metadata;
+  ControlBackend? _control;
+  WebSocketChannel? _browser;
+  PointerMessage? _activePointer;
+  Object? _captureError;
+  bool _closed = false;
 
-  static Handler _sessionHandler(
-    CaptureSessionFactory captureFactory,
-    ControlBackendFactory controlFactory,
-  ) {
+  Handler _sessionHandler() {
     return webSocketHandler((channel, _) {
-      unawaited(_runSession(channel, captureFactory, controlFactory));
+      unawaited(_runSession(channel));
     });
   }
 
-  static Future<void> _runSession(
-    WebSocketChannel channel,
-    CaptureSessionFactory captureFactory,
-    ControlBackendFactory controlFactory,
-  ) async {
-    if (_controllerActive) {
+  Future<void> _startCapture(CaptureSessionFactory captureFactory) async {
+    try {
+      final capture = await captureFactory();
+      _capture = capture;
+      final captureMetadata = await capture.metadata;
+      final control = await _controlFactory(captureMetadata);
+      _control = control;
+      _metadata = await control.resolveMetadata();
+      _frameSubscription = capture.frames.listen(
+        (frame) => _browser?.sink.add(frame.encode()),
+        onError: (Object error) {
+          _captureError = error;
+          final browser = _browser;
+          if (browser != null) {
+            _sendError(browser, error);
+          }
+        },
+      );
+    } catch (error) {
+      _captureError = error;
+      final browser = _browser;
+      if (browser != null) {
+        _sendError(browser, error);
+      }
+    }
+  }
+
+  Future<void> _runSession(WebSocketChannel channel) async {
+    if (_closed) {
+      await channel.sink.close();
+      return;
+    }
+    if (_browser != null) {
       channel.sink.add(
         jsonEncode({
           'type': 'error',
@@ -53,25 +89,16 @@ final class MvpServer {
       await channel.sink.close();
       return;
     }
-    _controllerActive = true;
+    _browser = channel;
 
-    CaptureSession? capture;
-    ControlBackend? control;
-    StreamSubscription<VideoFrameEnvelope>? frameSubscription;
-    PointerMessage? activePointer;
     try {
-      capture = await captureFactory();
-      final captureMetadata = await capture.metadata;
-      control = await controlFactory(captureMetadata);
-      final metadata = await control.resolveMetadata();
-      channel.sink.add(jsonEncode(metadata.toJson()));
-      frameSubscription = capture.frames.listen(
-        (frame) => channel.sink.add(frame.encode()),
-        onError: (Object error) {
-          _sendError(channel, error);
-          unawaited(channel.sink.close());
-        },
-      );
+      await _captureStarted;
+      if (_captureError case final error?) {
+        _sendError(channel, error);
+        await channel.sink.close();
+        return;
+      }
+      channel.sink.add(jsonEncode(_metadata!.toJson()));
 
       await for (final rawMessage in channel.stream) {
         if (rawMessage is! String) {
@@ -86,8 +113,8 @@ final class MvpServer {
         }
         try {
           final message = PointerMessage.parse(rawMessage);
-          await control.send(message);
-          activePointer = switch (message.action) {
+          await _control!.send(message);
+          _activePointer = switch (message.action) {
             'down' || 'move' => message,
             _ => null,
           };
@@ -99,25 +126,41 @@ final class MvpServer {
       _sendError(channel, error);
       await channel.sink.close();
     } finally {
-      if (activePointer case final pointer?) {
-        try {
-          await control?.send(
-            PointerMessage(
-              action: 'cancel',
-              x: pointer.x,
-              y: pointer.y,
-              pointerId: pointer.pointerId,
-            ),
-          );
-        } catch (_) {
-          // Resource cleanup continues if the runtime has already disconnected.
-        }
+      await _cancelActivePointer();
+      if (identical(_browser, channel)) {
+        _browser = null;
       }
-      await frameSubscription?.cancel();
-      await control?.close();
-      await capture?.close();
-      _controllerActive = false;
     }
+  }
+
+  Future<void> _cancelActivePointer() async {
+    final pointer = _activePointer;
+    _activePointer = null;
+    if (pointer == null) return;
+    try {
+      await _control?.send(
+        PointerMessage(
+          action: 'cancel',
+          x: pointer.x,
+          y: pointer.y,
+          pointerId: pointer.pointerId,
+        ),
+      );
+    } catch (_) {
+      // Resource cleanup continues if the runtime has already disconnected.
+    }
+  }
+
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    await _captureStarted;
+    await _cancelActivePointer();
+    await _browser?.sink.close();
+    _browser = null;
+    await _frameSubscription?.cancel();
+    await _control?.close();
+    await _capture?.close();
   }
 
   static void _sendError(WebSocketChannel channel, Object error) {
