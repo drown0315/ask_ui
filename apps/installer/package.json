@@ -1,0 +1,16 @@
+{
+  "name": "ask-ui",
+  "version": "0.0.5",
+  "private": true,
+  "description": "Ask UI installer CLI.",
+  "type": "module",
+  "bin": {
+    "ask-ui": "./bin/ask-ui.mjs"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
