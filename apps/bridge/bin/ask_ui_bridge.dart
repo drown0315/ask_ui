@@ -3,6 +3,7 @@ import 'dart:isolate';
 
 import 'package:ask_ui_bridge/agent_command/agent_session_command.dart';
 import 'package:ask_ui_bridge/app_controller/flutter_app_controller.dart';
+import 'package:ask_ui_bridge/diagnostics/doctor_command.dart';
 import 'package:ask_ui_bridge/inspector/flutter_inspector_client.dart';
 import 'package:ask_ui_bridge/launch/launch_command.dart';
 import 'package:ask_ui_bridge/logging/bridge_logger.dart';
@@ -24,6 +25,14 @@ Future<void> main(List<String> args) async {
 
   if (_isLaunchCommand(args)) {
     final LaunchCommandResult result = await runLaunchCommand(args);
+    stdout.write(result.stdout);
+    stderr.write(result.stderr);
+    exitCode = result.exitCode;
+    return;
+  }
+
+  if (_isDoctorCommand(args)) {
+    final DoctorCommandResult result = await runDoctorCommand(args);
     stdout.write(result.stdout);
     stderr.write(result.stderr);
     exitCode = result.exitCode;
@@ -58,6 +67,10 @@ bool _isAgentCommand(List<String> args) {
 
 bool _isLaunchCommand(List<String> args) {
   return args.isNotEmpty && args.first == 'launch';
+}
+
+bool _isDoctorCommand(List<String> args) {
+  return args.isNotEmpty && args.first == 'doctor';
 }
 
 String? _readOption(List<String> args, String name) {
