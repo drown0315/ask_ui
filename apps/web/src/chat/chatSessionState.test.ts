@@ -251,7 +251,7 @@ test('adds a temporary Agent working placeholder to visible Chat History', () =>
     {
       id: 'agent-working-placeholder',
       role: 'agent',
-      text: 'Agent working...',
+      text: 'Agent working',
     },
   ]);
 });
