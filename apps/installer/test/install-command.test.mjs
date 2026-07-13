@@ -1,10 +1,17 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import { describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { runAskUiInstaller } from '../src/install-command.mjs';
 
 const ASK_UI_SKILL_URL =
   'https://github.com/drown0315/ask_ui/tree/main/skills/ask-ui';
+const REPO_ROOT = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../..',
+);
 
 describe('ask-ui install command', () => {
   it('prints a human-readable dry-run setup plan by default', async () => {
@@ -459,6 +466,34 @@ describe('ask-ui install command', () => {
       error: 'invalid_arguments',
     });
   });
+
+  it('keeps public install docs aligned with the installer skill command', async () => {
+    const readme = await readFile(resolve(REPO_ROOT, 'README.md'), 'utf8');
+    const tools = readyTools('/workspace/flutter_app');
+
+    const result = await runAskUiInstaller({
+      args: ['install', '--dry-run', '--json'],
+      cwd: '/workspace/flutter_app',
+      env: {},
+      tools,
+    });
+
+    assert.equal(result.exitCode, 0);
+    const plan = JSON.parse(result.stdout);
+    const documentedCommands = commandsInSection(readme, 'Other Install Ways');
+    const installerSkillCommand = plan.actions.find(
+      (action) => action.name === 'install_skill',
+    )?.command;
+
+    assert.match(readme, /^## Recommended Install$/m);
+    assert.match(readme, /^## Other Install Ways$/m);
+    assert.doesNotMatch(readme, /^## Bridge Only$/m);
+    assert.doesNotMatch(readme, /^## Skill Only$/m);
+    assert.deepEqual(documentedCommands, [
+      'dart pub global activate ask_ui_bridge',
+      installerSkillCommand,
+    ]);
+  });
 });
 
 function readyTools(projectRoot, options = {}) {
@@ -597,6 +632,23 @@ function assertMetadata(tools, projectRoot) {
       2,
     )}\n`,
   );
+}
+
+function commandsInSection(markdown, heading) {
+  const sectionMatch = markdown.match(
+    new RegExp(
+      `^## ${heading}\\n(?<body>[\\s\\S]*?)(?=^## |$(?![\\s\\S]))`,
+      'm',
+    ),
+  );
+  assert.ok(sectionMatch, `Missing README section: ${heading}`);
+  return [...sectionMatch.groups.body.matchAll(/^([^`\n#].+)$/gm)]
+    .map((match) => match[1].trim())
+    .filter(
+      (line) =>
+        line === 'dart pub global activate ask_ui_bridge' ||
+        line.startsWith('npx skills add '),
+    );
 }
 
 class FakeTools {

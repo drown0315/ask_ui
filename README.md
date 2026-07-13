@@ -11,6 +11,29 @@ Ask UI is a Flutter developer workbench for selecting precise UI targets, collec
 - `issues` - Issue tracking artifacts.
 - `skills` - Coding-agent workflows for Ask UI.
 
+## Recommended Install
+
+From the Flutter project you want to inspect, install Ask UI with the npm
+installer:
+
+```sh
+npx ask-ui install
+```
+
+The installer activates the bridge, installs the Ask UI coding-agent skill,
+records local Ask UI metadata, runs diagnostics, and prints the launch command
+for the project.
+
+## Other Install Ways
+
+If you want to manage each setup step yourself, install the bridge and skill
+with this command sequence:
+
+```sh
+dart pub global activate ask_ui_bridge
+npx skills add https://github.com/drown0315/ask_ui/tree/main/skills/ask-ui
+```
+
 ## Bridge
 
 Run commands from `apps/bridge`:
@@ -38,7 +61,6 @@ void main() {
 ```
 
 ```sh
-dart pub global activate ask_ui_bridge
 ask_ui_bridge launch
 ```
 
@@ -51,9 +73,10 @@ Ask UI includes two launch workflow skills:
 - `skills/ask-ui-dev/SKILL.md` for Ask UI maintainers working from this source
   checkout.
 
-The skills are intentionally installed manually in this version. They tell the
-agent to start Ask UI, handle device selection, and write Ask UI Chat replies
-through the returned `agent poll` command.
+The installer and the manual "Other Install Ways" sequence install the normal
+Ask UI skill. The skills tell the agent to start Ask UI, handle device
+selection, and write Ask UI Chat replies through the returned `agent poll`
+command.
 
 Ask UI maintainers prepare the bridge package for release by building the Web
 workbench into the bridge package before running pub validation:
