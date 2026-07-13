@@ -1,14 +1,22 @@
-import { access } from 'node:fs/promises';
+import { access, mkdir, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { spawn } from 'node:child_process';
 
+const ASK_UI_SKILL_URL =
+  'https://github.com/drown0315/ask_ui/tree/main/skills/ask-ui';
+const ASK_UI_VERSION_SET = {
+  version: '0.0.5',
+  bridge: '0.0.5',
+  runtime: '0.0.5',
+  skill: '0.0.5',
+};
+
 /**
  * Runs the Ask UI npm installer command.
  *
- * The first installer slice is intentionally dry-run only. It validates the
- * target project and local tools, then prints the setup actions that a later
- * slice will execute.
+ * The installer validates the target project and local tools, can print an
+ * explicit dry-run plan, and otherwise performs the local Ask UI bootstrap.
  */
 export async function runAskUiInstaller({
   args,
@@ -20,11 +28,11 @@ export async function runAskUiInstaller({
   try {
     options = parseInstallOptions(args);
   } catch {
-    return jsonFailure('invalid_arguments');
+    return invalidArgumentsResult(args.includes('--json'));
   }
 
   if (options.command !== 'install') {
-    return jsonFailure('invalid_arguments');
+    return invalidArgumentsResult(options.json);
   }
 
   const projectRoot = options.projectRoot ?? cwd;
@@ -42,35 +50,117 @@ export async function runAskUiInstaller({
   );
 
   if (hasMissingPrerequisites) {
-    return {
+    return installerResult({
       exitCode: 1,
-      stdout: `${JSON.stringify({
+      json: options.json,
+      payload: {
         status: 'error',
         error: 'missing_prerequisites',
         projectRoot,
         checks,
-      })}\n`,
-      stderr: '',
-    };
+      },
+      text: formatMissingPrerequisites({ projectRoot, checks }),
+    });
   }
 
-  return {
-    exitCode: 0,
-    stdout: `${JSON.stringify({
-      status: 'plan',
-      command: 'install',
+  if (options.dryRun) {
+    return installerResult({
+      exitCode: 0,
+      json: options.json,
+      payload: {
+        status: 'plan',
+        command: 'install',
+        projectRoot,
+        dryRun: true,
+        checks,
+        actions: installActions({ projectRoot }),
+        nextStep: 'Run npx ask-ui install to apply this plan.',
+      },
+      text: formatInstallPlan({
+        projectRoot,
+        checks,
+        actions: installActions({ projectRoot }),
+      }),
+    });
+  }
+
+  const steps = [];
+  const bridgeStep = await runInstallStep(tools, {
+    name: 'install_bridge',
+    command: 'dart',
+    args: ['pub', 'global', 'activate', 'ask_ui_bridge'],
+  });
+  steps.push(bridgeStep);
+  if (bridgeStep.status === 'failed') {
+    return installFailure({
+      json: options.json,
       projectRoot,
-      agent: options.agent,
-      approved: options.approved,
-      dryRun: true,
-      checks,
-      actions: installActions({ projectRoot, agent: options.agent }),
-      nextStep: options.approved
-        ? 'Dry-run only for this release; no setup commands were executed.'
-        : 'Re-run with --yes when you are ready to apply this plan.',
-    })}\n`,
-    stderr: '',
+      failedStep: bridgeStep.name,
+      steps,
+    });
+  }
+
+  const skillStep = await runInstallStep(tools, {
+    name: 'install_skill',
+    command: 'npx',
+    args: ['skills', 'add', ASK_UI_SKILL_URL],
+  });
+  steps.push(skillStep);
+  if (skillStep.status === 'failed') {
+    return installFailure({
+      json: options.json,
+      projectRoot,
+      failedStep: skillStep.name,
+      steps,
+    });
+  }
+
+  const metadataPath = join(projectRoot, '.ask-ui', 'config.json');
+  const metadataStep = await writeMetadataStep(tools, {
+    path: metadataPath,
+    directory: join(projectRoot, '.ask-ui'),
+  });
+  steps.push(metadataStep);
+  if (metadataStep.status === 'failed') {
+    return installFailure({
+      json: options.json,
+      projectRoot,
+      failedStep: metadataStep.name,
+      steps,
+    });
+  }
+
+  const diagnosticsStep = await runInstallStep(tools, {
+    name: 'run_diagnostics',
+    command: 'ask_ui_bridge',
+    args: ['doctor', '--project', projectRoot],
+  });
+  steps.push(diagnosticsStep);
+  if (diagnosticsStep.status === 'failed') {
+    return installFailure({
+      json: options.json,
+      projectRoot,
+      failedStep: diagnosticsStep.name,
+      steps,
+    });
+  }
+
+  const payload = {
+    status: 'installed',
+    command: 'install',
+    projectRoot,
+    dryRun: false,
+    checks,
+    steps,
+    metadataPath,
+    launchCommand: `ask_ui_bridge launch --project-root ${projectRoot}`,
   };
+  return installerResult({
+    exitCode: 0,
+    json: options.json,
+    payload,
+    text: formatInstalled(payload),
+  });
 }
 
 class NodeInstallerTools {
@@ -101,6 +191,14 @@ class NodeInstallerTools {
     } catch {
       return false;
     }
+  }
+
+  async createDirectory(directory) {
+    await mkdir(directory, { recursive: true });
+  }
+
+  async writeFile(path, contents) {
+    await writeFile(path, contents);
   }
 
   async run(command, args, options = {}) {
@@ -134,32 +232,29 @@ function parseInstallOptions(args) {
   }
   const [command, ...rest] = args;
   let projectRoot = null;
-  let agent = 'codex';
-  let approved = false;
+  let dryRun = false;
+  let json = false;
 
   for (let index = 0; index < rest.length; ) {
     const argument = rest[index];
     if (argument === '--project' || argument === '--project-root') {
-      if (index + 1 >= rest.length) {
+      if (index + 1 >= rest.length || rest[index + 1].startsWith('-')) {
         throw new Error('missing project');
       }
       projectRoot = rest[index + 1];
       index += 2;
-    } else if (argument === '--agent') {
-      if (index + 1 >= rest.length) {
-        throw new Error('missing agent');
-      }
-      agent = rest[index + 1];
-      index += 2;
-    } else if (argument === '--yes' || argument === '-y') {
-      approved = true;
+    } else if (argument === '--dry-run') {
+      dryRun = true;
+      index += 1;
+    } else if (argument === '--json') {
+      json = true;
       index += 1;
     } else {
       throw new Error(`unsupported argument ${argument}`);
     }
   }
 
-  return { command, projectRoot, agent, approved };
+  return { command, projectRoot, dryRun, json };
 }
 
 async function commandCheck(tools, command, missingMessage) {
@@ -192,7 +287,7 @@ async function projectCheck(tools, projectRoot) {
   };
 }
 
-function installActions({ projectRoot, agent }) {
+function installActions({ projectRoot }) {
   return [
     {
       name: 'install_bridge',
@@ -202,8 +297,14 @@ function installActions({ projectRoot, agent }) {
     },
     {
       name: 'install_skill',
-      command: `npx skills add ask-ui --agent ${agent}`,
+      command: `npx skills add ${ASK_UI_SKILL_URL}`,
       mutates: 'agent-skills',
+      willRun: false,
+    },
+    {
+      name: 'write_metadata',
+      command: `write ${join(projectRoot, '.ask-ui', 'config.json')}`,
+      mutates: 'flutter-project',
       willRun: false,
     },
     {
@@ -215,13 +316,158 @@ function installActions({ projectRoot, agent }) {
   ];
 }
 
-function jsonFailure(error) {
+async function writeMetadataStep(tools, { directory, path }) {
+  try {
+    await tools.createDirectory(directory);
+    await tools.writeFile(
+      path,
+      `${JSON.stringify(ASK_UI_VERSION_SET, null, 2)}\n`,
+    );
+    return {
+      name: 'write_metadata',
+      status: 'ok',
+      path,
+    };
+  } catch (error) {
+    return {
+      name: 'write_metadata',
+      status: 'failed',
+      path,
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+async function runInstallStep(tools, { name, command, args }) {
+  const result = await tools.run(command, args);
+  const step = {
+    name,
+    status: result.exitCode === 0 ? 'ok' : 'failed',
+    command: [command, ...args].join(' '),
+    exitCode: result.exitCode,
+  };
+  if (result.stdout) {
+    step.stdout = result.stdout;
+  }
+  if (result.stderr) {
+    step.stderr = result.stderr;
+  }
+  return step;
+}
+
+function installFailure({ json, projectRoot, failedStep, steps }) {
+  return installerResult({
+    exitCode: 1,
+    json,
+    payload: {
+      status: 'error',
+      error: 'install_failed',
+      failedStep,
+      projectRoot,
+      steps,
+    },
+    text: formatInstallFailure({ projectRoot, failedStep, steps }),
+  });
+}
+
+function invalidArgumentsResult(json) {
+  if (json) {
+    return {
+      exitCode: 1,
+      stdout: '',
+      stderr: `${JSON.stringify({
+        status: 'error',
+        error: 'invalid_arguments',
+      })}\n`,
+    };
+  }
   return {
     exitCode: 1,
     stdout: '',
-    stderr: `${JSON.stringify({
-      status: 'error',
-      error,
-    })}\n`,
+    stderr: 'Invalid ask-ui installer arguments.\n',
   };
+}
+
+function installerResult({ exitCode, json, payload, text }) {
+  return {
+    exitCode,
+    stdout: json ? `${JSON.stringify(payload)}\n` : text,
+    stderr: '',
+  };
+}
+
+function formatInstallPlan({ projectRoot, checks, actions }) {
+  return [
+    'Ask UI install plan',
+    `Project: ${projectRoot}`,
+    '',
+    'Checks:',
+    ...checks.map(formatCheck),
+    '',
+    'Actions:',
+    ...actions.map((action) => `- ${action.command}`),
+    '',
+    'Run npx ask-ui install to apply this plan.',
+    '',
+  ].join('\n');
+}
+
+function formatInstalled({ projectRoot, steps, launchCommand }) {
+  return [
+    'Ask UI installed',
+    `Project: ${projectRoot}`,
+    '',
+    'Completed:',
+    ...steps.map(formatStep),
+    '',
+    'Next:',
+    launchCommand,
+    '',
+  ].join('\n');
+}
+
+function formatMissingPrerequisites({ projectRoot, checks }) {
+  return [
+    'Ask UI install prerequisites failed',
+    `Project: ${projectRoot}`,
+    '',
+    'Checks:',
+    ...checks.map(formatCheck),
+    '',
+  ].join('\n');
+}
+
+function formatInstallFailure({ projectRoot, failedStep, steps }) {
+  return [
+    'Ask UI install failed',
+    `Project: ${projectRoot}`,
+    `Failed step: ${failedStep}`,
+    '',
+    'Steps:',
+    ...steps.flatMap(formatStepWithDetails),
+    '',
+  ].join('\n');
+}
+
+function formatCheck(check) {
+  return `- ${check.status.toUpperCase()} ${check.name}: ${check.message}`;
+}
+
+function formatStep(step) {
+  const detail = step.command ?? step.path;
+  return `- ${step.status.toUpperCase()} ${step.name}: ${detail}`;
+}
+
+function formatStepWithDetails(step) {
+  const lines = [formatStep(step)];
+  if (step.stdout) {
+    lines.push(`  stdout: ${step.stdout}`);
+  }
+  if (step.stderr) {
+    lines.push(`  stderr: ${step.stderr}`);
+  }
+  if (step.message) {
+    lines.push(`  message: ${step.message}`);
+  }
+  return lines;
 }

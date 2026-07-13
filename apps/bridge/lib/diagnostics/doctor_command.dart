@@ -114,16 +114,16 @@ Future<DoctorCommandResult> runDoctorCommand(
   );
 }
 
-const String defaultAskUiBridgeVersion = '0.0.4';
+const String defaultAskUiBridgeVersion = '0.0.5';
 
 const AskUiVersionManifest defaultAskUiVersionManifest = AskUiVersionManifest(
-  latest: '0.0.4',
-  minimumSupported: '0.0.4',
+  latest: '0.0.5',
+  minimumSupported: '0.0.5',
   packages: AskUiComponentVersions(
-    installer: '0.0.4',
-    bridge: '0.0.4',
-    runtime: '0.0.1',
-    skill: '0.0.4',
+    installer: '0.0.5',
+    bridge: '0.0.5',
+    runtime: '0.0.5',
+    skill: '0.0.5',
   ),
 );
 

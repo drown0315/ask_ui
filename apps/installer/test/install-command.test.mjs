@@ -3,12 +3,64 @@ import { describe, it } from 'node:test';
 
 import { runAskUiInstaller } from '../src/install-command.mjs';
 
-describe('ask-ui install dry-run command', () => {
-  it('prints a dry-run setup plan for the current Flutter project', async () => {
-    const tools = new FakeTools({
-      availableCommands: new Set(['dart', 'flutter']),
-      flutterProjects: new Set(['/workspace/flutter_app']),
+const ASK_UI_SKILL_URL =
+  'https://github.com/drown0315/ask_ui/tree/main/skills/ask-ui';
+
+describe('ask-ui install command', () => {
+  it('prints a human-readable dry-run setup plan by default', async () => {
+    const tools = readyTools('/workspace/flutter_app');
+
+    const result = await runAskUiInstaller({
+      args: ['install', '--dry-run'],
+      cwd: '/workspace/flutter_app',
+      env: {},
+      tools,
     });
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.stderr, '');
+    assert.equal(
+      result.stdout,
+      [
+        'Ask UI install plan',
+        'Project: /workspace/flutter_app',
+        '',
+        'Checks:',
+        '- OK dart: dart is available.',
+        '- OK flutter: flutter is available.',
+        '- OK project: Flutter project found.',
+        '',
+        'Actions:',
+        '- dart pub global activate ask_ui_bridge',
+        `- npx skills add ${ASK_UI_SKILL_URL}`,
+        '- write /workspace/flutter_app/.ask-ui/config.json',
+        '- ask_ui_bridge doctor --project /workspace/flutter_app',
+        '',
+        'Run npx ask-ui install to apply this plan.',
+        '',
+      ].join('\n'),
+    );
+    assert.deepEqual(tools.executedCommands, []);
+    assert.deepEqual(tools.writtenFiles, new Map());
+  });
+
+  it('prints a JSON dry-run setup plan when --json is provided', async () => {
+    const tools = readyTools('/workspace/flutter_app');
+
+    const result = await runAskUiInstaller({
+      args: ['install', '--dry-run', '--json'],
+      cwd: '/workspace/flutter_app',
+      env: {},
+      tools,
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.stderr, '');
+    assert.deepEqual(JSON.parse(result.stdout), planPayload());
+  });
+
+  it('installs bridge and skill, runs diagnostics, writes metadata, and prints human output', async () => {
+    const tools = readyTools('/workspace/flutter_app');
 
     const result = await runAskUiInstaller({
       args: ['install'],
@@ -19,70 +71,47 @@ describe('ask-ui install dry-run command', () => {
 
     assert.equal(result.exitCode, 0);
     assert.equal(result.stderr, '');
-    assert.deepEqual(JSON.parse(result.stdout), {
-      status: 'plan',
-      command: 'install',
-      projectRoot: '/workspace/flutter_app',
-      agent: 'codex',
-      approved: false,
-      dryRun: true,
-      checks: [
-        {
-          name: 'dart',
-          status: 'ok',
-          message: 'dart is available.',
-        },
-        {
-          name: 'flutter',
-          status: 'ok',
-          message: 'flutter is available.',
-        },
-        {
-          name: 'project',
-          status: 'ok',
-          message: 'Flutter project found.',
-        },
-      ],
-      actions: [
-        {
-          name: 'install_bridge',
-          command: 'dart pub global activate ask_ui_bridge',
-          mutates: 'global-dart',
-          willRun: false,
-        },
-        {
-          name: 'install_skill',
-          command: 'npx skills add ask-ui --agent codex',
-          mutates: 'agent-skills',
-          willRun: false,
-        },
-        {
-          name: 'run_diagnostics',
-          command: 'ask_ui_bridge doctor --project /workspace/flutter_app',
-          mutates: 'none',
-          willRun: false,
-        },
-      ],
-      nextStep: 'Re-run with --yes when you are ready to apply this plan.',
-    });
-    assert.deepEqual(tools.executedCommands, []);
+    assert.equal(
+      result.stdout,
+      [
+        'Ask UI installed',
+        'Project: /workspace/flutter_app',
+        '',
+        'Completed:',
+        '- OK install_bridge: dart pub global activate ask_ui_bridge',
+        `- OK install_skill: npx skills add ${ASK_UI_SKILL_URL}`,
+        '- OK write_metadata: /workspace/flutter_app/.ask-ui/config.json',
+        '- OK run_diagnostics: ask_ui_bridge doctor --project /workspace/flutter_app',
+        '',
+        'Next:',
+        'ask_ui_bridge launch --project-root /workspace/flutter_app',
+        '',
+      ].join('\n'),
+    );
+    assertInstallCommands(tools, '/workspace/flutter_app');
+    assertMetadata(tools, '/workspace/flutter_app');
   });
 
-  it('accepts an explicit project and non-interactive approval', async () => {
-    const tools = new FakeTools({
-      availableCommands: new Set(['dart', 'flutter']),
-      flutterProjects: new Set(['/workspace/other_app']),
-    });
+  it('prints JSON install output when --json is provided', async () => {
+    const tools = readyTools('/workspace/flutter_app');
 
     const result = await runAskUiInstaller({
-      args: [
-        'install',
-        '--project',
-        '/workspace/other_app',
-        '--agent',
-        'codex',
-        '--yes',
-      ],
+      args: ['install', '--json'],
+      cwd: '/workspace/flutter_app',
+      env: {},
+      tools,
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.stderr, '');
+    assert.deepEqual(JSON.parse(result.stdout), installedPayload());
+  });
+
+  it('accepts an explicit project path during install', async () => {
+    const tools = readyTools('/workspace/other_app');
+
+    const result = await runAskUiInstaller({
+      args: ['install', '--project', '/workspace/other_app', '--json'],
       cwd: '/workspace/flutter_app',
       env: {},
       tools,
@@ -91,20 +120,241 @@ describe('ask-ui install dry-run command', () => {
     assert.equal(result.exitCode, 0);
     const output = JSON.parse(result.stdout);
     assert.equal(output.projectRoot, '/workspace/other_app');
-    assert.equal(output.approved, true);
-    assert.equal(output.dryRun, true);
     assert.equal(
-      output.nextStep,
-      'Dry-run only for this release; no setup commands were executed.',
+      output.launchCommand,
+      'ask_ui_bridge launch --project-root /workspace/other_app',
     );
-    assert.deepEqual(
-      output.actions.map((action) => action.willRun),
-      [false, false, false],
-    );
-    assert.deepEqual(tools.executedCommands, []);
+    assert.deepEqual(tools.executedCommands.at(-1), {
+      command: 'ask_ui_bridge',
+      args: ['doctor', '--project', '/workspace/other_app'],
+      cwd: undefined,
+    });
+    assertMetadata(tools, '/workspace/other_app');
   });
 
-  it('fails before planning when required tools are missing', async () => {
+  it('can be rerun for the same project and refreshes local metadata', async () => {
+    const tools = readyTools('/workspace/flutter_app');
+
+    const first = await runAskUiInstaller({
+      args: ['install', '--json'],
+      cwd: '/workspace/flutter_app',
+      env: {},
+      tools,
+    });
+    const second = await runAskUiInstaller({
+      args: ['install', '--json'],
+      cwd: '/workspace/flutter_app',
+      env: {},
+      tools,
+    });
+
+    assert.equal(first.exitCode, 0);
+    assert.equal(second.exitCode, 0);
+    assertMetadata(tools, '/workspace/flutter_app');
+    assert.equal(tools.executedCommands.length, 6);
+  });
+
+  it('stops after bridge activation failure and reports completed setup results', async () => {
+    const tools = readyTools('/workspace/flutter_app', {
+      commandResults: new Map([
+        [
+          'dart pub global activate ask_ui_bridge',
+          { exitCode: 69, stdout: '', stderr: 'pub failed' },
+        ],
+      ]),
+    });
+
+    const result = await runAskUiInstaller({
+      args: ['install', '--json'],
+      cwd: '/workspace/flutter_app',
+      env: {},
+      tools,
+    });
+
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.stderr, '');
+    assert.deepEqual(JSON.parse(result.stdout), {
+      status: 'error',
+      error: 'install_failed',
+      failedStep: 'install_bridge',
+      projectRoot: '/workspace/flutter_app',
+      steps: [
+        {
+          name: 'install_bridge',
+          status: 'failed',
+          command: 'dart pub global activate ask_ui_bridge',
+          exitCode: 69,
+          stderr: 'pub failed',
+        },
+      ],
+    });
+    assert.deepEqual(tools.executedCommands, [
+      {
+        command: 'dart',
+        args: ['pub', 'global', 'activate', 'ask_ui_bridge'],
+        cwd: undefined,
+      },
+    ]);
+    assert.deepEqual(tools.writtenFiles, new Map());
+  });
+
+  it('prints human-readable install failure by default', async () => {
+    const tools = readyTools('/workspace/flutter_app', {
+      commandResults: new Map([
+        [
+          'dart pub global activate ask_ui_bridge',
+          { exitCode: 69, stdout: '', stderr: 'pub failed' },
+        ],
+      ]),
+    });
+
+    const result = await runAskUiInstaller({
+      args: ['install'],
+      cwd: '/workspace/flutter_app',
+      env: {},
+      tools,
+    });
+
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.stderr, '');
+    assert.equal(
+      result.stdout,
+      [
+        'Ask UI install failed',
+        'Project: /workspace/flutter_app',
+        'Failed step: install_bridge',
+        '',
+        'Steps:',
+        '- FAILED install_bridge: dart pub global activate ask_ui_bridge',
+        '  stderr: pub failed',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('reports skill installation failure without hiding bridge success', async () => {
+    const tools = readyTools('/workspace/flutter_app', {
+      commandResults: new Map([
+        [
+          `npx skills add ${ASK_UI_SKILL_URL}`,
+          { exitCode: 1, stdout: '', stderr: 'skill failed' },
+        ],
+      ]),
+    });
+
+    const result = await runAskUiInstaller({
+      args: ['install', '--json'],
+      cwd: '/workspace/flutter_app',
+      env: {},
+      tools,
+    });
+
+    assert.equal(result.exitCode, 1);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      status: 'error',
+      error: 'install_failed',
+      failedStep: 'install_skill',
+      projectRoot: '/workspace/flutter_app',
+      steps: [
+        {
+          name: 'install_bridge',
+          status: 'ok',
+          command: 'dart pub global activate ask_ui_bridge',
+          exitCode: 0,
+        },
+        {
+          name: 'install_skill',
+          status: 'failed',
+          command: `npx skills add ${ASK_UI_SKILL_URL}`,
+          exitCode: 1,
+          stderr: 'skill failed',
+        },
+      ],
+    });
+    assert.deepEqual(
+      tools.executedCommands.map((command) => command.command),
+      ['dart', 'npx'],
+    );
+    assert.deepEqual(tools.writtenFiles, new Map());
+  });
+
+  it('reports diagnostics failure after writing metadata', async () => {
+    const tools = readyTools('/workspace/flutter_app', {
+      commandResults: new Map([
+        [
+          'ask_ui_bridge doctor --project /workspace/flutter_app',
+          { exitCode: 2, stdout: 'doctor output', stderr: 'doctor failed' },
+        ],
+      ]),
+    });
+
+    const result = await runAskUiInstaller({
+      args: ['install', '--json'],
+      cwd: '/workspace/flutter_app',
+      env: {},
+      tools,
+    });
+
+    assert.equal(result.exitCode, 1);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.failedStep, 'run_diagnostics');
+    assert.deepEqual(output.steps.at(-1), {
+      name: 'run_diagnostics',
+      status: 'failed',
+      command: 'ask_ui_bridge doctor --project /workspace/flutter_app',
+      exitCode: 2,
+      stdout: 'doctor output',
+      stderr: 'doctor failed',
+    });
+    assertMetadata(tools, '/workspace/flutter_app');
+  });
+
+  it('reports metadata write failure before running diagnostics', async () => {
+    const tools = readyTools('/workspace/flutter_app', {
+      writeError: new Error('metadata denied'),
+    });
+
+    const result = await runAskUiInstaller({
+      args: ['install', '--json'],
+      cwd: '/workspace/flutter_app',
+      env: {},
+      tools,
+    });
+
+    assert.equal(result.exitCode, 1);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      status: 'error',
+      error: 'install_failed',
+      failedStep: 'write_metadata',
+      projectRoot: '/workspace/flutter_app',
+      steps: [
+        {
+          name: 'install_bridge',
+          status: 'ok',
+          command: 'dart pub global activate ask_ui_bridge',
+          exitCode: 0,
+        },
+        {
+          name: 'install_skill',
+          status: 'ok',
+          command: `npx skills add ${ASK_UI_SKILL_URL}`,
+          exitCode: 0,
+        },
+        {
+          name: 'write_metadata',
+          status: 'failed',
+          path: '/workspace/flutter_app/.ask-ui/config.json',
+          message: 'metadata denied',
+        },
+      ],
+    });
+    assert.deepEqual(
+      tools.executedCommands.map((command) => command.command),
+      ['dart', 'npx'],
+    );
+  });
+
+  it('prints human-readable prerequisite failure by default', async () => {
     const tools = new FakeTools({
       availableCommands: new Set(['dart']),
       flutterProjects: new Set(['/workspace/flutter_app']),
@@ -112,6 +362,37 @@ describe('ask-ui install dry-run command', () => {
 
     const result = await runAskUiInstaller({
       args: ['install'],
+      cwd: '/workspace/flutter_app',
+      env: {},
+      tools,
+    });
+
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.stderr, '');
+    assert.equal(
+      result.stdout,
+      [
+        'Ask UI install prerequisites failed',
+        'Project: /workspace/flutter_app',
+        '',
+        'Checks:',
+        '- OK dart: dart is available.',
+        '- MISSING flutter: Install Flutter and ensure flutter is on PATH.',
+        '- OK project: Flutter project found.',
+        '',
+      ].join('\n'),
+    );
+    assert.deepEqual(tools.executedCommands, []);
+  });
+
+  it('prints JSON prerequisite failure when --json is provided', async () => {
+    const tools = new FakeTools({
+      availableCommands: new Set(['dart']),
+      flutterProjects: new Set(['/workspace/flutter_app']),
+    });
+
+    const result = await runAskUiInstaller({
+      args: ['install', '--json'],
       cwd: '/workspace/flutter_app',
       env: {},
       tools,
@@ -141,12 +422,31 @@ describe('ask-ui install dry-run command', () => {
         },
       ],
     });
-    assert.deepEqual(tools.executedCommands, []);
   });
 
-  it('fails with stable stderr JSON for invalid arguments', async () => {
+  it('rejects removed installer arguments', async () => {
+    for (const args of [
+      ['install', '--yes'],
+      ['install', '-y'],
+      ['install', '--agent', 'codex'],
+      ['install', '--skill-only'],
+    ]) {
+      const result = await runAskUiInstaller({
+        args,
+        cwd: '/workspace/flutter_app',
+        env: {},
+        tools: new FakeTools(),
+      });
+
+      assert.equal(result.exitCode, 1);
+      assert.equal(result.stdout, '');
+      assert.equal(result.stderr, 'Invalid ask-ui installer arguments.\n');
+    }
+  });
+
+  it('prints JSON invalid argument errors when --json is provided', async () => {
     const result = await runAskUiInstaller({
-      args: ['install', '--agent'],
+      args: ['install', '--project', '--json'],
       cwd: '/workspace/flutter_app',
       env: {},
       tools: new FakeTools(),
@@ -161,14 +461,158 @@ describe('ask-ui install dry-run command', () => {
   });
 });
 
+function readyTools(projectRoot, options = {}) {
+  return new FakeTools({
+    availableCommands: new Set(['dart', 'flutter']),
+    flutterProjects: new Set([projectRoot]),
+    ...options,
+  });
+}
+
+function planPayload() {
+  return {
+    status: 'plan',
+    command: 'install',
+    projectRoot: '/workspace/flutter_app',
+    dryRun: true,
+    checks: checksPayload(),
+    actions: [
+      {
+        name: 'install_bridge',
+        command: 'dart pub global activate ask_ui_bridge',
+        mutates: 'global-dart',
+        willRun: false,
+      },
+      {
+        name: 'install_skill',
+        command: `npx skills add ${ASK_UI_SKILL_URL}`,
+        mutates: 'agent-skills',
+        willRun: false,
+      },
+      {
+        name: 'write_metadata',
+        command: 'write /workspace/flutter_app/.ask-ui/config.json',
+        mutates: 'flutter-project',
+        willRun: false,
+      },
+      {
+        name: 'run_diagnostics',
+        command: 'ask_ui_bridge doctor --project /workspace/flutter_app',
+        mutates: 'none',
+        willRun: false,
+      },
+    ],
+    nextStep: 'Run npx ask-ui install to apply this plan.',
+  };
+}
+
+function installedPayload() {
+  return {
+    status: 'installed',
+    command: 'install',
+    projectRoot: '/workspace/flutter_app',
+    dryRun: false,
+    checks: checksPayload(),
+    steps: [
+      {
+        name: 'install_bridge',
+        status: 'ok',
+        command: 'dart pub global activate ask_ui_bridge',
+        exitCode: 0,
+      },
+      {
+        name: 'install_skill',
+        status: 'ok',
+        command: `npx skills add ${ASK_UI_SKILL_URL}`,
+        exitCode: 0,
+      },
+      {
+        name: 'write_metadata',
+        status: 'ok',
+        path: '/workspace/flutter_app/.ask-ui/config.json',
+      },
+      {
+        name: 'run_diagnostics',
+        status: 'ok',
+        command: 'ask_ui_bridge doctor --project /workspace/flutter_app',
+        exitCode: 0,
+      },
+    ],
+    metadataPath: '/workspace/flutter_app/.ask-ui/config.json',
+    launchCommand: 'ask_ui_bridge launch --project-root /workspace/flutter_app',
+  };
+}
+
+function checksPayload() {
+  return [
+    {
+      name: 'dart',
+      status: 'ok',
+      message: 'dart is available.',
+    },
+    {
+      name: 'flutter',
+      status: 'ok',
+      message: 'flutter is available.',
+    },
+    {
+      name: 'project',
+      status: 'ok',
+      message: 'Flutter project found.',
+    },
+  ];
+}
+
+function assertInstallCommands(tools, projectRoot) {
+  assert.deepEqual(tools.executedCommands, [
+    {
+      command: 'dart',
+      args: ['pub', 'global', 'activate', 'ask_ui_bridge'],
+      cwd: undefined,
+    },
+    {
+      command: 'npx',
+      args: ['skills', 'add', ASK_UI_SKILL_URL],
+      cwd: undefined,
+    },
+    {
+      command: 'ask_ui_bridge',
+      args: ['doctor', '--project', projectRoot],
+      cwd: undefined,
+    },
+  ]);
+}
+
+function assertMetadata(tools, projectRoot) {
+  assert.equal(
+    tools.writtenFiles.get(`${projectRoot}/.ask-ui/config.json`),
+    `${JSON.stringify(
+      {
+        version: '0.0.5',
+        bridge: '0.0.5',
+        runtime: '0.0.5',
+        skill: '0.0.5',
+      },
+      null,
+      2,
+    )}\n`,
+  );
+}
+
 class FakeTools {
   constructor({
     availableCommands = new Set(),
     flutterProjects = new Set(),
+    commandResults = new Map(),
+    writeError = null,
   } = {}) {
     this.availableCommands = availableCommands;
     this.flutterProjects = flutterProjects;
+    this.commandResults = commandResults;
+    this.writeError = writeError;
     this.executedCommands = [];
+    this.createdDirectories = [];
+    this.writtenFiles = new Map();
   }
 
   async commandExists(command) {
@@ -179,8 +623,22 @@ class FakeTools {
     return this.flutterProjects.has(projectRoot);
   }
 
+  async createDirectory(directory) {
+    this.createdDirectories.push(directory);
+  }
+
+  async writeFile(path, contents) {
+    if (this.writeError) {
+      throw this.writeError;
+    }
+    this.writtenFiles.set(path, contents);
+  }
+
   async run(command, args, options = {}) {
     this.executedCommands.push({ command, args, cwd: options.cwd });
-    return { exitCode: 0, stdout: '', stderr: '' };
+    const key = [command, ...args].join(' ');
+    return (
+      this.commandResults.get(key) ?? { exitCode: 0, stdout: '', stderr: '' }
+    );
   }
 }

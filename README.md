@@ -74,8 +74,8 @@ tag pattern, then publish by pushing a tag that matches the bridge package
 version:
 
 ```sh
-git tag ask_ui_bridge-v0.0.4
-git push origin ask_ui_bridge-v0.0.4
+git tag ask_ui_bridge-v0.0.5
+git push origin ask_ui_bridge-v0.0.5
 ```
 
 The publish workflow rebuilds the Web workbench, verifies the generated
