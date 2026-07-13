@@ -1,15 +1,25 @@
-import { access, mkdir, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { spawn } from 'node:child_process';
 
 const ASK_UI_SKILL_URL =
   'https://github.com/drown0315/ask_ui/tree/main/skills/ask-ui';
+const ASK_UI_VERSION_MANIFEST = {
+  latest: '0.0.5',
+  minimumSupported: '0.0.5',
+  packages: {
+    installer: '0.0.5',
+    bridge: '0.0.5',
+    runtime: '0.0.5',
+    skill: '0.0.5',
+  },
+};
 const ASK_UI_VERSION_SET = {
-  version: '0.0.5',
-  bridge: '0.0.5',
-  runtime: '0.0.5',
-  skill: '0.0.5',
+  version: ASK_UI_VERSION_MANIFEST.latest,
+  bridge: ASK_UI_VERSION_MANIFEST.packages.bridge,
+  runtime: ASK_UI_VERSION_MANIFEST.packages.runtime,
+  skill: ASK_UI_VERSION_MANIFEST.packages.skill,
 };
 
 /**
@@ -31,7 +41,10 @@ export async function runAskUiInstaller({
     return invalidArgumentsResult(args.includes('--json'));
   }
 
-  if (options.command !== 'install') {
+  if (options.command !== 'install' && options.command !== 'update') {
+    return invalidArgumentsResult(options.json);
+  }
+  if (options.command === 'update' && options.dryRun) {
     return invalidArgumentsResult(options.json);
   }
 
@@ -61,6 +74,10 @@ export async function runAskUiInstaller({
       },
       text: formatMissingPrerequisites({ projectRoot, checks }),
     });
+  }
+
+  if (options.command === 'update') {
+    return runUpdateCommand({ tools, projectRoot, json: options.json });
   }
 
   if (options.dryRun) {
@@ -201,6 +218,10 @@ class NodeInstallerTools {
     await writeFile(path, contents);
   }
 
+  async readFile(path) {
+    return readFile(path, 'utf8');
+  }
+
   async run(command, args, options = {}) {
     return new Promise((resolve) => {
       const child = spawn(command, args, {
@@ -224,6 +245,188 @@ class NodeInstallerTools {
       });
     });
   }
+}
+
+async function runUpdateCommand({ tools, projectRoot, json }) {
+  const metadataPath = join(projectRoot, '.ask-ui', 'config.json');
+  const steps = [];
+  const metadataStep = await readMetadataStep(tools, metadataPath);
+  steps.push(metadataStep);
+  if (metadataStep.status === 'failed') {
+    return updateFailure({
+      json,
+      projectRoot,
+      failedStep: metadataStep.name,
+      steps,
+      nextStep: 'Run npx ask-ui install to create local metadata.',
+    });
+  }
+
+  const current = metadataStep.metadata;
+  const target = ASK_UI_VERSION_SET;
+  const changes = updateChanges(current, target);
+
+  if (current.bridge !== target.bridge) {
+    const bridgeStep = await runInstallStep(tools, {
+      name: 'update_bridge',
+      command: 'dart',
+      args: ['pub', 'global', 'activate', 'ask_ui_bridge'],
+    });
+    steps.push(bridgeStep);
+    if (bridgeStep.status === 'failed') {
+      return updateFailure({
+        json,
+        projectRoot,
+        failedStep: bridgeStep.name,
+        steps,
+        current,
+        target,
+        changes,
+        nextStep:
+          'Resolve the bridge update error, then rerun npx ask-ui update.',
+      });
+    }
+  }
+
+  if (current.skill !== target.skill) {
+    const skillStep = await runInstallStep(tools, {
+      name: 'update_skill',
+      command: 'npx',
+      args: ['skills', 'add', ASK_UI_SKILL_URL],
+    });
+    steps.push(skillStep);
+    if (skillStep.status === 'failed') {
+      return updateFailure({
+        json,
+        projectRoot,
+        failedStep: skillStep.name,
+        steps,
+        current,
+        target,
+        changes,
+        nextStep: 'Resolve the skill update error, then rerun npx ask-ui update.',
+      });
+    }
+  }
+
+  if (changes.length > 0) {
+    const writeStep = await writeMetadataStep(tools, {
+      path: metadataPath,
+      directory: join(projectRoot, '.ask-ui'),
+    });
+    steps.push(writeStep);
+    if (writeStep.status === 'failed') {
+      return updateFailure({
+        json,
+        projectRoot,
+        failedStep: writeStep.name,
+        steps,
+        current,
+        target,
+        changes,
+        nextStep: 'Fix metadata write access, then rerun npx ask-ui update.',
+      });
+    }
+  }
+
+  const diagnosticsStep = await runInstallStep(tools, {
+    name: 'run_diagnostics',
+    command: 'ask_ui_bridge',
+    args: ['doctor', '--project', projectRoot],
+  });
+  steps.push(diagnosticsStep);
+  if (diagnosticsStep.status === 'failed') {
+    return updateFailure({
+      json,
+      projectRoot,
+      failedStep: diagnosticsStep.name,
+      steps,
+      current,
+      target,
+      changes,
+      nextStep: 'Review diagnostics output before launching Ask UI.',
+    });
+  }
+
+  const payload = {
+    status: changes.length === 0 ? 'current' : 'updated',
+    command: 'update',
+    projectRoot,
+    current,
+    target,
+    changes,
+    steps: steps.map(stripStepMetadata),
+    metadataPath,
+    launchCommand: `ask_ui_bridge launch --project-root ${projectRoot}`,
+  };
+  return installerResult({
+    exitCode: 0,
+    json,
+    payload,
+    text: formatUpdated(payload),
+  });
+}
+
+async function readMetadataStep(tools, path) {
+  try {
+    const source = await tools.readFile(path);
+    return {
+      name: 'read_metadata',
+      status: 'ok',
+      path,
+      metadata: parseMetadata(source),
+    };
+  } catch (error) {
+    return {
+      name: 'read_metadata',
+      status: 'failed',
+      path,
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function parseMetadata(source) {
+  const decoded = JSON.parse(source);
+  if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) {
+    throw new Error('metadata must be a JSON object.');
+  }
+  return {
+    version: nonEmptyString(decoded.version, 'version'),
+    bridge: nonEmptyString(decoded.bridge, 'bridge'),
+    runtime: nonEmptyString(decoded.runtime, 'runtime'),
+    skill: nonEmptyString(decoded.skill, 'skill'),
+  };
+}
+
+function nonEmptyString(value, name) {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`${name} must be a non-empty string.`);
+  }
+  return value;
+}
+
+function updateChanges(current, target) {
+  const changes = [];
+  if (current.bridge !== target.bridge) {
+    changes.push({ name: 'bridge', from: current.bridge, to: target.bridge });
+  }
+  if (current.skill !== target.skill) {
+    changes.push({ name: 'skill', from: current.skill, to: target.skill });
+  }
+  if (current.version !== target.version || current.runtime !== target.runtime) {
+    changes.push({
+      name: 'metadata',
+      from: current.version,
+      to: target.version,
+    });
+  }
+  return changes;
+}
+
+function stripStepMetadata(step) {
+  const { metadata, ...publicStep } = step;
+  return publicStep;
 }
 
 function parseInstallOptions(args) {
@@ -370,6 +573,39 @@ function installFailure({ json, projectRoot, failedStep, steps }) {
   });
 }
 
+function updateFailure({
+  json,
+  projectRoot,
+  failedStep,
+  steps,
+  current,
+  target,
+  changes = [],
+  nextStep,
+}) {
+  return installerResult({
+    exitCode: 1,
+    json,
+    payload: {
+      status: 'error',
+      error: 'update_failed',
+      failedStep,
+      projectRoot,
+      ...(current ? { current } : {}),
+      ...(target ? { target } : {}),
+      changes,
+      steps: steps.map(stripStepMetadata),
+      nextStep,
+    },
+    text: formatUpdateFailure({
+      projectRoot,
+      failedStep,
+      steps: steps.map(stripStepMetadata),
+      nextStep,
+    }),
+  });
+}
+
 function invalidArgumentsResult(json) {
   if (json) {
     return {
@@ -426,6 +662,27 @@ function formatInstalled({ projectRoot, steps, launchCommand }) {
   ].join('\n');
 }
 
+function formatUpdated({ status, projectRoot, changes, steps, launchCommand }) {
+  return [
+    status === 'current' ? 'Ask UI is current' : 'Ask UI updated',
+    `Project: ${projectRoot}`,
+    '',
+    'Changes:',
+    ...(changes.length === 0
+      ? ['- none']
+      : changes.map(
+          (change) => `- ${change.name}: ${change.from} -> ${change.to}`,
+        )),
+    '',
+    'Completed:',
+    ...steps.map(formatStep),
+    '',
+    'Next:',
+    launchCommand,
+    '',
+  ].join('\n');
+}
+
 function formatMissingPrerequisites({ projectRoot, checks }) {
   return [
     'Ask UI install prerequisites failed',
@@ -445,6 +702,21 @@ function formatInstallFailure({ projectRoot, failedStep, steps }) {
     '',
     'Steps:',
     ...steps.flatMap(formatStepWithDetails),
+    '',
+  ].join('\n');
+}
+
+function formatUpdateFailure({ projectRoot, failedStep, steps, nextStep }) {
+  return [
+    'Ask UI update failed',
+    `Project: ${projectRoot}`,
+    `Failed step: ${failedStep}`,
+    '',
+    'Steps:',
+    ...steps.flatMap(formatStepWithDetails),
+    '',
+    'Next:',
+    nextStep,
     '',
   ].join('\n');
 }

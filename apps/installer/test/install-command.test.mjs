@@ -467,6 +467,19 @@ describe('ask-ui install command', () => {
     });
   });
 
+  it('rejects update dry-run instead of silently mutating', async () => {
+    const result = await runAskUiInstaller({
+      args: ['update', '--dry-run'],
+      cwd: '/workspace/flutter_app',
+      env: {},
+      tools: new FakeTools(),
+    });
+
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.stdout, '');
+    assert.equal(result.stderr, 'Invalid ask-ui installer arguments.\n');
+  });
+
   it('keeps public install docs aligned with the installer skill command', async () => {
     const readme = await readFile(resolve(REPO_ROOT, 'README.md'), 'utf8');
     const tools = readyTools('/workspace/flutter_app');
@@ -494,6 +507,271 @@ describe('ask-ui install command', () => {
       installerSkillCommand,
     ]);
   });
+
+  it('updates an out-of-date Ask UI setup and refreshes metadata', async () => {
+    const tools = readyTools('/workspace/flutter_app', {
+      files: metadataFiles('/workspace/flutter_app', {
+        version: '0.0.4',
+        bridge: '0.0.4',
+        runtime: '0.0.4',
+        skill: '0.0.4',
+      }),
+    });
+
+    const result = await runAskUiInstaller({
+      args: ['update', '--json'],
+      cwd: '/workspace/flutter_app',
+      env: {},
+      tools,
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.stderr, '');
+    assert.deepEqual(JSON.parse(result.stdout), {
+      status: 'updated',
+      command: 'update',
+      projectRoot: '/workspace/flutter_app',
+      current: {
+        version: '0.0.4',
+        bridge: '0.0.4',
+        runtime: '0.0.4',
+        skill: '0.0.4',
+      },
+      target: {
+        version: '0.0.5',
+        bridge: '0.0.5',
+        runtime: '0.0.5',
+        skill: '0.0.5',
+      },
+      changes: [
+        { name: 'bridge', from: '0.0.4', to: '0.0.5' },
+        { name: 'skill', from: '0.0.4', to: '0.0.5' },
+        { name: 'metadata', from: '0.0.4', to: '0.0.5' },
+      ],
+      steps: [
+        {
+          name: 'read_metadata',
+          status: 'ok',
+          path: '/workspace/flutter_app/.ask-ui/config.json',
+        },
+        {
+          name: 'update_bridge',
+          status: 'ok',
+          command: 'dart pub global activate ask_ui_bridge',
+          exitCode: 0,
+        },
+        {
+          name: 'update_skill',
+          status: 'ok',
+          command: `npx skills add ${ASK_UI_SKILL_URL}`,
+          exitCode: 0,
+        },
+        {
+          name: 'write_metadata',
+          status: 'ok',
+          path: '/workspace/flutter_app/.ask-ui/config.json',
+        },
+        {
+          name: 'run_diagnostics',
+          status: 'ok',
+          command: 'ask_ui_bridge doctor --project /workspace/flutter_app',
+          exitCode: 0,
+        },
+      ],
+      metadataPath: '/workspace/flutter_app/.ask-ui/config.json',
+      launchCommand: 'ask_ui_bridge launch --project-root /workspace/flutter_app',
+    });
+    assertInstallCommands(tools, '/workspace/flutter_app');
+    assertMetadata(tools, '/workspace/flutter_app');
+  });
+
+  it('treats an already-current setup as a successful no-op', async () => {
+    const tools = readyTools('/workspace/flutter_app', {
+      files: metadataFiles('/workspace/flutter_app', {
+        version: '0.0.5',
+        bridge: '0.0.5',
+        runtime: '0.0.5',
+        skill: '0.0.5',
+      }),
+    });
+
+    const result = await runAskUiInstaller({
+      args: ['update'],
+      cwd: '/workspace/flutter_app',
+      env: {},
+      tools,
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.stderr, '');
+    assert.equal(
+      result.stdout,
+      [
+        'Ask UI is current',
+        'Project: /workspace/flutter_app',
+        '',
+        'Changes:',
+        '- none',
+        '',
+        'Completed:',
+        '- OK read_metadata: /workspace/flutter_app/.ask-ui/config.json',
+        '- OK run_diagnostics: ask_ui_bridge doctor --project /workspace/flutter_app',
+        '',
+        'Next:',
+        'ask_ui_bridge launch --project-root /workspace/flutter_app',
+        '',
+      ].join('\n'),
+    );
+    assert.deepEqual(tools.executedCommands, [
+      {
+        command: 'ask_ui_bridge',
+        args: ['doctor', '--project', '/workspace/flutter_app'],
+        cwd: undefined,
+      },
+    ]);
+    assert.deepEqual(tools.writtenFiles, new Map());
+  });
+
+  it('updates only out-of-date bridge and metadata for mixed-version setup', async () => {
+    const tools = readyTools('/workspace/flutter_app', {
+      files: metadataFiles('/workspace/flutter_app', {
+        version: '0.0.5',
+        bridge: '0.0.4',
+        runtime: '0.0.5',
+        skill: '0.0.5',
+      }),
+    });
+
+    const result = await runAskUiInstaller({
+      args: ['update', '--json'],
+      cwd: '/workspace/flutter_app',
+      env: {},
+      tools,
+    });
+
+    assert.equal(result.exitCode, 0);
+    const output = JSON.parse(result.stdout);
+    assert.deepEqual(output.changes, [
+      { name: 'bridge', from: '0.0.4', to: '0.0.5' },
+    ]);
+    assert.deepEqual(
+      tools.executedCommands.map((command) => command.command),
+      ['dart', 'ask_ui_bridge'],
+    );
+    assertMetadata(tools, '/workspace/flutter_app');
+  });
+
+  it('reports partial update failure with completed and failed steps', async () => {
+    const tools = readyTools('/workspace/flutter_app', {
+      files: metadataFiles('/workspace/flutter_app', {
+        version: '0.0.4',
+        bridge: '0.0.4',
+        runtime: '0.0.4',
+        skill: '0.0.4',
+      }),
+      commandResults: new Map([
+        [
+          `npx skills add ${ASK_UI_SKILL_URL}`,
+          { exitCode: 1, stdout: '', stderr: 'skill update failed' },
+        ],
+      ]),
+    });
+
+    const result = await runAskUiInstaller({
+      args: ['update', '--json'],
+      cwd: '/workspace/flutter_app',
+      env: {},
+      tools,
+    });
+
+    assert.equal(result.exitCode, 1);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      status: 'error',
+      error: 'update_failed',
+      failedStep: 'update_skill',
+      projectRoot: '/workspace/flutter_app',
+      current: {
+        version: '0.0.4',
+        bridge: '0.0.4',
+        runtime: '0.0.4',
+        skill: '0.0.4',
+      },
+      target: {
+        version: '0.0.5',
+        bridge: '0.0.5',
+        runtime: '0.0.5',
+        skill: '0.0.5',
+      },
+      changes: [
+        { name: 'bridge', from: '0.0.4', to: '0.0.5' },
+        { name: 'skill', from: '0.0.4', to: '0.0.5' },
+        { name: 'metadata', from: '0.0.4', to: '0.0.5' },
+      ],
+      steps: [
+        {
+          name: 'read_metadata',
+          status: 'ok',
+          path: '/workspace/flutter_app/.ask-ui/config.json',
+        },
+        {
+          name: 'update_bridge',
+          status: 'ok',
+          command: 'dart pub global activate ask_ui_bridge',
+          exitCode: 0,
+        },
+        {
+          name: 'update_skill',
+          status: 'failed',
+          command: `npx skills add ${ASK_UI_SKILL_URL}`,
+          exitCode: 1,
+          stderr: 'skill update failed',
+        },
+      ],
+      nextStep: 'Resolve the skill update error, then rerun npx ask-ui update.',
+    });
+    assert.deepEqual(tools.writtenFiles, new Map());
+  });
+
+  it('reports post-update diagnostics failure after refreshing metadata', async () => {
+    const tools = readyTools('/workspace/flutter_app', {
+      files: metadataFiles('/workspace/flutter_app', {
+        version: '0.0.5',
+        bridge: '0.0.5',
+        runtime: '0.0.5',
+        skill: '0.0.4',
+      }),
+      commandResults: new Map([
+        [
+          'ask_ui_bridge doctor --project /workspace/flutter_app',
+          { exitCode: 2, stdout: 'doctor output', stderr: 'doctor failed' },
+        ],
+      ]),
+    });
+
+    const result = await runAskUiInstaller({
+      args: ['update', '--json'],
+      cwd: '/workspace/flutter_app',
+      env: {},
+      tools,
+    });
+
+    assert.equal(result.exitCode, 1);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.failedStep, 'run_diagnostics');
+    assert.deepEqual(output.steps.at(-1), {
+      name: 'run_diagnostics',
+      status: 'failed',
+      command: 'ask_ui_bridge doctor --project /workspace/flutter_app',
+      exitCode: 2,
+      stdout: 'doctor output',
+      stderr: 'doctor failed',
+    });
+    assert.equal(
+      output.nextStep,
+      'Review diagnostics output before launching Ask UI.',
+    );
+    assertMetadata(tools, '/workspace/flutter_app');
+  });
 });
 
 function readyTools(projectRoot, options = {}) {
@@ -502,6 +780,12 @@ function readyTools(projectRoot, options = {}) {
     flutterProjects: new Set([projectRoot]),
     ...options,
   });
+}
+
+function metadataFiles(projectRoot, metadata) {
+  return new Map([
+    [`${projectRoot}/.ask-ui/config.json`, JSON.stringify(metadata)],
+  ]);
 }
 
 function planPayload() {
@@ -656,11 +940,13 @@ class FakeTools {
     availableCommands = new Set(),
     flutterProjects = new Set(),
     commandResults = new Map(),
+    files = new Map(),
     writeError = null,
   } = {}) {
     this.availableCommands = availableCommands;
     this.flutterProjects = flutterProjects;
     this.commandResults = commandResults;
+    this.files = files;
     this.writeError = writeError;
     this.executedCommands = [];
     this.createdDirectories = [];
@@ -677,6 +963,13 @@ class FakeTools {
 
   async createDirectory(directory) {
     this.createdDirectories.push(directory);
+  }
+
+  async readFile(path) {
+    if (!this.files.has(path)) {
+      throw new Error(`missing file: ${path}`);
+    }
+    return this.files.get(path);
   }
 
   async writeFile(path, contents) {

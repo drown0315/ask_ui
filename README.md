@@ -24,6 +24,13 @@ The installer activates the bridge, installs the Ask UI coding-agent skill,
 records local Ask UI metadata, runs diagnostics, and prints the launch command
 for the project.
 
+To update the installed Ask UI bridge, skill, and local metadata as one
+compatible set, run:
+
+```sh
+npx ask-ui update
+```
+
 ## Other Install Ways
 
 If you want to manage each setup step yourself, install the bridge and skill

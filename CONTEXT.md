@@ -74,6 +74,13 @@ The coding-agent session that receives Chat messages from Ask UI, changes the pr
 A local agent-facing command that lets the Agent Session exchange Chat work with the Bridge Session.
 _Avoid_: Skill Command
 
+## Ask UI Version Set
+
+A compatible release bundle of Ask UI installer, bridge, runtime expectation, and coding-agent skill.
+
+Ask UI install and update flows should select one Ask UI Version Set and avoid mixing floating component versions from separate latest or main sources.
+_Avoid_: Component latests, floating install set
+
 ## Selection Comment
 
 A user-authored comment attached to a selected Flutter widget target.
