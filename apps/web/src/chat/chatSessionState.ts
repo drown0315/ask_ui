@@ -128,7 +128,7 @@ export function getVisibleChatHistoryMessages(
     {
       id: 'agent-working-placeholder',
       role: 'agent',
-      text: 'Agent working...',
+      text: 'Agent working',
     },
   ];
 }

@@ -246,61 +246,68 @@ export function DeviceShell({
 
   return (
     <div className="device-shell">
-      <div
-        className="device-view-area"
-        onPointerCancel={(event) => sendPointerMessage('cancel', event)}
-        onPointerDown={(event) => sendPointerMessage('down', event)}
-        onPointerMove={(event) => sendPointerMessage('move', event)}
-        onPointerUp={(event) => sendPointerMessage('up', event)}
-        ref={areaRef}
-      >
-        {fit ? (
+      <div className="device-shell-hardware">
+        <div className="device-shell-speaker" />
+        <div className="device-shell-screen">
           <div
-            className="device-view-frame"
-            style={{
-              height: `${fit.height}px`,
-              transform: `translate(${fit.offsetX}px, ${fit.offsetY}px)`,
-              width: `${fit.width}px`,
-            }}
-            title={metadata.deviceId}
+            className="device-view-area"
+            onPointerCancel={(event) => sendPointerMessage('cancel', event)}
+            onPointerDown={(event) => sendPointerMessage('down', event)}
+            onPointerMove={(event) => sendPointerMessage('move', event)}
+            onPointerUp={(event) => sendPointerMessage('up', event)}
+            ref={areaRef}
           >
-            <canvas
-              aria-label="Device video"
-              className="device-view-canvas"
-              ref={setCanvasElement}
-            />
-            {overlayMarkers.length > 0 ? (
+            {fit ? (
               <div
-                aria-label="Selection Comment markers"
-                className="selection-marker-layer"
+                className="device-view-frame"
+                style={{
+                  height: `${fit.height}px`,
+                  transform: `translate(${fit.offsetX}px, ${fit.offsetY}px)`,
+                  width: `${fit.width}px`,
+                }}
+                title={metadata.deviceId}
               >
-                {getRenderableSelectionMarkers(overlayMarkers, fit).map(
-                  ({ marker, placement }) => (
-                    <div
-                      className="selection-marker"
-                      key={marker.id}
-                      style={{
-                        height: `${SELECTION_MARKER_SIZE}px`,
-                        left: `${placement.left}px`,
-                        top: `${placement.top}px`,
-                        width: `${SELECTION_MARKER_SIZE}px`,
-                      }}
-                      title={marker.widgetLabel}
-                    >
-                      {marker.number}
+                <canvas
+                  aria-label="Device video"
+                  className="device-view-canvas"
+                  ref={setCanvasElement}
+                />
+                {overlayMarkers.length > 0 ? (
+                  <div
+                    aria-label="Selection Comment markers"
+                    className="selection-marker-layer"
+                  >
+                    {getRenderableSelectionMarkers(overlayMarkers, fit).map(
+                      ({ marker, placement }) => (
+                        <div
+                          className="selection-marker"
+                          key={marker.id}
+                          style={{
+                            height: `${SELECTION_MARKER_SIZE}px`,
+                            left: `${placement.left}px`,
+                            top: `${placement.top}px`,
+                            width: `${SELECTION_MARKER_SIZE}px`,
+                          }}
+                          title={marker.widgetLabel}
+                        >
+                          {marker.number}
+                        </div>
+                      ),
+                    )}
+                  </div>
+                ) : null}
+                {surfaceState.status === 'waitingForVideo' ? (
+                  <>
+                    <div className="device-view-status">Waiting for video</div>
+                    <div className="device-view-device-id">
+                      {metadata.deviceId}
                     </div>
-                  ),
-                )}
+                  </>
+                ) : null}
               </div>
             ) : null}
-            {surfaceState.status === 'waitingForVideo' ? (
-              <>
-                <div className="device-view-status">Waiting for video</div>
-                <div className="device-view-device-id">{metadata.deviceId}</div>
-              </>
-            ) : null}
           </div>
-        ) : null}
+        </div>
       </div>
       <div className="surface-controls">
         <button

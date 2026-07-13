@@ -112,7 +112,11 @@ export function ChatHistorySection({
               key={message.id}
             >
               <div className="chat-history-message-role">{message.role}</div>
-              <ChatHistoryMessageContent message={message} />
+              {message.id === 'agent-working-placeholder' ? (
+                <AgentWorkingMessage text={message.text} />
+              ) : (
+                <ChatHistoryMessageContent message={message} />
+              )}
             </li>
           ))}
         </ol>
@@ -133,6 +137,19 @@ export function ChatHistorySection({
         </button>
       ) : null}
     </section>
+  );
+}
+
+function AgentWorkingMessage({ text }: { text: string }) {
+  return (
+    <div className="chat-history-message-text chat-history-working-text">
+      <span>{text}</span>
+      <span aria-hidden="true" className="chat-history-working-dots">
+        <span />
+        <span />
+        <span />
+      </span>
+    </div>
   );
 }
 
