@@ -51,13 +51,6 @@ describe('ask-ui install dry-run command', () => {
           willRun: false,
         },
         {
-          name: 'add_runtime',
-          command: 'flutter pub add ask_ui_runtime',
-          cwd: '/workspace/flutter_app',
-          mutates: 'flutter-project',
-          willRun: false,
-        },
-        {
           name: 'install_skill',
           command: 'npx skills add ask-ui --agent codex',
           mutates: 'agent-skills',
@@ -106,7 +99,7 @@ describe('ask-ui install dry-run command', () => {
     );
     assert.deepEqual(
       output.actions.map((action) => action.willRun),
-      [false, false, false, false],
+      [false, false, false],
     );
     assert.deepEqual(tools.executedCommands, []);
   });

@@ -201,13 +201,6 @@ function installActions({ projectRoot, agent }) {
       willRun: false,
     },
     {
-      name: 'add_runtime',
-      command: 'flutter pub add ask_ui_runtime',
-      cwd: projectRoot,
-      mutates: 'flutter-project',
-      willRun: false,
-    },
-    {
       name: 'install_skill',
       command: `npx skills add ask-ui --agent ${agent}`,
       mutates: 'agent-skills',
