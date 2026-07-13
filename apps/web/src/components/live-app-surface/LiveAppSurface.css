@@ -207,7 +207,8 @@
   cursor: pointer;
 }
 
-.live-app-surface-selecting .live-app-phone-state-hardware {
+.live-app-surface-selecting .live-app-phone-state-hardware,
+.live-app-surface-selecting .device-shell-hardware {
   box-shadow:
     0 0 0 3px rgba(66, 184, 131, 0.14),
     0 24px 60px rgba(15, 23, 42, 0.24),
