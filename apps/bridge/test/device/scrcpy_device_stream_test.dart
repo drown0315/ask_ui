@@ -170,7 +170,7 @@ void main() {
   "packages": [
     {
       "name": "ask_ui_bridge",
-      "rootUri": "${hostedPackage.uri}",
+      "rootUri": "${hostedPackage.uri.toString().replaceFirst(RegExp(r'/$'), '')}",
       "packageUri": "lib/",
       "languageVersion": "3.4"
     }

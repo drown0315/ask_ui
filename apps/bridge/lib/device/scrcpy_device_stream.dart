@@ -145,9 +145,16 @@ Uri _resolvePackageRootUri({
 }) {
   final parsed = Uri.parse(rootUri);
   if (parsed.hasScheme) {
-    return parsed;
+    return _asDirectoryUri(parsed);
   }
-  return packageConfigFile.parent.uri.resolveUri(parsed);
+  return _asDirectoryUri(packageConfigFile.parent.uri.resolveUri(parsed));
+}
+
+Uri _asDirectoryUri(Uri uri) {
+  if (uri.path.endsWith('/')) {
+    return uri;
+  }
+  return uri.replace(path: '${uri.path}/');
 }
 
 List<File> _scrcpyServerCandidatesForScript(Uri scriptUri) {
