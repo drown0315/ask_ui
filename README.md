@@ -9,9 +9,10 @@ work from the selected Flutter UI target.
 
 ## Demo
 
-<a href="docs/media/example.mp4">
-  <img src="docs/media/example-thumbnail.jpg" alt="Ask UI demo" width="640">
-</a>
+<video  controls>
+  <source src="docs/media/example.mp4" type="video/mp4">
+</video>
+
 
 ## What Ask UI Does
 
