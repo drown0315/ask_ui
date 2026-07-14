@@ -77,6 +77,7 @@ String defaultScrcpyServerPath({Directory? currentDirectory, Uri? scriptUri}) {
   final cwd = currentDirectory ?? Directory.current;
   final candidates = <File>[
     ..._scrcpyServerCandidatesForScript(scriptUri ?? Platform.script),
+    ..._scrcpyServerCandidatesForPackageConfig(scriptUri ?? Platform.script),
     File('${cwd.path}/$_vendoredScrcpyServerPath'),
     File('${cwd.path}/apps/bridge/$_vendoredScrcpyServerPath'),
   ];
@@ -88,6 +89,65 @@ String defaultScrcpyServerPath({Directory? currentDirectory, Uri? scriptUri}) {
   }
 
   return candidates.first.absolute.path;
+}
+
+List<File> _scrcpyServerCandidatesForPackageConfig(Uri scriptUri) {
+  if (scriptUri.scheme != 'file') {
+    return const <File>[];
+  }
+
+  final scriptFile = File.fromUri(scriptUri);
+  final packageConfigFile = File(
+    '${scriptFile.parent.parent.path}/.dart_tool/package_config.json',
+  );
+  if (!packageConfigFile.existsSync()) {
+    return const <File>[];
+  }
+
+  try {
+    final decoded = jsonDecode(packageConfigFile.readAsStringSync());
+    if (decoded is! Map<String, Object?>) {
+      return const <File>[];
+    }
+    final packages = decoded['packages'];
+    if (packages is! List<Object?>) {
+      return const <File>[];
+    }
+
+    for (final package in packages) {
+      if (package is! Map<String, Object?> ||
+          package['name'] != 'ask_ui_bridge') {
+        continue;
+      }
+      final rootUriValue = package['rootUri'];
+      if (rootUriValue is! String || rootUriValue.trim().isEmpty) {
+        return const <File>[];
+      }
+      final rootUri = _resolvePackageRootUri(
+        packageConfigFile: packageConfigFile,
+        rootUri: rootUriValue,
+      );
+      if (rootUri.scheme != 'file') {
+        return const <File>[];
+      }
+      return <File>[File.fromUri(rootUri.resolve(_vendoredScrcpyServerPath))];
+    }
+  } catch (_) {
+    return const <File>[];
+  }
+
+  return const <File>[];
+}
+
+Uri _resolvePackageRootUri({
+  required File packageConfigFile,
+  required String rootUri,
+}) {
+  final parsed = Uri.parse(rootUri);
+  if (parsed.hasScheme) {
+    return parsed;
+  }
+  return packageConfigFile.parent.uri.resolveUri(parsed);
 }
 
 List<File> _scrcpyServerCandidatesForScript(Uri scriptUri) {

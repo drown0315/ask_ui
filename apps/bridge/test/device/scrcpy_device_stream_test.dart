@@ -135,6 +135,59 @@ void main() {
     expect(File(serverPath).existsSync(), isTrue);
   });
 
+  test('resolves the vendored scrcpy server from global package config',
+      () async {
+    final tempRoot = await Directory.systemTemp.createTemp(
+      'ask_ui_global_activation_',
+    );
+    addTearDown(() async {
+      if (tempRoot.existsSync()) {
+        await tempRoot.delete(recursive: true);
+      }
+    });
+
+    final externalProject = Directory('${tempRoot.path}/flutter_app')
+      ..createSync(recursive: true);
+    final globalPackage = Directory(
+      '${tempRoot.path}/.pub-cache/global_packages/ask_ui_bridge',
+    )..createSync(recursive: true);
+    Directory('${globalPackage.path}/bin').createSync(recursive: true);
+    Directory('${globalPackage.path}/.dart_tool').createSync(recursive: true);
+
+    final hostedPackage = Directory(
+      '${tempRoot.path}/.pub-cache/hosted/pub.dev/ask_ui_bridge-0.0.1',
+    )..createSync(recursive: true);
+    final hostedServer = File(
+      '${hostedPackage.path}/vendor/scrcpy/4.0/scrcpy-server-v4.0',
+    )
+      ..createSync(recursive: true)
+      ..writeAsStringSync('scrcpy server');
+
+    File('${globalPackage.path}/.dart_tool/package_config.json')
+        .writeAsStringSync('''
+{
+  "configVersion": 2,
+  "packages": [
+    {
+      "name": "ask_ui_bridge",
+      "rootUri": "${hostedPackage.uri}",
+      "packageUri": "lib/",
+      "languageVersion": "3.4"
+    }
+  ]
+}
+''');
+
+    final serverPath = defaultScrcpyServerPath(
+      currentDirectory: externalProject,
+      scriptUri: globalPackage.uri.resolve(
+        'bin/ask_ui_bridge.dart-3.4.4.snapshot',
+      ),
+    );
+
+    expect(serverPath, hostedServer.absolute.path);
+  });
+
   test('generates a fresh scrcpy socket id for each factory start', () async {
     final runner = FakeScrcpyCommandRunner();
     final sink = RecordingDeviceStreamSink();
