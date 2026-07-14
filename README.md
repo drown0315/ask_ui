@@ -8,8 +8,8 @@ app in Ask UI, select the widget on screen, add a comment, and let the agent
 work from the selected Flutter UI target.
 
 ## Demo
-[![example](https://github.com/user-attachments/assets/4d789bf8-5bd2-4038-b4e7-8b46127fc2e5)](https://github.com/drown0315/ask_ui/raw/f64acb4335accea68cb8ed4eae8a1c81a284b273/docs/media/example.mp4)
 
+<video controls src="docs/media/ask_ui_example.webm" title="ask_ui_demo"></video>
 
 ## What Ask UI Does
 
