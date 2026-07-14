@@ -7,6 +7,12 @@ Instead of describing a button, card, or layout problem in words, you open your
 app in Ask UI, select the widget on screen, add a comment, and let the agent
 work from the selected Flutter UI target.
 
+## Demo
+
+<a href="docs/media/example.mp4">
+  <img src="docs/media/example-thumbnail.jpg" alt="Ask UI demo" width="640">
+</a>
+
 ## What Ask UI Does
 
 - Opens your running Flutter app in a browser-based workbench.
